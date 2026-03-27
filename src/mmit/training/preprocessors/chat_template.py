@@ -134,9 +134,12 @@ class ChatTemplatePreprocessor(Preprocessor):
         }
 
         # Pass through vision-specific fields
+        # Processor may output (batch, num_images, C, H, W) — squeeze to (C, H, W) per sample
         if "pixel_values" in full_inputs:
             pv = full_inputs["pixel_values"]
-            result["pixel_values"] = pv.squeeze(0) if pv.dim() == 5 else pv
+            while pv.dim() > 3 and pv.shape[0] == 1:
+                pv = pv.squeeze(0)
+            result["pixel_values"] = pv
         if "image_sizes" in full_inputs:
             result["image_sizes"] = full_inputs["image_sizes"]
         if "image_grid_thw" in full_inputs:
