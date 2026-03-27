@@ -1,13 +1,15 @@
 """Colab Worker — polls Drive for job files, executes them, writes results back.
 
+Setup: code lives in /content/mmit (git clone), jobs/results sync via Drive.
+
 Run this ONCE in a Colab cell:
 
-    !python /content/drive/MyDrive/mmit/scripts/colab_worker.py
+    !PYTHONPATH=/content/mmit/src python /content/mmit/scripts/colab_worker.py
 
 The worker will:
-1. Watch /content/drive/MyDrive/mmit/jobs/ for new .json job files
+1. Watch /content/drive/MyDrive/mmit_jobs/ for new .json job files
 2. Execute each job (Python script or shell command)
-3. Write stdout/stderr/returncode to /content/drive/MyDrive/mmit/results/
+3. Write stdout/stderr/returncode to /content/drive/MyDrive/mmit_results/
 4. Loop forever until you stop the cell
 """
 import json
@@ -17,10 +19,10 @@ import sys
 import time
 import traceback
 
-DRIVE_ROOT = "/content/drive/MyDrive/mmit"
-JOBS_DIR = os.path.join(DRIVE_ROOT, "jobs")
-RESULTS_DIR = os.path.join(DRIVE_ROOT, "results")
-SRC_DIR = os.path.join(DRIVE_ROOT, "src")
+REPO_ROOT = "/content/mmit"
+SRC_DIR = os.path.join(REPO_ROOT, "src")
+JOBS_DIR = "/content/drive/MyDrive/mmit_jobs"
+RESULTS_DIR = "/content/drive/MyDrive/mmit_results"
 POLL_INTERVAL = 5  # seconds
 
 # Ensure mmit is importable
@@ -42,7 +44,7 @@ def execute_job(job: dict) -> dict:
         print(f"  [shell] {cmd}")
         proc = subprocess.run(
             cmd, shell=True, capture_output=True, text=True,
-            timeout=timeout, cwd=DRIVE_ROOT,
+            timeout=timeout, cwd=REPO_ROOT,
             env={**os.environ, "PYTHONPATH": SRC_DIR},
         )
         return {
@@ -76,7 +78,7 @@ def execute_job(job: dict) -> dict:
 
     elif job_type == "test_pipeline":
         # Run the test pipeline script
-        script_path = os.path.join(DRIVE_ROOT, "scripts", "test_pipeline.py")
+        script_path = os.path.join(REPO_ROOT, "scripts", "test_pipeline.py")
         print(f"  [test_pipeline] {script_path}")
         proc = subprocess.run(
             [sys.executable, script_path],
