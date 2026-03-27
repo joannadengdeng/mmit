@@ -1,0 +1,31 @@
+# QLoRA: LoRA with 4-bit quantized base model
+# Recommended for GPUs with 8-16GB VRAM
+
+runtime:
+  mode: local
+
+model:
+  model_path: "Qwen/Qwen2.5-VL-3B-Instruct"
+  # family: ""  # auto-detected
+
+training:
+  ft_method: qlora
+  num_epochs: 3
+  per_device_batch_size: 1
+  gradient_accumulation_steps: 4
+  learning_rate: 2.0e-4
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  save_steps: 200
+  output_dir: "output/qlora_qwen2vl_3b"
+  params:
+    lora_r: 8
+    lora_alpha: 16
+    lora_dropout: 0.05
+
+data:
+  adapter: hf_datasets
+  data_path: "HuggingFaceH4/llava-instruct-mix-vsft"
+  split: train
+  max_samples: 100

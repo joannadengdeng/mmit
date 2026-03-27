@@ -1,0 +1,42 @@
+# SSH: QLoRA training on a remote server
+# Streams training progress back to your local terminal
+#
+# Usage:
+#   python -m mmit.training --config configs/ssh_qlora.yaml
+#
+# Requirements:
+#   - Local:  pip install 'mmit[remote]'  (paramiko)
+#   - Remote: mmit installed with finetune extras
+
+runtime:
+  mode: ssh
+  ssh:
+    host: "192.168.1.100"       # remote server IP or hostname
+    port: 22
+    username: "root"
+    key_path: "~/.ssh/id_rsa"   # SSH key (or use password below)
+    # password: ""
+    conda_env: "mmit"           # optional: conda environment on remote
+
+model:
+  model_path: "Qwen/Qwen2.5-VL-3B-Instruct"
+
+training:
+  ft_method: qlora
+  num_epochs: 3
+  per_device_batch_size: 2
+  gradient_accumulation_steps: 4
+  learning_rate: 2.0e-4
+  warmup_ratio: 0.03
+  save_steps: 500
+  output_dir: "output/qlora_remote"
+  params:
+    lora_r: 8
+    lora_alpha: 16
+    lora_dropout: 0.05
+
+data:
+  adapter: hf_datasets
+  data_path: "HuggingFaceH4/llava-instruct-mix-vsft"
+  split: train
+  max_samples: 200

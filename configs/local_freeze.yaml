@@ -1,0 +1,31 @@
+# Freeze Tuning: train only selected modules (last N layers, projector, lm_head)
+# Good balance between full FT and LoRA
+
+runtime:
+  mode: local
+
+model:
+  model_path: "Qwen/Qwen2.5-VL-3B-Instruct"
+
+training:
+  ft_method: freeze
+  num_epochs: 3
+  per_device_batch_size: 1
+  gradient_accumulation_steps: 4
+  learning_rate: 1.0e-5
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  save_steps: 200
+  output_dir: "output/freeze_qwen2vl_3b"
+  params:
+    train_modules:
+      - "LLM last N layers"
+      - "Projector"
+    num_layers: 4
+
+data:
+  adapter: hf_datasets
+  data_path: "HuggingFaceH4/llava-instruct-mix-vsft"
+  split: train
+  max_samples: 100

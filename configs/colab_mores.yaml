@@ -1,0 +1,49 @@
+# ═══════════════════════════════════════════════════════
+# MoReS Training on Google Colab
+# ═══════════════════════════════════════════════════════
+# Bi et al., "LLaVA Steering", ACL 2025
+#
+# 在 Colab 上训练 MoReS，checkpoint 保存到 Google Drive
+# 参数量极小 (~0.16M)，T4 16GB 即可运行
+#
+# 用法：见 colab_mores_guide.md 或直接跑：
+#   python -m mmit.training --config configs/colab_mores.yaml
+
+runtime:
+  mode: colab
+  colab:
+    mount_drive: true
+    drive_mount_point: "/content/drive"
+    pip_install:
+      - "mmit[finetune]"
+      - "bitsandbytes"
+      - "pyyaml"
+    output_to_drive: true
+
+model:
+  model_path: "Qwen/Qwen2.5-VL-3B-Instruct"
+
+training:
+  ft_method: mores
+  num_epochs: 3
+  per_device_batch_size: 1
+  gradient_accumulation_steps: 4
+  learning_rate: 2.0e-4
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  save_steps: 200
+  output_dir: "mores_qwen2vl_3b"
+  params:
+    intervention_rank: 1        # 论文最优 d=1
+    positions: "f4+l5"          # 前4层 + 后5层
+    dropout: 0.05
+    share_weights: true         # 跨层共享（论文做法）
+    steer_visual_only: true     # 只 steer 视觉 token
+    steer_ratio: 0.01           # 只 steer 1% 视觉 token
+
+data:
+  adapter: hf_datasets
+  data_path: "HuggingFaceH4/llava-instruct-mix-vsft"
+  split: train
+  max_samples: 500              # 先跑 500 条验证流程，确认没问题后改成 0（全量）

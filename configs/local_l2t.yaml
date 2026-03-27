@@ -1,0 +1,33 @@
+# L2T: Learning to Instruct (Zhou et al., NeurIPS 2025)
+# Computes loss on instruction tokens too (minus templates) to reduce hallucination
+# Wraps a base method (LoRA, QLoRA, or Full FT)
+
+runtime:
+  mode: local
+
+model:
+  model_path: "Qwen/Qwen2.5-VL-3B-Instruct"
+
+training:
+  ft_method: l2t
+  num_epochs: 3
+  per_device_batch_size: 1
+  gradient_accumulation_steps: 4
+  learning_rate: 2.0e-4
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  save_steps: 200
+  output_dir: "output/l2t_qwen2vl_3b"
+  params:
+    base_method: lora         # LoRA / QLoRA / full_ft
+    template_top_k: 20        # frequent sentences treated as templates
+    lora_r: 8
+    lora_alpha: 16
+    lora_dropout: 0.05
+
+data:
+  adapter: hf_datasets
+  data_path: "HuggingFaceH4/llava-instruct-mix-vsft"
+  split: train
+  max_samples: 100

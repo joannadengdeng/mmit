@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mmit"
+version = "0.1.0"
+description = "Multimodal Instruction Tuning library — pluggable inference & eval for LLaVA-family models"
+requires-python = ">=3.9"
+dependencies = [
+    "torch>=2.0",
+    "torchvision>=0.15",
+    "transformers>=4.37",
+    "pillow>=9.0",
+    "peft>=0.7",
+    "accelerate>=0.21",
+    "datasets>=2.14",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov"]
+demo = ["gradio>=4.0"]
+finetune = ["bitsandbytes>=0.41"]
+remote = ["paramiko>=3.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

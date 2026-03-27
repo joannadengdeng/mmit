@@ -1,0 +1,32 @@
+# MoReS: Representation Steering (Bi et al., ACL 2025)
+# LLM frozen, orthogonal low-rank interventions at selected layers
+# Extremely parameter-efficient (~500x fewer params than LoRA)
+
+runtime:
+  mode: local
+
+model:
+  model_path: "Qwen/Qwen2.5-VL-3B-Instruct"
+
+training:
+  ft_method: mores
+  num_epochs: 3
+  per_device_batch_size: 1
+  gradient_accumulation_steps: 4
+  learning_rate: 1.0e-4
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  save_steps: 200
+  output_dir: "output/mores_qwen2vl_3b"
+  params:
+    intervention_rank: 4       # low-rank dimension (1-16)
+    positions: "f4+l5"         # f=first, l=last layers (e.g. "f4+l5", "l10")
+    dropout: 0.0
+    ortho_penalty_weight: 0.01 # orthogonality regularization
+
+data:
+  adapter: hf_datasets
+  data_path: "HuggingFaceH4/llava-instruct-mix-vsft"
+  split: train
+  max_samples: 100

@@ -1,0 +1,27 @@
+# Full Fine-tuning: update all model parameters
+# WARNING: Requires >=24GB GPU VRAM for 3B models, >=48GB for 7B models
+
+runtime:
+  mode: local
+
+model:
+  model_path: "Qwen/Qwen2.5-VL-3B-Instruct"
+
+training:
+  ft_method: full_ft
+  num_epochs: 1
+  per_device_batch_size: 1
+  gradient_accumulation_steps: 8
+  learning_rate: 5.0e-6       # lower LR for full FT
+  warmup_ratio: 0.05
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  save_steps: 200
+  output_dir: "output/full_ft_qwen2vl_3b"
+  # No method-specific params needed
+
+data:
+  adapter: hf_datasets
+  data_path: "HuggingFaceH4/llava-instruct-mix-vsft"
+  split: train
+  max_samples: 100
