@@ -116,8 +116,31 @@ def main():
     print(f"{'='*50}")
 
 if __name__ == "__main__":
+    # Tee stdout to Drive so local machine can poll results
+    import io
+
+    class Tee:
+        def __init__(self, *streams):
+            self.streams = streams
+        def write(self, data):
+            for s in self.streams:
+                s.write(data)
+                s.flush()
+        def flush(self):
+            for s in self.streams:
+                s.flush()
+
+    log_path = "/content/drive/MyDrive/mmit_results/qlora_test_output.txt"
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    log_file = open(log_path, "w")
+    sys.stdout = Tee(sys.__stdout__, log_file)
+    sys.stderr = Tee(sys.__stderr__, log_file)
+
     try:
         main()
     except Exception as e:
         print(f"\n{F} FAILED: {e}")
         traceback.print_exc()
+    finally:
+        log_file.close()
+        print(f"\nOutput saved to {log_path}", file=sys.__stdout__)
