@@ -40,13 +40,30 @@ def main():
 
     # 3. Load data
     print("3. Loading dataset (20 samples)...")
-    from mmit.data.adapters.hf_datasets import HFDatasetsAdapter
+    from datasets import load_dataset
+    from mmit.data.adapters.hf_datasets import HFDatasetsAdapter, _detect_column_mapping
+
+    # Debug: inspect raw dataset columns
+    raw_ds = load_dataset("HuggingFaceH4/llava-instruct-mix-vsft", split="train", streaming=True)
+    first_row = next(iter(raw_ds))
+    print(f"   Raw columns: {list(first_row.keys())}")
+    for k, v in first_row.items():
+        val_repr = str(v)[:100] if not isinstance(v, bytes) else f"<bytes {len(v)}>"
+        print(f"     {k}: {type(v).__name__} = {val_repr}")
+
+    # This dataset uses 'messages' not 'conversations'
     adapter = HFDatasetsAdapter(dataset_name="HuggingFaceH4/llava-instruct-mix-vsft", split="train")
     samples = []
     for i, s in enumerate(adapter):
         samples.append(s)
         if i >= 19: break
-    print(f"   {P} {len(samples)} samples loaded\n")
+    print(f"   {len(samples)} samples loaded")
+    if samples:
+        s0 = samples[0]
+        print(f"   Sample 0: turns={len(s0.turns)}, image_path='{s0.image_path}'")
+        for t in s0.turns[:2]:
+            print(f"     [{t.role}] {t.content[:80]}")
+    print()
 
     # 4. Preprocess
     print("4. Preprocessing...")
