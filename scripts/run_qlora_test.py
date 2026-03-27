@@ -91,7 +91,7 @@ def main():
     from mmit.training.losses import CrossEntropyLoss
     from torch.utils.data import DataLoader
     loss_fn = CrossEntropyLoss()
-    batch = preproc.collate(processed[:2])
+    batch = preproc.collate(processed[:1])
     device = next(model.parameters()).device
 
     # Only pass keys the model accepts
@@ -106,11 +106,14 @@ def main():
     if 'pixel_values' in batch_gpu:
         print(f"   pixel_values: {batch_gpu['pixel_values'].shape}")
 
+    # Enable gradient checkpointing to save memory
+    model.gradient_checkpointing_enable()
     model.train()
     outputs = model(**batch_gpu)
     loss, _ = loss_fn.compute(model, batch_gpu, outputs)
     loss.backward()
-    print(f"   {P} Loss: {loss.item():.4f}\n")
+    print(f"   {P} Loss: {loss.item():.4f}")
+    print(f"   GPU mem: {torch.cuda.memory_allocated()/1024**3:.1f}GB\n")
 
     # 7. Full training loop (5 steps)
     print("7. Training loop (5 steps)...")
@@ -118,7 +121,7 @@ def main():
     params = method.get_trainable_params(model)
     for pg in params: pg.setdefault("lr", 2e-4)
     optimizer = AdamW(params)
-    loader = DataLoader(processed, batch_size=2, shuffle=True, collate_fn=preproc.collate, drop_last=True)
+    loader = DataLoader(processed, batch_size=1, shuffle=True, collate_fn=preproc.collate, drop_last=True)
 
     model.train()
     for step, batch in enumerate(loader):
