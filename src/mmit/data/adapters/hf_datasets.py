@@ -267,13 +267,25 @@ def _detect_column_mapping(dataset) -> ColumnMapping:
     """Auto-detect column mapping from dataset column names."""
     cols = set(dataset.column_names)
 
-    # Check for conversations format
+    # Check for conversations format (conversations or messages column)
+    conv_col = None
     if "conversations" in cols:
+        conv_col = "conversations"
+    elif "messages" in cols:
+        conv_col = "messages"
+
+    if conv_col is not None:
+        # Detect image column: image, images, or image_path
+        img_col = ""
+        for candidate in ("image", "images", "image_path"):
+            if candidate in cols:
+                img_col = candidate
+                break
         return ColumnMapping(
             format="conversations",
             id_col="id" if "id" in cols else "",
-            image_col="image" if "image" in cols else "",
-            conversations_col="conversations",
+            image_col=img_col,
+            conversations_col=conv_col,
         )
 
     # VQA-style
@@ -311,24 +323,54 @@ def _detect_column_mapping(dataset) -> ColumnMapping:
 # Parsing helpers
 # ---------------------------------------------------------------------------
 
+def _extract_text_from_content(content) -> str:
+    """Extract text from message content (handles both string and list-of-dicts formats).
+
+    String format (LLaVA-style):
+        "value": "What is this?\n<image>"
+
+    List format (HF messages-style):
+        "content": [{"type": "text", "text": "What is this?"}, {"type": "image", "index": 0}]
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(item.get("text", ""))
+            elif isinstance(item, str):
+                parts.append(item)
+        return " ".join(parts).strip()
+    return str(content)
+
+
 def _parse_conversations_row(row: dict, idx: int, mapping: ColumnMapping,
                              load_images: bool = True) -> CanonicalSample:
-    """Parse a HF dataset row with conversations format."""
+    """Parse a HF dataset row with conversations format.
+
+    Supports both LLaVA-style (conversations with "from"/"value") and
+    HF messages-style (messages with "role"/"content" as list of dicts).
+    """
     convs = row.get(mapping.conversations_col, [])
     turns: List[Turn] = []
     for msg in convs:
         if isinstance(msg, dict):
             role_raw = str(msg.get("from", msg.get("role", "human"))).lower()
             role = "human" if role_raw in ("human", "user") else "assistant"
-            content = str(msg.get("value", msg.get("content", ""))).strip()
+            raw_content = msg.get("value", msg.get("content", ""))
+            content = _extract_text_from_content(raw_content).strip()
             # Strip image tokens
             if role == "human":
                 content = content.replace("<image>", "").replace("<Image>", "").strip()
             if content:
                 turns.append(Turn(role=role, content=content))
 
-    # Handle image: could be PIL Image or string path
+    # Handle image: could be PIL Image, list of PIL Images, or string path
     image_val = row.get(mapping.image_col)
+    # If it's a list (e.g. "images" column), take the first one
+    if isinstance(image_val, list) and image_val:
+        image_val = image_val[0]
     image_path, metadata = _handle_image_value(image_val, load_images)
 
     sample_id = str(row.get(mapping.id_col, idx)) if mapping.id_col else str(idx)
