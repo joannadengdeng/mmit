@@ -69,7 +69,7 @@ def load_base():
     return model, processor, processed, preproc
 
 
-def train_5_steps(model, method, processed, preproc, loss_fn, method_name):
+def train_5_steps(model, method, processed, preproc, loss_fn, method_name, lr=2e-4):
     """Run 5 training steps and report loss."""
     import torch
     from torch.optim import AdamW
@@ -84,7 +84,7 @@ def train_5_steps(model, method, processed, preproc, loss_fn, method_name):
     params = method.get_trainable_params(model)
     trainable_count = sum(p.numel() for pg in params for p in pg["params"])
     for pg in params:
-        pg.setdefault("lr", 2e-4)
+        pg.setdefault("lr", lr)
     optimizer = AdamW(params)
 
     loader = DataLoader(processed, batch_size=1, shuffle=True, collate_fn=preproc.collate, drop_last=True)
@@ -102,6 +102,9 @@ def train_5_steps(model, method, processed, preproc, loss_fn, method_name):
         outputs = model(**batch_gpu)
         loss, metrics = loss_fn.compute(model, batch_gpu, outputs)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(
+            [p for pg in params for p in pg["params"] if p.grad is not None], 1.0
+        )
         optimizer.step()
         optimizer.zero_grad()
         losses.append(loss.item())
@@ -157,7 +160,7 @@ def test_mores(model, processor, processed, preproc):
     print(info)
 
     loss_fn = CEPlusOrthoLoss(ortho_weight=0.01)
-    losses = train_5_steps(model, method, processed, preproc, loss_fn, "MoReS")
+    losses = train_5_steps(model, method, processed, preproc, loss_fn, "MoReS", lr=1e-3)
     print(f"{P} MoReS passed\n")
     return True
 

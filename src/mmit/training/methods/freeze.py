@@ -64,35 +64,38 @@ class FreezeTuningMethod(TrainingMethod):
         ]
 
     def _prepare_model_impl(self, model, processor, config):
-        # Freeze everything first
+        # Freeze everything first (skip quantized params that can't take grad)
         for p in model.parameters():
-            p.requires_grad = False
+            if p.dtype in (torch.float32, torch.float16, torch.bfloat16):
+                p.requires_grad = False
 
         train_modules = config.get("train_modules", ["LLM last N layers"])
         num_layers = int(config.get("num_layers", 4))
         unfrozen_parts = []
 
+        def _unfreeze(module):
+            for p in module.parameters():
+                if p.dtype in (torch.float32, torch.float16, torch.bfloat16):
+                    p.requires_grad = True
+
         if "LLM last N layers" in train_modules:
             layers = _find_transformer_layers(model)
             if layers:
                 for layer in layers[-num_layers:]:
-                    for p in layer.parameters():
-                        p.requires_grad = True
+                    _unfreeze(layer)
                 unfrozen_parts.append(f"last {num_layers} LLM layers")
 
         if "LM Head" in train_modules:
             for name, module in model.named_modules():
                 if "lm_head" in name:
-                    for p in module.parameters():
-                        p.requires_grad = True
+                    _unfreeze(module)
                     unfrozen_parts.append("lm_head")
                     break
 
         if "Projector" in train_modules:
             for name, module in model.named_modules():
                 if "multi_modal_projector" in name or "mm_projector" in name:
-                    for p in module.parameters():
-                        p.requires_grad = True
+                    _unfreeze(module)
                     unfrozen_parts.append("projector")
                     break
 
