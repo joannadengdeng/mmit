@@ -76,10 +76,22 @@ def main():
     loss_fn = CrossEntropyLoss()
     batch = preproc.collate(processed[:2])
     device = next(model.parameters()).device
-    batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+
+    # Only pass keys the model accepts
+    FORWARD_KEYS = {"input_ids", "attention_mask", "labels", "pixel_values", "image_sizes", "image_grid_thw"}
+    def to_device(batch):
+        return {k: v.to(device) if isinstance(v, torch.Tensor) else v
+                for k, v in batch.items() if k in FORWARD_KEYS}
+
+    batch_gpu = to_device(batch)
+    print(f"   Batch keys: {list(batch_gpu.keys())}")
+    print(f"   input_ids: {batch_gpu['input_ids'].shape}")
+    if 'pixel_values' in batch_gpu:
+        print(f"   pixel_values: {batch_gpu['pixel_values'].shape}")
+
     model.train()
-    outputs = model(**batch)
-    loss, _ = loss_fn.compute(model, batch, outputs)
+    outputs = model(**batch_gpu)
+    loss, _ = loss_fn.compute(model, batch_gpu, outputs)
     loss.backward()
     print(f"   {P} Loss: {loss.item():.4f}\n")
 
@@ -93,9 +105,9 @@ def main():
 
     model.train()
     for step, batch in enumerate(loader):
-        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-        outputs = model(**batch)
-        loss, _ = loss_fn.compute(model, batch, outputs)
+        batch_gpu = to_device(batch)
+        outputs = model(**batch_gpu)
+        loss, _ = loss_fn.compute(model, batch_gpu, outputs)
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -129,6 +141,10 @@ if __name__ == "__main__":
         def flush(self):
             for s in self.streams:
                 s.flush()
+        def isatty(self):
+            return False
+        def fileno(self):
+            return self.streams[0].fileno()
 
     log_path = "/content/drive/MyDrive/mmit_results/qlora_test_output.txt"
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
