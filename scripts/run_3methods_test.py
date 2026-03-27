@@ -117,7 +117,7 @@ def train_5_steps(model, method, processed, preproc, loss_fn, method_name, lr=2e
     return losses
 
 
-def reload_model():
+def reload_model(quantize_4bit=True):
     """Reload fresh model (needed between methods that modify model differently)."""
     import torch
     gc.collect()
@@ -129,14 +129,22 @@ def reload_model():
         from transformers import AutoModelForVision2Seq as AutoVLM
 
     processor = AutoProcessor.from_pretrained(MODEL_ID)
-    model = AutoVLM.from_pretrained(
-        MODEL_ID,
-        quantization_config=BitsAndBytesConfig(
-            load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True,
-        ),
-        device_map="auto", trust_remote_code=True,
-    )
+    if quantize_4bit:
+        model = AutoVLM.from_pretrained(
+            MODEL_ID,
+            quantization_config=BitsAndBytesConfig(
+                load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True,
+            ),
+            device_map="auto", trust_remote_code=True,
+        )
+    else:
+        model = AutoVLM.from_pretrained(
+            MODEL_ID, torch_dtype=torch.bfloat16,
+            device_map="auto", trust_remote_code=True,
+        )
+    mode = "4-bit" if quantize_4bit else "bf16"
+    print(f"   Model reloaded ({mode}), GPU: {torch.cuda.memory_allocated()/1024**3:.1f}GB")
     return model, processor
 
 
@@ -220,11 +228,17 @@ def main():
     print(f"GPU: {torch.cuda.get_device_name()}\n")
 
     import mmit
+    # Initial load in 4-bit (for data preprocessing only, model will be reloaded per test)
     model, processor, processed, preproc = load_base()
+    del model
+    gc.collect()
+    torch.cuda.empty_cache()
 
     results = {}
 
-    # Test 1: MoReS
+    # Test 1: MoReS — needs bf16 (4-bit causes NaN with few trainable params)
+    print("   Reloading model in bf16 for MoReS...")
+    model, processor = reload_model(quantize_4bit=False)
     try:
         results["MoReS"] = test_mores(model, processor, processed, preproc)
     except Exception as e:
@@ -232,13 +246,12 @@ def main():
         traceback.print_exc()
         results["MoReS"] = False
 
-    # Reload model for next test (MoReS adds hooks that would interfere)
+    # Test 2: Freeze — needs bf16 (projector params are fp32 but base is quantized)
     del model
     gc.collect()
     torch.cuda.empty_cache()
-    model, processor = reload_model()
-
-    # Test 2: Freeze
+    print("   Reloading model in bf16 for Freeze...")
+    model, processor = reload_model(quantize_4bit=False)
     try:
         results["Freeze"] = test_freeze(model, processor, processed, preproc)
     except Exception as e:
@@ -246,11 +259,12 @@ def main():
         traceback.print_exc()
         results["Freeze"] = False
 
-    # Reload for L2T
+    # Test 3: L2T — uses QLoRA (4-bit is fine, LoRA adapters are bf16)
     del model
     gc.collect()
     torch.cuda.empty_cache()
-    model, processor = reload_model()
+    print("   Reloading model in 4-bit for L2T...")
+    model, processor = reload_model(quantize_4bit=True)
 
     # Test 3: L2T
     try:
