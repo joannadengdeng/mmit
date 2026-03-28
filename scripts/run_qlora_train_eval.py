@@ -182,7 +182,7 @@ def evaluate(model, processor):
     print(f"{'='*60}")
 
     method = LocalMethod(model, processor)
-    engine = EvalEngine(max_new_tokens=128, temperature=0.0)
+    engine = EvalEngine(max_new_tokens=32, temperature=0.0)
     all_results = {}
 
     benchmarks = [
