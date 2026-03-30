@@ -1,13 +1,18 @@
 """Universal train → eval script for any single method.
 
 Usage:
-    python scripts/run_method.py freeze
-    python scripts/run_method.py lora
-    python scripts/run_method.py dora
+    # Quick test (1K train, 200 eval)
+    python scripts/run_method.py qlora
+
+    # Full training (all data, full eval)
+    python scripts/run_method.py qlora --full
+
+    # Custom size
+    python scripts/run_method.py mores --train-samples 5000 --eval-samples 500
 
 Supported methods: qlora, lora, dora, freeze, l2t, mores
 """
-import sys, os, time, math, gc, json, traceback
+import sys, os, time, math, gc, json, traceback, argparse
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import torch
@@ -19,23 +24,32 @@ P = "\033[92m✓\033[0m"
 F = "\033[91m✗\033[0m"
 
 MODEL_ID = "llava-hf/llava-1.5-7b-hf"
-TRAIN_DATASET = "HuggingFaceH4/llava-instruct-mix-vsft"
-NUM_TRAIN = 1000
-NUM_EVAL = 200
-NUM_EPOCHS = 1
-BATCH_SIZE = 1
-GRAD_ACCUM = 8
-OUTPUT_ROOT = "/content/mmit_output"
 FORWARD_KEYS = {"input_ids", "attention_mask", "labels", "pixel_values", "image_sizes", "image_grid_thw"}
 
-METHOD_CONFIGS = {
-    "qlora": {"quantize": True, "lr": 2e-4},
-    "lora": {"quantize": False, "lr": 2e-4},
-    "dora": {"quantize": False, "lr": 2e-4},
-    "freeze": {"quantize": False, "lr": 2e-4},
-    "l2t": {"quantize": True, "lr": 2e-4},
-    "mores": {"quantize": False, "lr": 1e-3},
+# Dataset options
+DATASETS = {
+    "llava_mix": {
+        "name": "HuggingFaceH4/llava-instruct-mix-vsft",
+        "split": "train",
+        "description": "LLaVA instruct mix (~259K, pre-combined)",
+    },
 }
+
+METHOD_CONFIGS = {
+    "qlora":  {"quantize": True,  "lr": 2e-4},
+    "lora":   {"quantize": False, "lr": 2e-4},
+    "dora":   {"quantize": False, "lr": 2e-4},
+    "freeze": {"quantize": False, "lr": 2e-4},
+    "l2t":    {"quantize": True,  "lr": 2e-4},
+    "mores":  {"quantize": False, "lr": 1e-3},
+}
+
+# Eval benchmarks with proper scoring
+EVAL_BENCHMARKS = [
+    ("VQAv2",   "lmms-lab/VQAv2",  "validation"),
+    ("POPE",    "lmms-lab/POPE",    "test"),
+    ("TextVQA", "lmms-lab/textvqa", "validation"),
+]
 
 
 class Tee:
@@ -53,6 +67,8 @@ class Tee:
     def fileno(self):
         return self.streams[0].fileno()
 
+
+# ── Model loading ──
 
 def load_model(quantize_4bit):
     from transformers import AutoProcessor, BitsAndBytesConfig
@@ -80,6 +96,42 @@ def load_model(quantize_4bit):
     print(f"   Model loaded ({mode}), GPU: {torch.cuda.memory_allocated()/1024**3:.1f}GB")
     return model, processor
 
+
+# ── Data loading ──
+
+def load_train_data(processor, max_samples=0, dataset_key="llava_mix"):
+    """Load and preprocess training data."""
+    from mmit.data.adapters.hf_datasets import HFDatasetsAdapter
+    from mmit.training.preprocessors import ChatTemplatePreprocessor
+
+    ds_info = DATASETS[dataset_key]
+    adapter = HFDatasetsAdapter(dataset_name=ds_info["name"], split=ds_info["split"])
+
+    samples = []
+    for i, s in enumerate(adapter):
+        samples.append(s)
+        if max_samples and i >= max_samples - 1:
+            break
+        if (i + 1) % 10000 == 0:
+            print(f"   Loaded {i+1} samples...")
+
+    print(f"   {len(samples)} raw samples loaded")
+
+    preproc = ChatTemplatePreprocessor()
+    processed, errors = [], 0
+    for i, s in enumerate(samples):
+        try:
+            processed.append(preproc.tokenize(s, processor, max_length=2048))
+        except:
+            errors += 1
+        if (i + 1) % 5000 == 0:
+            print(f"   Preprocessed {i+1}/{len(samples)}...")
+
+    print(f"   {P} {len(processed)} samples ready (errors: {errors})")
+    return processed, preproc
+
+
+# ── Method setup ──
 
 def setup_method(method_name, model, processor):
     from mmit.training.losses import CrossEntropyLoss, CEPlusOrthoLoss
@@ -130,55 +182,12 @@ def setup_method(method_name, model, processor):
         raise ValueError(f"Unknown method: {method_name}")
 
 
-def main(method_name):
-    t0 = time.time()
-    mcfg = METHOD_CONFIGS[method_name]
+# ── Training ──
 
-    print(f"{method_name.upper()} Train → Eval")
-    print(f"Model: {MODEL_ID}")
-    print(f"Train: {NUM_TRAIN} | Eval: {NUM_EVAL}/benchmark")
-    print(f"GPU: {torch.cuda.get_device_name()}\n")
-
-    import mmit
-
-    # 1. Load model
-    print("1. Loading model...")
-    model, processor = load_model(mcfg["quantize"])
-    print()
-
-    # 2. Load data
-    print(f"2. Loading {NUM_TRAIN} samples...")
-    from mmit.data.adapters.hf_datasets import HFDatasetsAdapter
-    from mmit.training.preprocessors import ChatTemplatePreprocessor
-
-    adapter = HFDatasetsAdapter(dataset_name=TRAIN_DATASET, split="train")
-    samples = []
-    for i, s in enumerate(adapter):
-        samples.append(s)
-        if i >= NUM_TRAIN - 1: break
-
-    preproc = ChatTemplatePreprocessor()
-    processed = []
-    for i, s in enumerate(samples):
-        try:
-            processed.append(preproc.tokenize(s, processor, max_length=2048))
-        except:
-            pass
-        if (i + 1) % 500 == 0:
-            print(f"   {i+1}/{len(samples)}...")
-    print(f"   {P} {len(processed)} samples\n")
-
-    # 3. Setup method
-    print(f"3. Setting up {method_name}...")
-    model, method, loss_fn, info = setup_method(method_name, model, processor)
-    print(f"   {info}\n")
-
-    # 4. Train
-    print("4. Training...")
+def train(model, method, loss_fn, processed, preproc, lr, num_epochs=1, batch_size=1, grad_accum=8):
     model.gradient_checkpointing_enable()
     model.train()
     device = next(model.parameters()).device
-    lr = mcfg["lr"]
 
     params = method.get_trainable_params(model)
     trainable_count = sum(p.numel() for pg in params for p in pg["params"])
@@ -186,10 +195,10 @@ def main(method_name):
         pg.setdefault("lr", lr)
     optimizer = AdamW(params, weight_decay=0.0)
 
-    loader = DataLoader(processed, batch_size=BATCH_SIZE, shuffle=True,
+    loader = DataLoader(processed, batch_size=batch_size, shuffle=True,
                         collate_fn=preproc.collate, drop_last=True)
-    steps_per_epoch = len(loader) // GRAD_ACCUM
-    total_steps = steps_per_epoch * NUM_EPOCHS
+    steps_per_epoch = len(loader) // grad_accum
+    total_steps = steps_per_epoch * num_epochs
     warmup_steps = int(total_steps * 0.03)
 
     def lr_lambda(step):
@@ -203,9 +212,9 @@ def main(method_name):
 
     print(f"   Steps: {total_steps}, Params: {trainable_count:,}, LR: {lr}")
     global_step, total_loss = 0, 0.0
-    train_start = time.time()
+    t0 = time.time()
 
-    for epoch in range(NUM_EPOCHS):
+    for epoch in range(num_epochs):
         for step, batch in enumerate(loader):
             batch_gpu = {k: v.to(device) if isinstance(v, torch.Tensor) else v
                          for k, v in batch.items() if k in FORWARD_KEYS}
@@ -218,10 +227,10 @@ def main(method_name):
                 optimizer.zero_grad()
                 continue
 
-            loss = loss / GRAD_ACCUM
+            loss = loss / grad_accum
             loss.backward()
 
-            if (step + 1) % GRAD_ACCUM == 0:
+            if (step + 1) % grad_accum == 0:
                 torch.nn.utils.clip_grad_norm_(
                     [p for pg in params for p in pg["params"] if p.grad is not None], 1.0
                 )
@@ -229,30 +238,41 @@ def main(method_name):
                 scheduler.step()
                 optimizer.zero_grad()
                 global_step += 1
-                total_loss += loss.item() * GRAD_ACCUM
+                total_loss += loss.item() * grad_accum
 
                 if global_step % log_interval == 0 or global_step == 1:
                     avg = total_loss / global_step
-                    elapsed = time.time() - train_start
+                    elapsed = time.time() - t0
                     eta = elapsed / global_step * (total_steps - global_step)
                     extra = " ".join(f"{k}={v:.4f}" for k, v in metrics.items()) if metrics else ""
-                    print(f"   [{global_step}/{total_steps}] loss={loss.item()*GRAD_ACCUM:.4f} avg={avg:.4f} {extra} eta={eta:.0f}s")
+                    print(f"   [{global_step}/{total_steps}] loss={loss.item()*grad_accum:.4f} avg={avg:.4f} {extra} eta={eta:.0f}s")
 
     avg_loss = total_loss / max(1, global_step)
-    train_time = time.time() - train_start
-    print(f"\n   {P} {global_step} steps, avg_loss={avg_loss:.4f}, time={train_time:.0f}s")
+    train_time = time.time() - t0
+    print(f"\n   {P} {global_step} steps, avg_loss={avg_loss:.4f}, time={train_time:.0f}s ({train_time/60:.1f}min)")
+    return avg_loss, train_time, trainable_count
 
-    # Save
-    out_dir = os.path.join(OUTPUT_ROOT, f"{method_name}_experiment", "final")
-    os.makedirs(out_dir, exist_ok=True)
-    method.save_checkpoint(model, processor, out_dir, {
-        "base_model": MODEL_ID, "method": method_name,
-        "num_samples": len(processed), "avg_loss": round(avg_loss, 6),
-    })
-    print(f"   {P} Checkpoint: {out_dir}\n")
 
-    # 5. Eval
-    print("5. Evaluating...")
+# ── Evaluation ──
+
+def vqa_accuracy(pred, gt_answers):
+    """VQA accuracy: min(#humans who said pred / 3, 1). Simplified version."""
+    pred_clean = pred.strip().lower().rstrip(".,!?")
+    if isinstance(gt_answers, list):
+        # Multiple reference answers
+        match_count = 0
+        for ans in gt_answers:
+            ans_text = ans.get("answer", str(ans)) if isinstance(ans, dict) else str(ans)
+            if pred_clean == ans_text.strip().lower().rstrip(".,!?"):
+                match_count += 1
+        return min(match_count / 3.0, 1.0)
+    else:
+        gt_clean = str(gt_answers).strip().lower().rstrip(".,!?")
+        return 1.0 if pred_clean == gt_clean else 0.0
+
+
+def evaluate(model, processor, max_samples=0):
+    """Evaluate on VQAv2, POPE, TextVQA with proper scoring."""
     from mmit.eval.methods.local_method import LocalMethod
     from mmit.data.types import EvalSample
     from datasets import load_dataset
@@ -264,100 +284,179 @@ def main(method_name):
         pass
 
     eval_method = LocalMethod(model, processor)
-    eval_results = {}
+    results = {}
 
-    for bench_name, hf_id, split in [
-        ("VQAv2", "lmms-lab/VQAv2", "validation"),
-        ("POPE", "lmms-lab/POPE", "test"),
-        ("TextVQA", "lmms-lab/textvqa", "validation"),
-    ]:
+    for bench_name, hf_id, split in EVAL_BENCHMARKS:
         print(f"\n   --- {bench_name} ---")
         try:
             ds = load_dataset(hf_id, split=split, streaming=True)
             eval_samples = []
             for j, row in enumerate(ds):
-                if j >= NUM_EVAL: break
+                if max_samples and j >= max_samples:
+                    break
                 eval_samples.append(row)
 
-            correct, total = 0, 0
+            total_score = 0.0
+            total = 0
             eval_t0 = time.time()
 
             for j, s in enumerate(eval_samples):
                 question = s.get("question", "Describe this image.")
                 image = s.get("image")
                 answers = s.get("answers", s.get("answer", ""))
-                if isinstance(answers, list):
-                    gt = answers[0].get("answer", str(answers[0])) if answers and isinstance(answers[0], dict) else str(answers[0]) if answers else ""
-                else:
-                    gt = str(answers)
 
-                prompt = question + (" Please answer yes or no." if bench_name == "POPE" else " Answer the question using a single word or phrase.")
+                # Format prompt
+                if bench_name == "POPE":
+                    prompt = question + " Please answer yes or no."
+                else:
+                    prompt = question + " Answer the question using a single word or phrase."
+
                 metadata = {"_pil_image": image} if image else {}
-                es = EvalSample(id=str(j), image_path="<in_memory>" if image else "", question=prompt, ground_truth=gt, metadata=metadata)
+                es = EvalSample(
+                    id=str(j), image_path="<in_memory>" if image else "",
+                    question=prompt, ground_truth="", metadata=metadata,
+                )
 
                 prepared = eval_method.prepare_eval_input(es)
                 pred = eval_method.generate(prepared, max_new_tokens=32)
 
-                pred_c = pred.strip().lower().rstrip(".")
-                gt_c = gt.strip().lower().rstrip(".")
-                if pred_c == gt_c or gt_c in pred_c.split():
-                    correct += 1
+                # Score
+                score = vqa_accuracy(pred, answers)
+                total_score += score
                 total += 1
 
                 if (j + 1) % 100 == 0:
+                    acc = total_score / total * 100
                     elapsed = time.time() - eval_t0
                     eta = elapsed / (j + 1) * (len(eval_samples) - j - 1)
-                    print(f"   {bench_name}: {j+1}/{len(eval_samples)} ({correct}/{total}, eta={eta:.0f}s)")
+                    print(f"   {bench_name}: {j+1}/{len(eval_samples)} acc={acc:.1f}% eta={eta:.0f}s")
 
-            acc = correct / max(1, total) * 100
-            eval_results[bench_name] = {"accuracy": round(acc, 2), "correct": correct, "total": total}
-            print(f"   {P} {bench_name}: {acc:.1f}% ({correct}/{total})")
+            acc = total_score / max(1, total) * 100
+            eval_time = time.time() - eval_t0
+            results[bench_name] = {
+                "accuracy": round(acc, 2),
+                "total": total,
+                "time_s": round(eval_time),
+            }
+            print(f"   {P} {bench_name}: {acc:.1f}% ({total} samples, {eval_time:.0f}s)")
 
         except Exception as e:
             print(f"   {F} {bench_name}: {e}")
+            traceback.print_exc()
 
-    # Summary
+    return results
+
+
+# ── Main ──
+
+def main():
+    parser = argparse.ArgumentParser(description="mmit: train + eval a single method")
+    parser.add_argument("method", choices=list(METHOD_CONFIGS.keys()), help="Training method")
+    parser.add_argument("--full", action="store_true", help="Full training (all data, full eval)")
+    parser.add_argument("--train-samples", type=int, default=0, help="Max train samples (0=all)")
+    parser.add_argument("--eval-samples", type=int, default=0, help="Max eval samples per benchmark (0=all)")
+    parser.add_argument("--epochs", type=int, default=1, help="Number of training epochs")
+    parser.add_argument("--batch-size", type=int, default=1, help="Per-device batch size")
+    parser.add_argument("--grad-accum", type=int, default=8, help="Gradient accumulation steps")
+    parser.add_argument("--output", type=str, default="", help="Output directory override")
+    args = parser.parse_args()
+
+    method_name = args.method
+    mcfg = METHOD_CONFIGS[method_name]
+
+    # Defaults based on --full flag
+    if args.full:
+        num_train = args.train_samples or 0  # 0 = all
+        num_eval = args.eval_samples or 0    # 0 = all
+    else:
+        num_train = args.train_samples or 1000
+        num_eval = args.eval_samples or 200
+
+    output_dir = args.output or f"/content/mmit_output/{method_name}_experiment"
+
+    t0 = time.time()
+    print(f"{method_name.upper()} Train → Eval")
+    print(f"Model: {MODEL_ID}")
+    print(f"Train: {num_train or 'ALL'} samples, {args.epochs} epoch(s)")
+    print(f"Eval: {num_eval or 'ALL'} samples/benchmark")
+    print(f"GPU: {torch.cuda.get_device_name()}\n")
+
+    import mmit
+
+    # 1. Load model
+    print("1. Loading model...")
+    model, processor = load_model(mcfg["quantize"])
+    print()
+
+    # 2. Load data
+    print(f"2. Loading train data...")
+    processed, preproc = load_train_data(processor, max_samples=num_train)
+    print()
+
+    # 3. Setup method
+    print(f"3. Setting up {method_name}...")
+    model, method, loss_fn, info = setup_method(method_name, model, processor)
+    print(f"   {info}\n")
+
+    # 4. Train
+    print("4. Training...")
+    avg_loss, train_time, param_count = train(
+        model, method, loss_fn, processed, preproc,
+        lr=mcfg["lr"], num_epochs=args.epochs,
+        batch_size=args.batch_size, grad_accum=args.grad_accum,
+    )
+
+    # Save checkpoint
+    ckpt_path = os.path.join(output_dir, "final")
+    os.makedirs(ckpt_path, exist_ok=True)
+    method.save_checkpoint(model, processor, ckpt_path, {
+        "base_model": MODEL_ID, "method": method_name,
+        "num_samples": len(processed), "num_epochs": args.epochs,
+        "avg_loss": round(avg_loss, 6), "train_time_s": round(train_time, 1),
+    })
+    print(f"   {P} Checkpoint: {ckpt_path}\n")
+
+    # 5. Eval
+    print("5. Evaluating...")
+    eval_results = evaluate(model, processor, max_samples=num_eval)
+
+    # 6. Summary
     total_time = time.time() - t0
     print(f"\n{'='*60}")
     print(f"  {method_name.upper()} RESULTS")
     print(f"{'='*60}")
-    print(f"  Params: {trainable_count:,}")
-    print(f"  Train: {len(processed)} samples, {global_step} steps, avg_loss={avg_loss:.4f}")
+    print(f"  Params: {param_count:,}")
+    print(f"  Train: {len(processed)} samples, avg_loss={avg_loss:.4f}, time={train_time:.0f}s")
     print(f"  Eval:")
     for b, r in eval_results.items():
-        print(f"    {b}: {r['accuracy']}%")
-    print(f"  Total time: {total_time/60:.1f} min")
+        print(f"    {b}: {r['accuracy']}% ({r['total']} samples)")
+    print(f"  Total: {total_time/60:.1f} min")
+    print(f"  Checkpoint: {ckpt_path}")
     print(f"{'='*60}")
 
-    results_path = os.path.join(OUTPUT_ROOT, f"{method_name}_experiment", "results.json")
+    # Save results
+    results_path = os.path.join(output_dir, "results.json")
     with open(results_path, "w") as f:
         json.dump({
             "model": MODEL_ID, "method": method_name,
-            "trainable_params": trainable_count, "train_samples": len(processed),
-            "train_steps": global_step, "avg_loss": avg_loss, "train_time_s": train_time,
+            "trainable_params": param_count,
+            "train_samples": len(processed), "train_epochs": args.epochs,
+            "avg_loss": avg_loss, "train_time_s": train_time,
             "eval": eval_results, "total_time_s": total_time,
         }, f, indent=2)
     print(f"Saved to {results_path}")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print(f"Usage: python {sys.argv[0]} <method>")
-        print(f"Methods: {', '.join(METHOD_CONFIGS.keys())}")
-        sys.exit(1)
-
-    method_name = sys.argv[1].lower()
-    if method_name not in METHOD_CONFIGS:
-        print(f"Unknown method: {method_name}. Choose from: {', '.join(METHOD_CONFIGS.keys())}")
-        sys.exit(1)
-
-    log_path = f"/content/drive/MyDrive/mmit_results/{method_name}_train_eval.txt"
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    log_dir = "/content/drive/MyDrive/mmit_results"
+    method_name = sys.argv[1] if len(sys.argv) > 1 else "unknown"
+    log_path = f"{log_dir}/{method_name}_train_eval.txt"
+    os.makedirs(log_dir, exist_ok=True)
     log_file = open(log_path, "w")
     sys.stdout = Tee(sys.__stdout__, log_file)
     sys.stderr = Tee(sys.__stderr__, log_file)
     try:
-        main(method_name)
+        main()
     except Exception as e:
         print(f"\n{F} FAILED: {e}")
         traceback.print_exc()
