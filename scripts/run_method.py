@@ -255,20 +255,53 @@ def train(model, method, loss_fn, processed, preproc, lr, num_epochs=1, batch_si
 
 # ── Evaluation ──
 
-def vqa_accuracy(pred, gt_answers):
-    """VQA accuracy: min(#humans who said pred / 3, 1). Simplified version."""
-    pred_clean = pred.strip().lower().rstrip(".,!?")
+def _extract_short_answer(text):
+    """Extract first short answer from model output.
+
+    Models often output "Yes, there is a snowboard in the image."
+    We want just "Yes" for POPE-style benchmarks.
+    """
+    text = text.strip()
+    if not text:
+        return text
+    # For yes/no: take first word
+    first_word = text.split()[0].lower().rstrip(".,!?;:")
+    if first_word in ("yes", "no"):
+        return first_word
+    # Otherwise: take up to first period/comma (strip explanations)
+    for sep in ['.', ',', '\n']:
+        if sep in text:
+            text = text[:text.index(sep)].strip()
+    return text
+
+
+def score_prediction(pred, gt_answers, bench_name):
+    """Score using mmit's built-in VQA metrics."""
+    from mmit.eval.metrics.scoring import score_prediction as mmit_score
+
+    # Extract short answer first
+    pred_short = _extract_short_answer(pred)
+
+    # Normalize gt_answers to list of strings
     if isinstance(gt_answers, list):
-        # Multiple reference answers
-        match_count = 0
+        gt_list = []
         for ans in gt_answers:
-            ans_text = ans.get("answer", str(ans)) if isinstance(ans, dict) else str(ans)
-            if pred_clean == ans_text.strip().lower().rstrip(".,!?"):
-                match_count += 1
-        return min(match_count / 3.0, 1.0)
+            if isinstance(ans, dict):
+                gt_list.append(ans.get("answer", str(ans)))
+            else:
+                gt_list.append(str(ans))
     else:
-        gt_clean = str(gt_answers).strip().lower().rstrip(".,!?")
-        return 1.0 if pred_clean == gt_clean else 0.0
+        gt_list = [str(gt_answers)]
+
+    # Pick task type based on benchmark
+    if bench_name == "POPE":
+        task_type = "yes_no"
+    elif bench_name in ("VQAv2", "TextVQA"):
+        task_type = "open_vqa"
+    else:
+        task_type = "open_vqa"
+
+    return mmit_score(pred_short, gt_list, task_type=task_type, metric="auto")
 
 
 def evaluate(model, processor, max_samples=0):
@@ -320,8 +353,8 @@ def evaluate(model, processor, max_samples=0):
                 prepared = eval_method.prepare_eval_input(es)
                 pred = eval_method.generate(prepared, max_new_tokens=32)
 
-                # Score
-                score = vqa_accuracy(pred, answers)
+                # Score using mmit's built-in metrics
+                score = score_prediction(pred, answers, bench_name)
                 total_score += score
                 total += 1
 
