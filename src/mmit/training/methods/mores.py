@@ -252,6 +252,7 @@ class MoReSMethod(TrainingMethod):
             "share_weights": True,
             "steer_visual_only": True,
             "steer_ratio": 0.01,
+            "train_projector": False,   # per paper: only train interventions
         }
 
     def ui_params(self):
@@ -361,14 +362,16 @@ class MoReSMethod(TrainingMethod):
         pre_h = model.register_forward_pre_hook(_capture_input_ids, with_kwargs=True)
         self._hooks.append(pre_h)
 
-        # Unfreeze projector if it exists (skip quantized params)
+        # Projector: only unfreeze if config says so (default: frozen per paper)
+        train_projector = config.get("train_projector", False)
         projector_unfrozen = 0
-        for name, module in model.named_modules():
-            if "projector" in name.lower() or "multi_modal_projector" in name.lower():
-                for p in module.parameters():
-                    if p.dtype in (torch.float32, torch.float16, torch.bfloat16):
-                        p.requires_grad = True
-                        projector_unfrozen += p.numel()
+        if train_projector:
+            for name, module in model.named_modules():
+                if "projector" in name.lower() or "multi_modal_projector" in name.lower():
+                    for p in module.parameters():
+                        if p.dtype in (torch.float32, torch.float16, torch.bfloat16):
+                            p.requires_grad = True
+                            projector_unfrozen += p.numel()
 
         intervention_params = sum(
             p.numel() for iv in self._all_interventions for p in iv.parameters()
@@ -408,20 +411,21 @@ class MoReSMethod(TrainingMethod):
         return total_loss, metrics
 
     def get_trainable_params(self, model):
-        # Separate param groups: intervention gets high lr, projector gets low lr
+        # Intervention params only (projector frozen by default per paper)
         intervention_params = []
         for iv in self._all_interventions:
             intervention_params.extend(p for p in iv.parameters())
 
+        groups = [{"params": intervention_params}]  # lr set by caller
+
+        # If projector was unfrozen, add as separate group with lower lr
         projector_params = []
         for name, p in model.named_parameters():
             if p.requires_grad and "projector" in name.lower():
                 projector_params.append(p)
-
-        groups = [{"params": intervention_params}]  # lr set by caller
         if projector_params:
-            # Projector at 10x lower lr to prevent destroying alignment
             groups.append({"params": projector_params, "lr": 2e-5})
+
         return groups
 
     def save_checkpoint(self, model, processor, path, metadata):
