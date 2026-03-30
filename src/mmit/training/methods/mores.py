@@ -408,15 +408,21 @@ class MoReSMethod(TrainingMethod):
         return total_loss, metrics
 
     def get_trainable_params(self, model):
-        params = []
-        # Intervention params (deduplicated via _all_interventions)
+        # Separate param groups: intervention gets high lr, projector gets low lr
+        intervention_params = []
         for iv in self._all_interventions:
-            params.extend(p for p in iv.parameters())
-        # Projector params
+            intervention_params.extend(p for p in iv.parameters())
+
+        projector_params = []
         for name, p in model.named_parameters():
             if p.requires_grad and "projector" in name.lower():
-                params.append(p)
-        return [{"params": params}]
+                projector_params.append(p)
+
+        groups = [{"params": intervention_params}]  # lr set by caller
+        if projector_params:
+            # Projector at 10x lower lr to prevent destroying alignment
+            groups.append({"params": projector_params, "lr": 2e-5})
+        return groups
 
     def save_checkpoint(self, model, processor, path, metadata):
         os.makedirs(path, exist_ok=True)
