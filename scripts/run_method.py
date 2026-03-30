@@ -391,11 +391,13 @@ def main():
     parser.add_argument("--epochs", type=int, default=1, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, default=1, help="Per-device batch size")
     parser.add_argument("--grad-accum", type=int, default=8, help="Gradient accumulation steps")
+    parser.add_argument("--lr", type=float, default=0, help="Learning rate override (0=use method default)")
     parser.add_argument("--output", type=str, default="", help="Output directory override")
     args = parser.parse_args()
 
     method_name = args.method
     mcfg = METHOD_CONFIGS[method_name]
+    lr = args.lr or mcfg["lr"]
 
     # Defaults based on --full flag
     if args.full:
@@ -410,7 +412,7 @@ def main():
     t0 = time.time()
     print(f"{method_name.upper()} Train → Eval")
     print(f"Model: {MODEL_ID}")
-    print(f"Train: {num_train or 'ALL'} samples, {args.epochs} epoch(s)")
+    print(f"Train: {num_train or 'ALL'} samples, {args.epochs} epoch(s), lr={lr}")
     print(f"Eval: {num_eval or 'ALL'} samples/benchmark")
     print(f"GPU: {torch.cuda.get_device_name()}\n")
 
@@ -435,7 +437,7 @@ def main():
     print("4. Training...")
     avg_loss, train_time, param_count = train(
         model, method, loss_fn, processed, preproc,
-        lr=mcfg["lr"], num_epochs=args.epochs,
+        lr=lr, num_epochs=args.epochs,
         batch_size=args.batch_size, grad_accum=args.grad_accum,
     )
 
