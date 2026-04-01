@@ -35,6 +35,20 @@ DATASETS = {
     },
 }
 
+# OCR datasets for mixing
+OCR_DATASETS = {
+    "ocrvqa": {
+        "name": "howard-hou/OCR-VQA",
+        "split": "train",
+        "description": "OCR-VQA book covers (~166K)",
+    },
+    "textvqa_train": {
+        "name": "facebook/textvqa",
+        "split": "train",
+        "description": "TextVQA training set (~35K)",
+    },
+}
+
 METHOD_CONFIGS = {
     "qlora":  {"quantize": True,  "lr": 2e-4},
     "lora":   {"quantize": False, "lr": 2e-4},
@@ -99,23 +113,72 @@ def load_model(quantize_4bit):
 
 # ── Data loading ──
 
-def load_train_data(processor, max_samples=0, dataset_key="llava_mix"):
-    """Load and preprocess training data."""
+def load_train_data(processor, max_samples=0, dataset_key="llava_mix", mix_ocr=False):
+    """Load and preprocess training data, optionally mixing in OCR datasets."""
     from mmit.data.adapters.hf_datasets import HFDatasetsAdapter
     from mmit.training.preprocessors import ChatTemplatePreprocessor
+    import random
 
+    # Load main dataset
     ds_info = DATASETS[dataset_key]
     adapter = HFDatasetsAdapter(dataset_name=ds_info["name"], split=ds_info["split"])
 
+    if mix_ocr:
+        # Split allocation: 70% main, 15% OCRVQA, 15% TextVQA(train)
+        main_count = int(max_samples * 0.7) if max_samples else 0
+        ocr_count = int(max_samples * 0.15) if max_samples else 0
+        textvqa_count = max_samples - main_count - ocr_count if max_samples else 0
+    else:
+        main_count = max_samples
+        ocr_count = 0
+        textvqa_count = 0
+
+    # Load main samples
     samples = []
     for i, s in enumerate(adapter):
         samples.append(s)
-        if max_samples and i >= max_samples - 1:
+        if main_count and i >= main_count - 1:
             break
-        if (i + 1) % 10000 == 0:
-            print(f"   Loaded {i+1} samples...")
+    print(f"   Main: {len(samples)} samples")
 
-    print(f"   {len(samples)} raw samples loaded")
+    # Load OCR datasets if requested
+    if mix_ocr and ocr_count > 0:
+        try:
+            ocr_adapter = HFDatasetsAdapter(
+                dataset_name="howard-hou/OCR-VQA", split="train"
+            )
+            ocr_samples = []
+            for i, s in enumerate(ocr_adapter):
+                if s.turns and s.image_path:  # skip empty
+                    ocr_samples.append(s)
+                if len(ocr_samples) >= ocr_count:
+                    break
+            samples.extend(ocr_samples)
+            print(f"   OCRVQA: {len(ocr_samples)} samples")
+        except Exception as e:
+            print(f"   OCRVQA failed: {e}")
+
+    if mix_ocr and textvqa_count > 0:
+        try:
+            tvqa_adapter = HFDatasetsAdapter(
+                dataset_name="facebook/textvqa", split="train"
+            )
+            tvqa_samples = []
+            for i, s in enumerate(tvqa_adapter):
+                if s.turns and s.image_path:
+                    tvqa_samples.append(s)
+                if len(tvqa_samples) >= textvqa_count:
+                    break
+            samples.extend(tvqa_samples)
+            print(f"   TextVQA(train): {len(tvqa_samples)} samples")
+        except Exception as e:
+            print(f"   TextVQA(train) failed: {e}")
+
+    # Shuffle mixed data
+    if mix_ocr:
+        random.shuffle(samples)
+
+    print(f"   Total: {len(samples)} raw samples")
 
     preproc = ChatTemplatePreprocessor()
     processed, errors = [], 0
@@ -393,6 +456,7 @@ def main():
     parser.add_argument("--grad-accum", type=int, default=8, help="Gradient accumulation steps")
     parser.add_argument("--lr", type=float, default=0, help="Learning rate override (0=use method default)")
     parser.add_argument("--output", type=str, default="", help="Output directory override")
+    parser.add_argument("--mix-ocr", action="store_true", help="Mix in OCR datasets (OCRVQA + TextVQA train) for better TextVQA")
     args = parser.parse_args()
 
     method_name = args.method
@@ -425,7 +489,7 @@ def main():
 
     # 2. Load data
     print(f"2. Loading train data...")
-    processed, preproc = load_train_data(processor, max_samples=num_train)
+    processed, preproc = load_train_data(processor, max_samples=num_train, mix_ocr=args.mix_ocr)
     print()
 
     # 3. Setup method
