@@ -17,7 +17,7 @@ processor = AutoProcessor.from_pretrained(MODEL)
 model = AutoVLM.from_pretrained(MODEL, torch_dtype=torch.bfloat16, device_map="auto")
 
 print("Loading TextVQA...")
-ds = load_dataset("facebook/textvqa", split="validation")
+ds = load_dataset("lmms-lab/textvqa", split="validation")
 
 correct = 0
 total = 10
