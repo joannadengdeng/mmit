@@ -8,7 +8,7 @@ try:
 except ImportError:
     from transformers import AutoModelForVision2Seq as AutoVLM
 from datasets import load_dataset
-from mmit.eval.metrics.scoring import normalize_vqa
+from mmit.eval.metrics.vqa import normalize_answer as normalize_vqa
 
 MODEL = "llava-hf/llava-1.5-7b-hf"
 
