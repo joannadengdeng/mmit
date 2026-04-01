@@ -449,7 +449,21 @@ def main():
         "num_samples": len(processed), "num_epochs": args.epochs,
         "avg_loss": round(avg_loss, 6), "train_time_s": round(train_time, 1),
     })
-    print(f"   {P} Checkpoint: {ckpt_path}\n")
+    print(f"   {P} Checkpoint: {ckpt_path}")
+
+    # Backup checkpoint to Google Drive
+    drive_ckpt = f"/content/drive/MyDrive/mmit_checkpoints/{method_name}_{len(processed)}samples"
+    try:
+        import shutil
+        if os.path.exists("/content/drive/MyDrive"):
+            os.makedirs(drive_ckpt, exist_ok=True)
+            shutil.copytree(ckpt_path, os.path.join(drive_ckpt, "final"), dirs_exist_ok=True)
+            print(f"   {P} Backed up to Drive: {drive_ckpt}")
+        else:
+            print("   (Drive not mounted, skipping backup)")
+    except Exception as e:
+        print(f"   (Drive backup failed: {e})")
+    print()
 
     # 5. Eval
     print("5. Evaluating...")
@@ -480,6 +494,14 @@ def main():
             "eval": eval_results, "total_time_s": total_time,
         }, f, indent=2)
     print(f"Saved to {results_path}")
+
+    # Backup results to Drive checkpoint dir
+    try:
+        if os.path.exists(drive_ckpt):
+            shutil.copy2(results_path, os.path.join(drive_ckpt, "results.json"))
+            print(f"Results backed up to {drive_ckpt}/results.json")
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
