@@ -176,12 +176,3 @@ class QLoRAMethod(LoRAMethod):
         return True
 
 
-class DoRAMethod(LoRAMethod):
-    """DoRA: Weight-Decomposed Low-Rank Adaptation."""
-
-    name = "dora"
-    display_name = "DoRA"
-    paper_ref = "Liu et al., ICML 2024"
-
-    def _lora_kwargs(self):
-        return {"use_dora": True}

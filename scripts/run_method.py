@@ -10,7 +10,7 @@ Usage:
     # Custom size
     python scripts/run_method.py mores --train-samples 5000 --eval-samples 500
 
-Supported methods: qlora, lora, dora, freeze, l2t, mores
+Supported methods: qlora, lora, freeze, l2t, mores
 """
 import sys, os, time, math, gc, json, traceback, argparse
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -52,7 +52,6 @@ OCR_DATASETS = {
 METHOD_CONFIGS = {
     "qlora":  {"quantize": True,  "lr": 2e-4},
     "lora":   {"quantize": False, "lr": 2e-4},
-    "dora":   {"quantize": False, "lr": 2e-4},
     "freeze": {"quantize": False, "lr": 2e-4},
     "l2t":    {"quantize": True,  "lr": 2e-4},
     "mores":  {"quantize": False, "lr": 1e-3},
@@ -209,13 +208,6 @@ def setup_method(method_name, model, processor):
     elif method_name == "lora":
         from mmit.training.methods.lora import LoRAMethod
         m = LoRAMethod()
-        c = {**m.default_config(), "lora_r": 8, "lora_alpha": 16, "freeze_patterns": ["vision_tower"]}
-        model, info = m.prepare_model(model, processor, c)
-        return model, m, CrossEntropyLoss(), info
-
-    elif method_name == "dora":
-        from mmit.training.methods.lora import DoRAMethod
-        m = DoRAMethod()
         c = {**m.default_config(), "lora_r": 8, "lora_alpha": 16, "freeze_patterns": ["vision_tower"]}
         model, info = m.prepare_model(model, processor, c)
         return model, m, CrossEntropyLoss(), info

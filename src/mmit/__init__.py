@@ -24,13 +24,12 @@ registry.register("method", "litellm", LiteLLMMethod)
 
 # ---------- Training Methods ----------
 from mmit.training.methods import (
-    QLoRAMethod, LoRAMethod, DoRAMethod, FullFTMethod,
+    QLoRAMethod, LoRAMethod, FullFTMethod,
     FreezeTuningMethod, L2TMethod, MoReSMethod,
 )
 from mmit.training.methods.lora_in_lora import LoRAInLoRAMethod
 registry.register("training_method", "qlora", QLoRAMethod)
 registry.register("training_method", "lora", LoRAMethod)
-registry.register("training_method", "dora", DoRAMethod)
 registry.register("training_method", "full_ft", FullFTMethod)
 registry.register("training_method", "freeze", FreezeTuningMethod)
 registry.register("training_method", "l2t", L2TMethod)
