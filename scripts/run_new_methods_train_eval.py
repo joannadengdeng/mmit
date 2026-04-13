@@ -268,18 +268,23 @@ def evaluate(model, processor, max_samples):
     results = {}
 
     for bench_name, hf_id, split in [
-        ("VQAv2", "lmms-lab/VQAv2", "validation"),
         ("POPE", "lmms-lab/POPE", "test"),
         ("TextVQA", "lmms-lab/textvqa", "validation"),
+        ("VQAv2", "lmms-lab/VQAv2", "validation"),
     ]:
-        print(f"   --- {bench_name} ---")
+        print(f"   --- {bench_name} ---", flush=True)
         try:
+            print(f"   Loading {hf_id} ...", flush=True)
             ds = load_dataset(hf_id, split=split, streaming=True)
             eval_samples = []
+            dl_t0 = time.time()
             for j, row in enumerate(ds):
                 if max_samples and j >= max_samples:
                     break
                 eval_samples.append(row)
+                if (j + 1) % 50 == 0:
+                    print(f"   Downloaded {j+1} samples ({time.time()-dl_t0:.0f}s)", flush=True)
+            print(f"   {P} {len(eval_samples)} samples loaded ({time.time()-dl_t0:.0f}s)", flush=True)
 
             correct, total = 0, 0
             eval_t0 = time.time()
@@ -316,19 +321,19 @@ def evaluate(model, processor, max_samples):
                     correct += 1
                 total += 1
 
-                if (j + 1) % 20 == 0:
+                if (j + 1) % 10 == 0:
                     elapsed = time.time() - eval_t0
                     eta = elapsed / (j + 1) * (len(eval_samples) - j - 1)
                     acc_so_far = correct / total * 100 if total else 0
-                    print(f"   {bench_name}: {j+1}/{len(eval_samples)} acc={acc_so_far:.1f}% eta={eta:.0f}s")
+                    print(f"   {bench_name}: {j+1}/{len(eval_samples)} acc={acc_so_far:.1f}% eta={eta:.0f}s", flush=True)
 
             acc = correct / max(1, total) * 100
             eval_time = time.time() - eval_t0
             results[bench_name] = {"accuracy": round(acc, 2), "correct": correct, "total": total}
-            print(f"   {P} {bench_name}: {acc:.1f}% ({correct}/{total}) in {eval_time:.0f}s")
+            print(f"   {P} {bench_name}: {acc:.1f}% ({correct}/{total}) in {eval_time:.0f}s", flush=True)
 
         except Exception as e:
-            print(f"   {F} {bench_name}: {e}")
+            print(f"   {F} {bench_name}: {e}", flush=True)
             traceback.print_exc()
 
     return results
