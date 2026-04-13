@@ -145,6 +145,11 @@ def _inject_mole_layers(
         short = name.split(".")[-1]
         if short in mlp_targets and isinstance(module, nn.Linear):
             mole = MoLELayer(module, num_experts, rank, alpha, dropout)
+            # Move experts + router to same device/dtype as the base linear
+            device = module.weight.device
+            dtype = module.weight.dtype
+            mole.experts.to(device=device, dtype=dtype)
+            mole.router.to(device=device, dtype=dtype)
             # Replace the module in the parent
             parts = name.rsplit(".", 1)
             if len(parts) == 2:
