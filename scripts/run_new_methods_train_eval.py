@@ -204,7 +204,7 @@ def train_method(model, method, loss_fn, processed, preproc, lr,
         return 0.5 * (1.0 + math.cos(math.pi * progress))
 
     scheduler = LambdaLR(optimizer, lr_lambda)
-    log_interval = max(1, total_steps // 10)
+    log_interval = max(1, total_steps // 20)
 
     print(f"   Steps: {total_steps}, Params: {trainable_count:,}, LR: {lr}")
     global_step, total_loss = 0, 0.0
@@ -316,10 +316,11 @@ def evaluate(model, processor, max_samples):
                     correct += 1
                 total += 1
 
-                if (j + 1) % 100 == 0:
+                if (j + 1) % 20 == 0:
                     elapsed = time.time() - eval_t0
                     eta = elapsed / (j + 1) * (len(eval_samples) - j - 1)
-                    print(f"   {bench_name}: {j+1}/{len(eval_samples)} ({correct}/{total}, eta={eta:.0f}s)")
+                    acc_so_far = correct / total * 100 if total else 0
+                    print(f"   {bench_name}: {j+1}/{len(eval_samples)} acc={acc_so_far:.1f}% eta={eta:.0f}s")
 
             acc = correct / max(1, total) * 100
             eval_time = time.time() - eval_t0
@@ -353,8 +354,8 @@ def main():
                         help=f"Comma-separated methods to run (default: all)")
     parser.add_argument("--lavender", action="store_true",
                         help="Add Lavender attention alignment loss")
-    parser.add_argument("--train-samples", type=int, default=1000)
-    parser.add_argument("--eval-samples", type=int, default=200)
+    parser.add_argument("--train-samples", type=int, default=500)
+    parser.add_argument("--eval-samples", type=int, default=100)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--grad-accum", type=int, default=8)
