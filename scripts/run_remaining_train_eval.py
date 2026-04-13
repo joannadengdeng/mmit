@@ -271,7 +271,7 @@ def _setup_lora(model, processor):
 
 
 def _setup_dora(model, processor):
-    from mmit.training.methods.lora import DoRAMethod
+    from mmit.training.methods.dora import DoRAMethod
     from mmit.training.losses import CrossEntropyLoss
     method = DoRAMethod()
     config = {**method.default_config(), "lora_r": 8, "lora_alpha": 16, "freeze_patterns": ["vision_tower"]}
