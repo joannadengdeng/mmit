@@ -249,36 +249,49 @@ def _merge_method_defaults(cfg: TrainingConfig) -> None:
 # ── Conversion ───────────────────────────────────────────────────────
 
 def config_to_trainer_dict(cfg: TrainingConfig) -> dict:
-    """Convert TrainingConfig to the flat dict format expected by __main__.py.
+    """Convert TrainingConfig to the multi-stage dict format expected by __main__.py.
+
+    Single-stage training is represented as a stages list with one entry.
 
     Returns
     -------
     dict
-        ``{"method": {...}, "training": {...}, "data": {...}}``
+        ``{"model": {...}, "stages": [{...}]}``
     """
+    data_source = {
+        "adapter": cfg.data.adapter,
+        "dataset": cfg.data.data_path,
+        "split": cfg.data.split,
+        "image_root": cfg.data.image_root,
+    }
+    if cfg.data.max_samples:
+        data_source["max_samples"] = cfg.data.max_samples
+
     return {
-        "method": {
+        "model": {
             "model_path": cfg.model.model_path,
             "family": cfg.model.family,
         },
-        "training": {
-            "ft_method": cfg.training.ft_method,
-            "num_epochs": cfg.training.num_epochs,
-            "per_device_batch_size": cfg.training.per_device_batch_size,
-            "gradient_accumulation_steps": cfg.training.gradient_accumulation_steps,
-            "learning_rate": cfg.training.learning_rate,
-            "warmup_ratio": cfg.training.warmup_ratio,
-            "weight_decay": cfg.training.weight_decay,
-            "max_grad_norm": cfg.training.max_grad_norm,
-            "save_steps": cfg.training.save_steps,
-            "output_dir": cfg.training.output_dir,
-            "params": cfg.training.params,
-        },
-        "data": {
-            "adapter": cfg.data.adapter,
-            "data_path": cfg.data.data_path,
-            "split": cfg.data.split,
-            "image_root": cfg.data.image_root,
-            "max_samples": cfg.data.max_samples,
-        },
+        "stages": [{
+            "name": "training",
+            "data": {
+                "sources": [data_source],
+                "mixer": "concat",
+            },
+            "preprocessor": "chat_template",
+            "training_method": cfg.training.ft_method,
+            "method_params": cfg.training.params,
+            "loss": "ce",
+            "training": {
+                "num_epochs": cfg.training.num_epochs,
+                "per_device_batch_size": cfg.training.per_device_batch_size,
+                "gradient_accumulation_steps": cfg.training.gradient_accumulation_steps,
+                "learning_rate": cfg.training.learning_rate,
+                "warmup_ratio": cfg.training.warmup_ratio,
+                "weight_decay": cfg.training.weight_decay,
+                "max_grad_norm": cfg.training.max_grad_norm,
+                "save_steps": cfg.training.save_steps,
+                "output_dir": cfg.training.output_dir,
+            },
+        }],
     }

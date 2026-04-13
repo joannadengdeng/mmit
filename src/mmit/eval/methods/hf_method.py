@@ -82,6 +82,16 @@ MODEL_FAMILY_CONFIGS: Dict[str, FamilyConfig] = {
             "google/gemma-3n-E4B-it",
         ],
     ),
+    "mllama": FamilyConfig(
+        auto_class="MllamaForConditionalGeneration",
+        supports_chat_template=True,
+        image_token="",
+        supports_chat_api=True,
+        default_models=[
+            "meta-llama/Llama-3.2-11B-Vision-Instruct",
+            "meta-llama/Llama-3.2-90B-Vision-Instruct",
+        ],
+    ),
     "llama4": FamilyConfig(
         auto_class="Llama4ForConditionalGeneration",
         supports_chat_template=True,
@@ -171,6 +181,11 @@ def detect_model_family(model_id: str) -> str:
     # Gemma 3 (including gemma-3n)
     if "gemma-3" in name or "gemma3" in name:
         return "gemma3"
+    # Llama 3.2 Vision (Mllama) — must check before Llama 4
+    if ("llama-3" in full_lower or "llama3" in full_lower) and (
+        "vision" in full_lower or "11b" in name or "90b" in name
+    ):
+        return "mllama"
     # Llama 4
     if "llama-4" in name or "llama4" in name:
         return "llama4"
@@ -203,6 +218,8 @@ def detect_model_family(model_id: str) -> str:
             return "qwen2_vl"
         if "gemma3" in arch_lower:
             return "gemma3"
+        if "mllama" in arch_lower:
+            return "mllama"
         if "llama4" in arch_lower:
             return "llama4"
         if "glm4v" in arch_lower or "glm4" in arch_lower:

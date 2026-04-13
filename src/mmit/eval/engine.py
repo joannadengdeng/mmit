@@ -34,9 +34,11 @@ class EvalEngine:
         self,
         max_new_tokens: int = 512,
         temperature: float = 0.0,
+        experiment_tracker=None,
     ) -> None:
         self.max_new_tokens = max_new_tokens
         self.temperature = temperature
+        self._tracker = experiment_tracker  # Optional ExperimentTracker
 
     # ------------------------------------------------------------------
     def run(
@@ -106,4 +108,14 @@ class EvalEngine:
                 fout.close()
 
         metrics = benchmark.score(predictions)
+
+        # Persist to experiment tracker (if available)
+        if self._tracker is not None:
+            bench_name = type(benchmark).__name__.replace("Benchmark", "").lower()
+            self._tracker.log_eval(
+                benchmark=bench_name,
+                scores=metrics,
+                predictions=predictions,
+            )
+
         return metrics

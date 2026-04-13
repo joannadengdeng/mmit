@@ -88,11 +88,13 @@ class StageConfig:
 class StageRunner:
     """Orchestrates multi-stage training."""
 
-    def __init__(self, model_path: str, model_family: str = ""):
+    def __init__(self, model_path: str, model_family: str = "",
+                 experiment_tracker=None):
         self.model_path = model_path
         self.model_family = model_family
         self._model = None
         self._processor = None
+        self._tracker = experiment_tracker  # Optional ExperimentTracker
 
     def _load_model(self, method_obj):
         """Load base model and processor."""
@@ -268,7 +270,7 @@ class StageRunner:
 
                     elapsed = time.time() - start_time
                     eta = elapsed / global_step * (total_steps - global_step) if global_step > 0 else 0
-                    _emit("metric", {
+                    step_metrics = {
                         "stage": stage.name,
                         "step": global_step,
                         "total": total_steps,
@@ -279,7 +281,15 @@ class StageRunner:
                         "lr": scheduler.get_last_lr()[0],
                         "eta": round(eta, 1),
                         **{k: round(v, 6) for k, v in metrics.items()},
-                    })
+                    }
+                    _emit("metric", step_metrics)
+
+                    # Persist to experiment tracker (if available)
+                    if self._tracker is not None:
+                        self._tracker.log_train_step(**{
+                            k: v for k, v in step_metrics.items()
+                            if k not in ("stage", "total", "total_epochs")
+                        })
 
                     if stage.save_steps > 0 and global_step % stage.save_steps == 0:
                         ckpt_path = os.path.join(stage.output_dir, f"checkpoint-{global_step}")
@@ -291,11 +301,27 @@ class StageRunner:
 
         # Save final checkpoint for this stage
         final_path = os.path.join(stage.output_dir, "final")
+        # If tracker available, save checkpoint into experiment dir
+        if self._tracker is not None:
+            final_path = self._tracker.get_checkpoint_dir()
         method_obj.save_checkpoint(self._model, self._processor, final_path, {
             "base_model": self.model_path,
             "stage": stage.name,
             "final_loss": round(total_loss / max(1, global_step), 6),
         })
+
+        # Record training summary to experiment tracker
+        if self._tracker is not None:
+            trainable = sum(p.numel() for p in self._model.parameters() if p.requires_grad)
+            total_params = sum(p.numel() for p in self._model.parameters())
+            self._tracker.log_train_summary(
+                avg_loss=total_loss / max(1, global_step),
+                total_steps=global_step,
+                train_time_s=time.time() - start_time,
+                trainable_params=trainable,
+                total_params=total_params,
+            )
+            self._tracker.set_checkpoint_path(final_path)
 
         _emit("status", {
             "status": "stage_completed",

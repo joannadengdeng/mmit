@@ -10,7 +10,7 @@ Usage:
     # Custom size
     python scripts/run_method.py mores --train-samples 5000 --eval-samples 500
 
-Supported methods: qlora, lora, freeze, l2t, mores
+Supported methods: qlora, lora, dora, randlora, freeze, l2t, mores, mole, reft
 """
 import sys, os, time, math, gc, json, traceback, argparse
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -50,11 +50,15 @@ OCR_DATASETS = {
 }
 
 METHOD_CONFIGS = {
-    "qlora":  {"quantize": True,  "lr": 2e-4},
-    "lora":   {"quantize": False, "lr": 2e-4},
-    "freeze": {"quantize": False, "lr": 2e-4},
-    "l2t":    {"quantize": True,  "lr": 2e-4},
-    "mores":  {"quantize": False, "lr": 1e-3},
+    "qlora":    {"quantize": True,  "lr": 2e-4},
+    "lora":     {"quantize": False, "lr": 2e-4},
+    "dora":     {"quantize": True,  "lr": 2e-4},
+    "randlora": {"quantize": True,  "lr": 2e-4},
+    "freeze":   {"quantize": False, "lr": 2e-4},
+    "l2t":      {"quantize": True,  "lr": 2e-4},
+    "mores":    {"quantize": False, "lr": 1e-3},
+    "mole":     {"quantize": False, "lr": 2e-4},
+    "reft":     {"quantize": False, "lr": 1e-3},
 }
 
 # Eval benchmarks with proper scoring
@@ -226,12 +230,48 @@ def setup_method(method_name, model, processor):
         model, info = m.prepare_model(model, processor, c)
         return model, m, CrossEntropyLoss(), info
 
+    elif method_name == "dora":
+        from mmit.training.methods.dora import DoRAMethod
+        m = DoRAMethod()
+        c = {**m.default_config(), "lora_r": 8, "lora_alpha": 16, "freeze_patterns": ["vision_tower"]}
+        model, info = m.prepare_model(model, processor, c)
+        return model, m, CrossEntropyLoss(), info
+
+    elif method_name == "randlora":
+        from mmit.training.methods.randlora import RandLoRAMethod
+        m = RandLoRAMethod()
+        c = {**m.default_config(), "lora_r": 8, "lora_alpha": 16, "freeze_patterns": ["vision_tower"]}
+        model, info = m.prepare_model(model, processor, c)
+        return model, m, CrossEntropyLoss(), info
+
     elif method_name == "mores":
         from mmit.training.methods.mores import MoReSMethod
         m = MoReSMethod()
         c = {**m.default_config(), "intervention_rank": 1, "positions": "f4+l5", "steer_ratio": 0.01, "dropout": 0.0}
         model, info = m.prepare_model(model, processor, c)
         return model, m, CEPlusOrthoLoss(ortho_weight=0.01), info
+
+    elif method_name == "mole":
+        from mmit.training.methods.mole import MoLEMethod
+        m = MoLEMethod()
+        c = {**m.default_config(), "num_experts": 4, "lora_r": 8, "lora_alpha": 16,
+             "freeze_patterns": ["vision_tower", "vision_model"]}
+        model, info = m.prepare_model(model, processor, c)
+        # MoLE has its own compute_loss with balance loss
+        class _MoLELoss:
+            def compute(self, model, batch, outputs):
+                return m.compute_loss(model, batch, outputs)
+        return model, m, _MoLELoss(), info
+
+    elif method_name == "reft":
+        from mmit.training.methods.reft import ReFTMethod
+        m = ReFTMethod()
+        c = {**m.default_config(), "intervention_rank": 4, "positions": "f4+l5", "dropout": 0.0}
+        model, info = m.prepare_model(model, processor, c)
+        class _ReFTLoss:
+            def compute(self, model, batch, outputs):
+                return m.compute_loss(model, batch, outputs)
+        return model, m, _ReFTLoss(), info
 
     else:
         raise ValueError(f"Unknown method: {method_name}")

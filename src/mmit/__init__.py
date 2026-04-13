@@ -24,17 +24,22 @@ registry.register("method", "litellm", LiteLLMMethod)
 
 # ---------- Training Methods ----------
 from mmit.training.methods import (
-    QLoRAMethod, LoRAMethod, FullFTMethod,
-    FreezeTuningMethod, L2TMethod, MoReSMethod,
+    QLoRAMethod, LoRAMethod, DoRAMethod, RandLoRAMethod,
+    FullFTMethod, FreezeTuningMethod, L2TMethod, MoReSMethod,
+    MoLEMethod, ReFTMethod,
 )
 from mmit.training.methods.lora_in_lora import LoRAInLoRAMethod
 registry.register("training_method", "qlora", QLoRAMethod)
 registry.register("training_method", "lora", LoRAMethod)
+registry.register("training_method", "dora", DoRAMethod)
+registry.register("training_method", "randlora", RandLoRAMethod)
 registry.register("training_method", "full_ft", FullFTMethod)
 registry.register("training_method", "freeze", FreezeTuningMethod)
 registry.register("training_method", "l2t", L2TMethod)
 registry.register("training_method", "mores", MoReSMethod)
 registry.register("training_method", "lora_in_lora", LoRAInLoRAMethod)
+registry.register("training_method", "mole", MoLEMethod)
+registry.register("training_method", "reft", ReFTMethod)
 
 # ---------- Preprocessors ----------
 from mmit.training.preprocessors import ChatTemplatePreprocessor, MultiImagePreprocessor
@@ -69,8 +74,9 @@ __all__ = [
     "ResultsManager", "PredictionRecord",
     "CanonicalSample", "EvalSample", "Turn",
     "HFDatasetsAdapter", "DatasetProfile", "LLaVAJSONAdapter",
-    "QLoRAMethod", "LoRAMethod", "DoRAMethod", "FullFTMethod",
+    "QLoRAMethod", "LoRAMethod", "DoRAMethod", "RandLoRAMethod", "FullFTMethod",
     "FreezeTuningMethod", "L2TMethod", "MoReSMethod", "LoRAInLoRAMethod",
+    "MoLEMethod", "ReFTMethod",
     "ChatTemplatePreprocessor", "MultiImagePreprocessor",
     "ConcatMixer", "WeightedInterleaveMixer",
     "CrossEntropyLoss", "CEPlusOrthoLoss",
