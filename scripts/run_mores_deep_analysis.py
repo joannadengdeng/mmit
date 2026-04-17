@@ -392,7 +392,6 @@ def evaluate(model, processor):
 
     for bench_name, hf_id, split in [
         ("POPE", "lmms-lab/POPE", "test"),
-        ("TextVQA", "lmms-lab/textvqa", "validation"),
         ("VQAv2", "lmms-lab/VQAv2", "validation"),
     ]:
         print(f"   --- {bench_name} ---", flush=True)
@@ -510,57 +509,24 @@ def run_one_config(config_name, mores_config, processed, preproc):
 # ═══════════════════════════════════════════════════════════════
 
 EXPERIMENTS = {
-    "positions": {
-        "description": "Layer position sweep — which layers matter most?",
+    # Compact: 6 configs, each answers one key question vs the baseline
+    "core": {
+        "description": "Core ablation: 6 configs covering the most important axes",
         "configs": [
-            ("pos_f4+l5",  {"positions": "f4+l5"}),
-            ("pos_all",    {"positions": "all"}),
-            ("pos_l10",    {"positions": "l10"}),
-            ("pos_f8+l8",  {"positions": "f8+l8"}),
-            ("pos_f4",     {"positions": "f4"}),
-            ("pos_l5",     {"positions": "l5"}),
-            ("pos_middle", {"positions": [12,13,14,15,16,17,18,19]}),
-        ],
-    },
-    "rank": {
-        "description": "Intervention rank sweep — is d=1 really optimal?",
-        "configs": [
-            ("rank_1",  {"intervention_rank": 1}),
-            ("rank_2",  {"intervention_rank": 2}),
-            ("rank_4",  {"intervention_rank": 4}),
-            ("rank_8",  {"intervention_rank": 8}),
-            ("rank_16", {"intervention_rank": 16}),
-        ],
-    },
-    "steer_ratio": {
-        "description": "Steer ratio sweep — how many visual tokens to steer?",
-        "configs": [
-            ("ratio_0.01", {"steer_ratio": 0.01}),
-            ("ratio_0.05", {"steer_ratio": 0.05}),
-            ("ratio_0.10", {"steer_ratio": 0.1}),
-            ("ratio_0.50", {"steer_ratio": 0.5}),
-            ("ratio_1.00", {"steer_ratio": 1.0}),
-        ],
-    },
-    "sharing": {
-        "description": "Shared vs independent weights across layers",
-        "configs": [
-            ("shared",      {"share_weights": True}),
-            ("independent", {"share_weights": False}),
-        ],
-    },
-    "projector": {
-        "description": "Effect of unfreezing the vision-language projector",
-        "configs": [
-            ("proj_frozen",   {"train_projector": False}),
+            # Baseline (paper defaults)
+            ("baseline",      {"intervention_rank": 1, "positions": "f4+l5",
+                               "steer_ratio": 0.01, "steer_visual_only": True,
+                               "share_weights": True, "train_projector": False}),
+            # Q1: is rank=1 really optimal?
+            ("rank_4",        {"intervention_rank": 4}),
+            # Q2: steer all visual tokens vs top 1%?
+            ("ratio_1.0",     {"steer_ratio": 1.0}),
+            # Q3: intervene all 32 layers vs selected?
+            ("all_layers",    {"positions": "all"}),
+            # Q4: unfreeze projector helps?
             ("proj_unfrozen", {"train_projector": True}),
-        ],
-    },
-    "steer_target": {
-        "description": "Visual-only vs all-token steering",
-        "configs": [
-            ("visual_only",  {"steer_visual_only": True, "steer_ratio": 0.01}),
-            ("all_tokens",   {"steer_visual_only": False}),
+            # Q5: steer all tokens (text+visual) vs visual-only?
+            ("all_tokens",    {"steer_visual_only": False}),
         ],
     },
 }
@@ -572,7 +538,7 @@ EXPERIMENTS = {
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--exp", type=str, default="all",
+    parser.add_argument("--exp", type=str, default="core",
                         help=f"Which experiment to run: {list(EXPERIMENTS.keys())} or 'all'")
     args = parser.parse_args()
 
