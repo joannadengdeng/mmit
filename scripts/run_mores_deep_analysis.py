@@ -540,6 +540,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--exp", type=str, default="core",
                         help=f"Which experiment to run: {list(EXPERIMENTS.keys())} or 'all'")
+    parser.add_argument("--config", type=str, default="",
+                        help="Run a single config by name, e.g. --config baseline")
     args = parser.parse_args()
 
     if args.exp == "all":
@@ -578,7 +580,14 @@ def main():
         print(f"{'#'*60}", flush=True)
 
         exp_results = {}
-        for config_name, config_overrides in exp["configs"]:
+        configs_to_run = exp["configs"]
+        if args.config:
+            configs_to_run = [(n, c) for n, c in configs_to_run if n == args.config]
+            if not configs_to_run:
+                avail = [n for n, _ in exp["configs"]]
+                print(f"   {FL} Config '{args.config}' not found. Available: {avail}", flush=True)
+                continue
+        for config_name, config_overrides in configs_to_run:
             try:
                 result = run_one_config(config_name, config_overrides, processed, preproc)
                 exp_results[config_name] = result
@@ -593,8 +602,8 @@ def main():
         print(f"\n{'─'*80}", flush=True)
         print(f"  {exp_name} SUMMARY", flush=True)
         print(f"{'─'*80}", flush=True)
-        print(f"{'Config':<20} {'Params':>8} {'Loss':>8} {'VQAv2':>8} {'POPE':>8} {'TextVQA':>8} {'Time':>6}", flush=True)
-        print(f"{'─'*80}", flush=True)
+        print(f"{'Config':<20} {'Params':>8} {'Loss':>8} {'POPE':>8} {'VQAv2':>8} {'Time':>6}", flush=True)
+        print(f"{'─'*70}", flush=True)
         for cname, res in exp_results.items():
             if "error" in res:
                 print(f"{cname:<20} FAILED", flush=True)
@@ -602,11 +611,10 @@ def main():
             params = f"{res['trainable_params']/1e3:.0f}K" if res['trainable_params'] < 1e6 else f"{res['trainable_params']/1e6:.1f}M"
             loss = f"{res['avg_loss']:.4f}"
             ev = res.get("eval", {})
-            vqa = ev.get("VQAv2", {}).get("accuracy", "-")
             pope = ev.get("POPE", {}).get("accuracy", "-")
-            tvqa = ev.get("TextVQA", {}).get("accuracy", "-")
+            vqa = ev.get("VQAv2", {}).get("accuracy", "-")
             tt = f"{res['train_time_s']}s"
-            print(f"{cname:<20} {params:>8} {loss:>8} {vqa:>8} {pope:>8} {tvqa:>8} {tt:>6}", flush=True)
+            print(f"{cname:<20} {params:>8} {loss:>8} {pope:>8} {vqa:>8} {tt:>6}", flush=True)
 
         # Save per-experiment results (including probe data)
         exp_path = os.path.join(OUTPUT_ROOT, f"{exp_name}_results.json")
