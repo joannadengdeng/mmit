@@ -57,9 +57,10 @@ registry.register("filter", "composite", CompositeFilter)
 registry.register("filter", "text_length", TextLengthFilter)
 
 # ---------- Loss Functions ----------
-from mmit.training.losses import CrossEntropyLoss, CEPlusOrthoLoss
+from mmit.training.losses import CrossEntropyLoss, CEPlusOrthoLoss, LavenderLoss
 registry.register("loss", "ce", CrossEntropyLoss)
 registry.register("loss", "ce_ortho", CEPlusOrthoLoss)
+registry.register("loss", "lavender", LavenderLoss)
 
 # ---------- Results ----------
 from mmit.results import PredictionRecord, ResultsManager

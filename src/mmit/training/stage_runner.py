@@ -218,6 +218,12 @@ class StageRunner:
 
         # Training setup
         param_groups = method_obj.get_trainable_params(self._model)
+        # If loss function has its own trainable params (e.g. Lavender's aligner),
+        # add them to the optimizer as a separate param group.
+        if hasattr(loss_obj, "get_trainable_params"):
+            loss_params = loss_obj.get_trainable_params()
+            if loss_params:
+                param_groups.append({"params": loss_params})
         for pg in param_groups:
             pg.setdefault("lr", stage.learning_rate)
         optimizer = AdamW(param_groups, weight_decay=stage.weight_decay)

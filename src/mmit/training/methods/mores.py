@@ -135,18 +135,30 @@ class OrthogonalIntervention(nn.Module):
         return h_out
 
 
-def _parse_positions(position_str: str, num_layers: int) -> List[int]:
-    """Parse position string like 'f4+l5' into layer indices.
+def _parse_positions(positions, num_layers: int) -> List[int]:
+    """Parse layer positions into indices. Accepts multiple formats:
 
-    f4 = first 4 layers: [0, 1, 2, 3]
-    l5 = last 5 layers:  [n-5, n-4, n-3, n-2, n-1]
-    all = all layers
+    String shortcuts:
+      "f4+l5" → first 4 + last 5 = [0,1,2,3,27,28,29,30,31]
+      "all"   → [0,1,...,31]
+      "f4"    → [0,1,2,3]
+      "l5"    → [27,28,29,30,31]
+
+    Direct specification:
+      [0, 1, 2, 3, 27, 28, 29, 30, 31]  → used as-is
+      "0+1+2+3+27+28+29+30+31"          → parsed from string
     """
-    if position_str.strip().lower() == "all":
+    # ── List of ints: use directly ──
+    if isinstance(positions, list):
+        return sorted(idx for idx in positions if 0 <= idx < num_layers)
+
+    # ── String format ──
+    position_str = str(positions).strip().lower()
+    if position_str == "all":
         return list(range(num_layers))
 
     layers = set()
-    for part in position_str.strip().lower().split("+"):
+    for part in position_str.split("+"):
         part = part.strip()
         match = re.match(r"^([fl])(\d+)$", part)
         if match:
