@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>手算 PEFT — LoRA vs MoReS 对比</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:8pt;line-height:1.35;padding:8px 12px;max-width:none;margin:0 auto}
+@page{size:A4 portrait;margin:6mm 8mm}
+@media print{body{padding:0;font-size:7.5pt;line-height:1.3}}
+.two-col{column-count:2;column-gap:16px;column-rule:1px solid #ccc}
+.two-col h2,.two-col h3,.full-width{column-span:all}
+.no-break{break-inside:avoid;page-break-inside:avoid}
+h1{font-size:12pt;font-weight:700;border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:4px}
+h2{font-size:9.5pt;font-weight:700;margin:10px 0 3px;padding:2px 6px;background:#f0f0f0;color:#000;border:1px solid #000;border-radius:2px;page-break-after:avoid}
+h3{font-size:8pt;font-weight:700;margin:6px 0 2px;border-bottom:1px solid #999;padding-bottom:1px;page-break-after:avoid}
+p{margin:2px 0;font-size:7.5pt}
+table{width:100%;border-collapse:collapse;font-size:7pt;margin:3px 0}
+th,td{padding:2px 4px;border:1px solid #000;text-align:center;vertical-align:middle}
+th{background:#e8e8e8;color:#000;font-weight:700}
+.given{background:#f0f0ff;border:1px solid #0040a0;border-radius:2px;padding:4px 8px;margin:4px 0;font-family:var(--mono);font-size:7pt;line-height:1.4;break-inside:avoid}
+.given b{color:#0040a0}
+.hint{background:#f0fff0;border-left:2px solid #006400;padding:3px 6px;margin:3px 0;font-size:6.5pt}
+.hint b{color:#006400}
+.work{border:1px solid #000;border-radius:2px;padding:4px 6px;margin:4px 0;min-height:70px;background:repeating-linear-gradient(transparent,transparent 17px,#e8e8e8 17px,#e8e8e8 18px);break-inside:avoid}
+.work-tall{min-height:110px}
+.work-short{min-height:45px}
+.result-box{border:1.5px solid #a00000;border-radius:2px;padding:3px 8px;margin:3px 0;font-family:var(--mono);font-size:7.5pt;min-height:22px;break-inside:avoid}
+.pytorch-ref{background:#f0f0ff;border:1px solid #4040a0;border-radius:2px;padding:2px 6px;margin:2px 0;font-size:6pt;font-family:var(--mono)}
+.pytorch-ref b{color:#4040a0}
+.step{display:inline-block;width:16px;height:16px;background:#fff;color:#000;border:1px solid #000;text-align:center;line-height:15px;border-radius:50%;font-size:6.5pt;font-weight:700;margin-right:3px}
+pre{font-family:var(--mono);font-size:7pt;margin:2px 0;white-space:pre-wrap}
+hr{border:none;border-top:1px solid #000;margin:8px 0;column-span:all}
+.check{font-size:6.5pt;color:#666;margin:1px 0}
+</style>
+</head>
+<body>
+
+<h1>手算 PEFT — LoRA vs MoReS 对比</h1>
+<p><b>同一个模型，三种微调方式。手算看清 Full FT、LoRA、MoReS 到底在做什么不同的事。</b></p>
+<p style="font-size:6.5pt;color:#888">双栏排版，打印 A4 纵向。初始数据页可撕下放旁边，答案在最后一页。</p>
+
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>Part 0: 初始数据（撕下来放在旁边）</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>整份练习都用下面这些数据。三种方法共享同一个模型起点。</p>
+
+<h3>模型参数</h3>
+
+<div class="given">
+<b>隐藏状态 h</b> (2x2) — 假设已经过 embedding+线性层，这是输出头之前的表示：
+<pre>h = [[0.09, 0.08],    ← 位置 0
+     [0.13, 0.28]]    ← 位置 1</pre>
+</div>
+
+<div class="given">
+<b>原始权重 W</b> (2x2) — 我们要"微调"的那一层：
+<pre>W = [[ 0.5, -0.3],
+     [ 0.2,  0.8]]</pre>
+</div>
+
+<div class="given">
+<b>输出头 H</b> (3x2) — 冻结不动，把隐藏维度映射到词表：
+<pre>H = [[ 0.4, -0.3],    ← 猫 (ID=0)
+     [ 0.1,  0.5],    ← 坐 (ID=1)
+     [-0.2,  0.1]]    ← 了 (ID=2)</pre>
+</div>
+
+<h3>训练数据</h3>
+<table style="width:auto">
+<tr><th>位置</th><th>目标 (正确的下一个 token)</th></tr>
+<tr><td>0</td><td>坐 (ID=1)</td></tr>
+<tr><td>1</td><td>了 (ID=2)</td></tr>
+</table>
+
+<h3>三种方法的额外参数</h3>
+
+<div class="given">
+<b>Full FT：</b>直接训练 W (2x2 = 4 个可训练参数)
+</div>
+
+<div class="given">
+<b>LoRA (r=1, alpha=2)：</b>冻结 W，引入：
+<pre>A (1x2) = [0.5, -0.3]     ← 随机初始化
+B (2x1) = [[0.0], [0.0]]  ← 零初始化
+缩放系数 alpha/r = 2/1 = 2</pre>
+前向：h1 = h @ W^T + (alpha/r) * h @ A^T @ B^T<br>
+可训练参数：A (2个) + B (2个) = 4 个
+</div>
+
+<div class="given">
+<b>MoReS (rank=1)：</b>冻结 W，引入：
+<pre>R (1x2) = [0.6, 0.8]     ← 正交初始化（已是单位向量，|R|=1）
+W_s = Linear(2, 1):
+  weight (1x2) = [0.0, 0.0]  ← 零初始化
+  bias   (1,)  = [0.0]       ← 零初始化</pre>
+前向：h1_base = h @ W^T, 然后 h1' = h1_base + R^T(W_s(h1_base) - R * h1_base)<br>
+可训练参数：R (2个) + W_s.weight (2个) + W_s.bias (1个) = 5 个
+</div>
+
+<h3>公式速查</h3>
+<table>
+<tr><th>操作</th><th>公式</th></tr>
+<tr><td>nn.Linear 前向</td><td>y = x @ W^T + b</td></tr>
+<tr><td>LoRA 前向</td><td>h1 = h @ W^T + (alpha/r) * h @ A^T @ B^T</td></tr>
+<tr><td>MoReS 前向</td><td>Rh = h1 @ R^T; Wh = W_s(h1); delta = (Wh - Rh) @ R; h1' = h1 + delta</td></tr>
+<tr><td>Softmax</td><td>P(i) = exp(x_i) / sum_j exp(x_j)</td></tr>
+<tr><td>Cross-Entropy</td><td>loss = -log(P(正确类))</td></tr>
+<tr><td>CE 梯度</td><td>dL/d_logits = (softmax - one_hot) / batch_size</td></tr>
+<tr><td>SGD 更新</td><td>theta_new = theta - lr * dL/d_theta</td></tr>
+</table>
+
+<p class="check">学习率 lr = 0.1 贯穿全文。所有结果保留 2-4 位小数。</p>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<div class="two-col">
+<h2 style="page-break-before:always">Part 1: Full Fine-Tuning — 基线</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>直接训练 W，所有 4 个参数都有梯度。这是最"暴力"的方式。</p>
+
+<h3>Step 1a: 前向 — 线性层</h3>
+<p><span class="step">1</span> 计算 h1 = h @ W^T。</p>
+
+<div class="hint"><b>提示：</b>W^T = [[0.5, 0.2], [-0.3, 0.8]]。h1[0] = [0.09, 0.08] @ W^T，h1[1] = [0.13, 0.28] @ W^T。</div>
+
+<div class="work"></div>
+<div class="result-box">h1 = [[______, ______], [______, ______]]</div>
+
+<h3>Step 1b: 前向 — logits + softmax + loss</h3>
+<p><span class="step">2</span> logits = h1 @ H^T，然后 softmax，然后 CE loss。</p>
+
+<div class="hint"><b>提示：</b>H^T (2x3) = [[0.4, 0.1, -0.2], [-0.3, 0.5, 0.1]]。对每个位置算 3 个 logit，取 softmax，再算 -log(P(正确类))。</div>
+
+<div class="work work-tall"></div>
+<div class="result-box">logits = [[______, ______, ______], [______, ______, ______]]</div>
+<div class="result-box">probs[0] = [______, ______, ______] &nbsp;&nbsp; probs[1] = [______, ______, ______]</div>
+<div class="result-box">loss_0 = ______ &nbsp;&nbsp; loss_1 = ______ &nbsp;&nbsp; <b>total_loss = ______</b></div>
+
+<h3>Step 1c: 反向 — 梯度</h3>
+<p><span class="step">3</span> 算 dL/dW (2x2 = 4 个梯度)。</p>
+
+<div class="hint"><b>链式法则：</b><br>
+grad_logits = (probs - one_hot) / 2 （除以 batch=2）<br>
+grad_h1 = grad_logits @ H &nbsp; (2x3 @ 3x2 = 2x2)<br>
+grad_W = grad_h1^T @ h &nbsp; (2x2 转置后 @ 2x2 = 2x2)</div>
+
+<div class="work work-tall"></div>
+<div class="result-box">grad_logits[0] = [______, ______, ______]</div>
+<div class="result-box">grad_logits[1] = [______, ______, ______]</div>
+<div class="result-box">grad_h1 = [[______, ______], [______, ______]]</div>
+<div class="result-box">grad_W = [[______, ______], [______, ______]]</div>
+
+<h3>Step 1d: 更新 W</h3>
+<p><span class="step">4</span> W_new = W - 0.1 * grad_W</p>
+
+<div class="work work-short"></div>
+<div class="result-box">W_new = [[______, ______], [______, ______]]</div>
+
+<p class="check">Full FT 训练了 4 个参数，计算了 4 个梯度。</p>
+
+<div class="pytorch-ref"><b>PyTorch:</b> loss.backward(); optimizer.step() &nbsp; # W.grad 就是你算的 grad_W</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 2: LoRA (r=1, alpha=2) — 第 1 轮</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>冻结 W，只训练 A 和 B。核心问题：B 零初始化意味着什么？</p>
+
+<h3>Step 2a: 前向 — LoRA 路径</h3>
+<p><span class="step">1</span> 计算 h1 = h @ W^T + (alpha/r) * h @ A^T @ B^T。</p>
+
+<div class="hint"><b>提示：</b>先算 h @ A^T (2x2 @ 2x1 = 2x1)，再乘 B^T (1x2)，再乘缩放系数 2。<br>
+但 B = [[0], [0]]，所以 B^T = [0, 0]... <b>LoRA 的贡献是零！</b><br>
+这是 LoRA 零初始化的精髓：初始时不改变原模型的输出。</div>
+
+<p>先算 h @ A^T：</p>
+<div class="work work-short"></div>
+<div class="result-box">h @ A^T = [[______], [______]]</div>
+
+<p>再算 (h @ A^T) @ B^T：</p>
+<div class="result-box">LoRA 贡献 = 2 * [[______, ______], [______, ______]] = <b>全零！</b></div>
+
+<p>所以：</p>
+<div class="result-box">h1_lora = h @ W^T + 0 = h @ W^T = [[______, ______], [______, ______]]（和 Part 1 一样！）</div>
+
+<h3>Step 2b: loss</h3>
+<p><span class="step">2</span> 因为 h1 和 Part 1 完全一样，loss 也完全一样。</p>
+<div class="result-box">LoRA step 0 total_loss = ______ （直接抄 Part 1 的值）</div>
+<p class="check">关键洞察：LoRA 初始 loss 和 Full FT 一样，因为 B=0 保证"不破坏原模型"。</p>
+
+<h3>Step 2c: 反向 — 只算 A 和 B 的梯度</h3>
+<p><span class="step">3</span> W 是冻结的，不算 dL/dW。只算 dL/dA 和 dL/dB。</p>
+
+<div class="hint"><b>链式法则（LoRA 路径）：</b><br>
+grad_logits 和 grad_h1 和 Part 1 完全相同（因为 h1 相同）。<br><br>
+LoRA 部分的前向：lora_out = (alpha/r) * (h @ A^T) @ B^T<br>
+dL/d(B^T) = (alpha/r) * (h @ A^T)^T @ grad_h1 &nbsp; shape: (1,2)@(2,2) → 不对...<br>
+实际：(h @ A^T) 是 (2,1)，其转置是 (1,2)，@ grad_h1 (2,2) = (1,2) = B^T 的 shape<br>
+所以 grad_B = 转置回来 → (2,1)<br><br>
+dL/dA：因为 B=0，所以 dL/d(A^T) = (alpha/r) * h^T @ grad_h1 @ B = 0！<br>
+<b>A 的梯度是零！</b>（B=0 阻断了梯度流向 A）</div>
+
+<p>先确认 grad_h1 和 Part 1 相同：</p>
+<div class="result-box">grad_h1 = [[______, ______], [______, ______]] （抄 Part 1）</div>
+
+<p>计算 dL/dB：</p>
+<p>grad_B^T = 2 * (h @ A^T)^T @ grad_h1 = 2 * [______, ______] @ [[______, ______], [______, ______]]</p>
+<div class="work"></div>
+<div class="result-box">grad_B^T = [[______, ______]]，grad_B = [[______], [______]]</div>
+
+<p>计算 dL/dA：</p>
+<div class="result-box">grad_A = [[______, ______]] = <b>全零</b>（因为 B=0 切断梯度）</div>
+
+<h3>Step 2d: 更新</h3>
+<p><span class="step">4</span> A_new = A - 0.1 * grad_A，B_new = B - 0.1 * grad_B。</p>
+
+<div class="work work-short"></div>
+<div class="result-box">A_new = [[______, ______]] （不变）</div>
+<div class="result-box">B_new = [[______], [______]]</div>
+
+<p class="check">注意：A 没变，只有 B 更新了。下一轮 B 不再是零，LoRA 才真正"开始工作"。</p>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>Part 2 续: LoRA — 第 2 轮</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>现在 B 不是零了！LoRA 路径终于有贡献了。</p>
+
+<h3>Step 2e: 第 2 轮前向</h3>
+<p><span class="step">5</span> 用 A_new 和 B_new 重新算 LoRA 贡献。</p>
+
+<div class="hint"><b>提示：</b>h @ A_new^T 和第 1 轮一样（A 没变），但 B_new^T 不再是零。<br>
+lora_out = 2 * (h @ A^T) @ B_new^T。<br>
+h @ A^T 在上面已经算过了。B_new^T 是你刚算出的 B_new 的转置 (1x2)。<br>
+注意：虽然 B_new 的值非常小（~0.001），所以 LoRA 贡献也很小。这是正常的——第一步更新后模型只做了微调。</div>
+
+<div class="work"></div>
+<div class="result-box">lora_out = 2 * (h @ A^T) @ B_new^T = [[______, ______], [______, ______]]</div>
+<div class="result-box">h1_lora = h @ W^T + lora_out = [[______, ______], [______, ______]]</div>
+
+<p>算 loss（步骤同 Part 1b）：</p>
+<div class="work"></div>
+<div class="result-box">LoRA step 1 total_loss = ______</div>
+
+<p class="check">LoRA 第 2 轮 loss 应该比第 1 轮略低，但差距极小（~0.0001 量级）。因为 B_new 非常小，LoRA 的贡献微乎其微。在真实模型中 d=4096，贡献会大得多。</p>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 3: MoReS (rank=1) — 第 1 轮</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>冻结 W，通过正交投影"转向"隐藏表示。和 LoRA 的区别？初始就不是恒等映射！</p>
+
+<h3>Step 3a: 前向 — 基础计算</h3>
+<p><span class="step">1</span> 先算冻结的 h1_base = h @ W^T（和 Part 1 一样）。</p>
+<div class="result-box">h1_base = [[______, ______], [______, ______]] （同 Part 1）</div>
+
+<h3>Step 3b: 前向 — MoReS 干预</h3>
+<p><span class="step">2</span> 计算 MoReS 的干预 delta。</p>
+
+<div class="hint"><b>MoReS 前向四步走：</b><br>
+(1) Rh = h1_base @ R^T &nbsp; (2x2 @ 2x1 = 2x1) — 投影到 R 方向<br>
+(2) Wh = W_s(h1_base) = h1_base @ W_s.weight^T + W_s.bias &nbsp; (2x1) — 学习的新方向<br>
+(3) delta_low = Wh - Rh &nbsp; (2x1) — 差值<br>
+(4) delta = delta_low @ R &nbsp; (2x1 @ 1x2 = 2x2) — 投回原空间<br>
+(5) h1' = h1_base + delta<br><br>
+W_s 的 weight 和 bias 都是 0，所以 Wh = 0！</div>
+
+<p>(1) 计算 Rh = h1_base @ R^T，R = [0.6, 0.8]：</p>
+<div class="work work-short"></div>
+<div class="result-box">Rh = [[______], [______]]</div>
+
+<p>(2) 计算 Wh = W_s(h1_base)：</p>
+<div class="result-box">Wh = [[0.0], [0.0]] （W_s 权重全零）</div>
+
+<p>(3) delta_low = Wh - Rh：</p>
+<div class="result-box">delta_low = [[______], [______]]</div>
+
+<p>(4) delta = delta_low @ R (2x1 @ 1x2 = 2x2)：</p>
+<div class="work"></div>
+<div class="result-box">delta = [[______, ______], [______, ______]]</div>
+
+<p>(5) h1' = h1_base + delta：</p>
+<div class="result-box">h1_mores = [[______, ______], [______, ______]]</div>
+
+<div class="hint"><b>关键发现：</b>W_s=0 时 delta 不是零！delta = -Rh @ R = -(h1_base 在 R 方向的投影)。<br>
+MoReS 初始就"去掉了 R 方向的分量"，不像 LoRA 初始是恒等的。<br>
+几何直觉：h1' = h1_base - proj_R(h1_base)，即把 h1_base 投影到与 R 正交的子空间。</div>
+
+<h3>Step 3c: loss</h3>
+<p><span class="step">3</span> logits = h1_mores @ H^T，softmax，CE loss。</p>
+<div class="work work-tall"></div>
+<div class="result-box">logits = [[______, ______, ______], [______, ______, ______]]</div>
+<div class="result-box">probs[0] = [______, ______, ______] &nbsp;&nbsp; probs[1] = [______, ______, ______]</div>
+<div class="result-box">loss_0 = ______ &nbsp;&nbsp; loss_1 = ______ &nbsp;&nbsp; <b>total_loss = ______</b></div>
+
+<p class="check">MoReS 的初始 loss 和 Full FT / LoRA 不同！因为它一开始就改变了 h1。</p>
+
+<h3>Step 3d: 反向 — W_s 的梯度</h3>
+<p><span class="step">4</span> R 也是可训练的，但为了简化我们这一轮只更新 W_s（weight 和 bias），R 暂时固定。</p>
+
+<div class="hint"><b>链式法则：</b><br>
+grad_logits、grad_h1_mores 的算法和之前一样。<br>
+grad_delta = grad_h1_mores（因为 h1' = h1_base + delta）<br>
+grad_delta_low = grad_h1_mores @ R^T &nbsp; (2x2 @ 2x1 = 2x1)<br><br>
+delta_low = Wh - Rh，其中 Wh = h1_base @ W_s.weight^T + W_s.bias<br>
+grad_W_s.weight = grad_delta_low^T @ h1_base &nbsp; (1x2 @ 2x2 = 1x2)<br>
+grad_W_s.bias = sum(grad_delta_low) &nbsp; (标量)</div>
+
+<div class="work work-tall"></div>
+<div class="result-box">grad_logits[0] = [______, ______, ______]</div>
+<div class="result-box">grad_logits[1] = [______, ______, ______]</div>
+<div class="result-box">grad_h1_mores = [[______, ______], [______, ______]]</div>
+<div class="result-box">grad_delta_low = [[______], [______]]</div>
+<div class="result-box">grad_W_s.weight = [[______, ______]]</div>
+<div class="result-box">grad_W_s.bias = [______]</div>
+
+<h3>Step 3e: 更新 W_s</h3>
+<div class="work work-short"></div>
+<div class="result-box">W_s.weight_new = [[______, ______]]</div>
+<div class="result-box">W_s.bias_new = [______]</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>Part 3 续: MoReS — 第 2 轮</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>用更新后的 W_s 再来一轮（R 保持不变）。</p>
+
+<h3>Step 3f: 第 2 轮前向</h3>
+
+<div class="hint"><b>提示：</b>h1_base 不变（W 冻结）。但现在 Wh = h1_base @ W_s.weight_new^T + W_s.bias_new 不再是零了！<br>
+Rh 也没变（R 固定）。delta_low = Wh_new - Rh，delta = delta_low @ R。</div>
+
+<div class="work work-tall"></div>
+<div class="result-box">Wh_new = [[______], [______]]</div>
+<div class="result-box">delta_low = [[______], [______]]</div>
+<div class="result-box">h1_mores = [[______, ______], [______, ______]]</div>
+<div class="result-box">MoReS step 1 total_loss = ______</div>
+
+<p class="check">MoReS 第 2 轮 loss 应该比第 1 轮略低。</p>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 4: 三种方法对比</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>把三种方法的结果填入对比表。</p>
+
+<table>
+<tr><th>方法</th><th>可训练参数数</th><th>W 是否更新</th><th>Step 0 loss</th><th>Step 1 loss</th><th>初始 h1 和原始一样？</th></tr>
+<tr><td>Full FT</td><td style="min-width:50px">______</td><td>______</td><td style="min-width:60px">______</td><td style="min-width:60px">______</td><td>______</td></tr>
+<tr><td>LoRA</td><td>______</td><td>______</td><td>______</td><td>______</td><td>______</td></tr>
+<tr><td>MoReS</td><td>______</td><td>______</td><td>______</td><td>______</td><td>______</td></tr>
+</table>
+
+<div class="hint"><b>你应该观察到：</b><br>
+(1) Full FT 和 LoRA 的 step 0 loss 相同（LoRA 零初始化 = 恒等）<br>
+(2) MoReS 的 step 0 loss 和其他两个不同（初始干预非零）<br>
+(3) Full FT 直接改 W；LoRA 和 MoReS 都冻结 W<br>
+(4) 在这个 2x2 的微型模型里，参数量差异不大。但在真实模型 (d=4096) 中：<br>
+&nbsp;&nbsp;&nbsp; Full FT: 4096x4096 = 16M 参数<br>
+&nbsp;&nbsp;&nbsp; LoRA r=8: 4096x8 + 8x4096 = 65K 参数 (少 250 倍！)<br>
+&nbsp;&nbsp;&nbsp; MoReS d=1: 1x4096 + 4096x1 + 1 = 8K 参数 (少 2000 倍！)</div>
+
+<h3>机制对比</h3>
+<table>
+<tr><th>方面</th><th>Full FT</th><th>LoRA</th><th>MoReS</th></tr>
+<tr><td>修改什么</td><td>直接改 W</td><td>加 delta_W = B @ A</td><td>转向隐藏表示 h</td></tr>
+<tr><td>初始行为</td><td>就是原模型</td><td>和原模型一样<br>(B=0)</td><td>去掉 R 方向分量<br>(非恒等！)</td></tr>
+<tr><td>梯度流</td><td>通过 W</td><td>通过 A, B<br>(B=0 时 A 无梯度)</td><td>通过 W_s, R</td></tr>
+<tr><td>显存</td><td>存 W 的梯度+优化器状态</td><td>只存 A,B 的<br>W 无需梯度</td><td>只存 W_s,R 的<br>W 无需梯度</td></tr>
+</table>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>Part 5: 思考题</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p><b>1.</b> LoRA r=1 和 Full FT 参数量一样多（都是 4 个），为什么还要用 LoRA？</p>
+<div class="work work-short"></div>
+
+<p><b>2.</b> MoReS 的 R 如果不保持正交（单位向量）会怎样？</p>
+<div class="work work-short"></div>
+
+<p><b>3.</b> 如果冻结 H（输出头）但训练 W，loss 还能降吗？</p>
+<div class="work work-short"></div>
+
+<p><b>4.</b> LoRA 的 B 零初始化有什么好处？如果 B 也随机初始化会怎样？</p>
+<div class="work work-short"></div>
+
+<p><b>5.</b> MoReS 初始时去掉了 R 方向的分量，这为什么反而可能让 loss 更低？（提示：看你算的 step 0 loss）</p>
+<div class="work work-short"></div>
+
+</div><!-- end two-col -->
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<div class="two-col">
+<h2 style="page-break-before:always">参考答案</h2>
+<!-- ═══════════════════════════════════════════════ -->
+<p style="font-size:7pt;color:#888">建议做完所有部分再看答案。如果中间卡住了，只看卡住的那一步。</p>
+
+<div style="font-size:7pt;font-family:var(--mono);line-height:1.5;color:#555">
+
+<p><b>Part 1 — Full Fine-Tuning:</b></p>
+
+<p><b>Step 1a:</b><br>
+W^T = [[0.5, 0.2], [-0.3, 0.8]]<br>
+h1[0] = [0.09*0.5+0.08*(-0.3), 0.09*0.2+0.08*0.8] = [0.021, 0.082]<br>
+h1[1] = [0.13*0.5+0.28*(-0.3), 0.13*0.2+0.28*0.8] = [-0.019, 0.250]<br>
+h1 = [[0.021, 0.082], [-0.019, 0.250]]</p>
+
+<p><b>Step 1b:</b><br>
+H^T = [[0.4, 0.1, -0.2], [-0.3, 0.5, 0.1]]<br>
+logits[0]: 猫=0.021*0.4+0.082*(-0.3)=-0.016, 坐=0.021*0.1+0.082*0.5=0.043, 了=0.021*(-0.2)+0.082*0.1=0.004<br>
+logits[1]: 猫=(-0.019)*0.4+0.250*(-0.3)=-0.083, 坐=(-0.019)*0.1+0.250*0.5=0.123, 了=(-0.019)*(-0.2)+0.250*0.1=0.029<br>
+logits = [[-0.016, 0.043, 0.004], [-0.083, 0.123, 0.029]]<br><br>
+probs[0]: exp=[ 0.984, 1.044, 1.004], sum=3.032, probs=[0.325, 0.344, 0.331]<br>
+probs[1]: exp=[0.920, 1.131, 1.029], sum=3.080, probs=[0.299, 0.367, 0.334]<br><br>
+loss_0 = -log(0.344) = 1.067, loss_1 = -log(0.334) = 1.097<br>
+total_loss = (1.067 + 1.097) / 2 = 1.082</p>
+
+<p><b>Step 1c:</b><br>
+grad_logits[0] = ([0.325, 0.344, 0.331] - [0,1,0]) / 2 = [0.162, -0.328, 0.166]<br>
+grad_logits[1] = ([0.299, 0.367, 0.334] - [0,0,1]) / 2 = [0.149, 0.184, -0.333]<br><br>
+H = [[0.4,-0.3],[0.1,0.5],[-0.2,0.1]] (3x2)<br>
+grad_h1[0] = [0.162*0.4+(-0.328)*0.1+0.166*(-0.2), 0.162*(-0.3)+(-0.328)*0.5+0.166*0.1]<br>
+= [0.065-0.033-0.033, -0.049-0.164+0.017] = [-0.001, -0.196]<br>
+grad_h1[1] = [0.149*0.4+0.184*0.1+(-0.333)*(-0.2), 0.149*(-0.3)+0.184*0.5+(-0.333)*0.1]<br>
+= [0.060+0.018+0.067, -0.045+0.092-0.033] = [0.145, 0.014]<br><br>
+grad_W = grad_h1^T @ h<br>
+= [[-0.001, 0.145], [-0.196, 0.014]]^T ... 不，grad_h1^T 就是转置(2x2)：<br>
+grad_h1^T = [[-0.001, 0.145], [-0.196, 0.014]]<br>
+grad_W = grad_h1^T @ h = [[-0.001*0.09+0.145*0.13, -0.001*0.08+0.145*0.28], [-0.196*0.09+0.014*0.13, -0.196*0.08+0.014*0.28]]<br>
+= [[0.019, 0.041], [-0.016, -0.012]]</p>
+
+<p><b>Step 1d:</b><br>
+W_new = [[0.5-0.1*0.019, -0.3-0.1*0.041], [0.2-0.1*(-0.016), 0.8-0.1*(-0.012)]]<br>
+= [[0.498, -0.304], [0.202, 0.801]]</p>
+
+<p>Full FT Round 2: 用 W_new 重复，loss 约 1.081（略降）。</p>
+
+<hr style="border-top:1px dashed #999">
+
+<p><b>Part 2 — LoRA:</b></p>
+
+<p><b>Step 2a:</b><br>
+h @ A^T: [0.09*0.5+0.08*(-0.3), 0.13*0.5+0.28*(-0.3)] = [0.021, -0.019]<br>
+h @ A^T = [[0.021], [-0.019]]<br>
+B = 0，所以 LoRA 贡献 = 0。h1_lora = h1 = [[0.021, 0.082], [-0.019, 0.250]]</p>
+
+<p><b>Step 2b:</b> loss = 1.082（和 Part 1 相同）</p>
+
+<p><b>Step 2c:</b><br>
+grad_h1 同 Part 1 = [[-0.001, -0.196], [0.145, 0.014]]<br>
+grad_B^T = 2 * [0.021, -0.019] @ [[-0.001, -0.196], [0.145, 0.014]]<br>
+= 2 * [0.021*(-0.001)+(-0.019)*0.145, 0.021*(-0.196)+(-0.019)*0.014]<br>
+= 2 * [-0.003, -0.004] = [-0.006, -0.009]<br>
+grad_B = [[-0.006], [-0.009]]<br>
+grad_A = [[0, 0]]（B=0 阻断）</p>
+
+<p><b>Step 2d:</b><br>
+A_new = [[0.5, -0.3]]（不变）<br>
+B_new = [[0-0.1*(-0.006)], [0-0.1*(-0.009)]] = [[0.0006], [0.0009]]</p>
+
+<p><b>Step 2e — LoRA 第 2 轮:</b><br>
+lora_out = 2 * [[0.021], [-0.019]] @ [[0.0006, 0.0009]]<br>
+= 2 * [[0.000013, 0.000019], [-0.000011, -0.000017]]<br>
+约等于零。h1_lora 约等于 h1。loss 约 1.082（几乎不变）。<br>
+这是正常的：2x2 模型太小，LoRA 的一步更新微乎其微。</p>
+
+<hr style="border-top:1px dashed #999">
+
+<p><b>Part 3 — MoReS:</b></p>
+
+<p><b>Step 3a:</b> h1_base = [[0.021, 0.082], [-0.019, 0.250]]</p>
+
+<p><b>Step 3b:</b><br>
+R = [0.6, 0.8]（已是单位向量）<br>
+Rh = h1_base @ R^T = [[0.021*0.6+0.082*0.8], [-0.019*0.6+0.250*0.8]]<br>
+= [[0.078], [0.189]]<br>
+Wh = [[0], [0]]<br>
+delta_low = [[0-0.078], [0-0.189]] = [[-0.078], [-0.189]]<br>
+delta = [[-0.078*0.6, -0.078*0.8], [-0.189*0.6, -0.189*0.8]]<br>
+= [[-0.047, -0.063], [-0.113, -0.151]]<br>
+h1_mores = [[0.021-0.047, 0.082-0.063], [-0.019-0.113, 0.250-0.151]]<br>
+= [[-0.026, 0.019], [-0.132, 0.099]]</p>
+
+<p><b>Step 3c:</b><br>
+logits[0]: 猫=(-0.026)*0.4+0.019*(-0.3)=-0.016, 坐=(-0.026)*0.1+0.019*0.5=0.007, 了=(-0.026)*(-0.2)+0.019*0.1=0.007<br>
+logits[1]: 猫=(-0.132)*0.4+0.099*(-0.3)=-0.083, 坐=(-0.132)*0.1+0.099*0.5=0.036, 了=(-0.132)*(-0.2)+0.099*0.1=0.036<br>
+logits = [[-0.016, 0.007, 0.007], [-0.083, 0.036, 0.036]]<br><br>
+probs[0]: exp=[0.984, 1.007, 1.007], sum=2.998, probs=[0.328, 0.336, 0.336]<br>
+probs[1]: exp=[0.920, 1.037, 1.037], sum=2.994, probs=[0.307, 0.346, 0.346]<br><br>
+loss_0 = -log(0.336) = 1.091, loss_1 = -log(0.346) = 1.061<br>
+total_loss = (1.091 + 1.061) / 2 = 1.076</p>
+
+<p><b>Step 3d:</b><br>
+grad_logits[0] = ([0.328, 0.336, 0.336] - [0,1,0]) / 2 = [0.164, -0.332, 0.168]<br>
+grad_logits[1] = ([0.307, 0.346, 0.346] - [0,0,1]) / 2 = [0.154, 0.173, -0.327]<br>
+grad_h1_mores = grad_logits @ H (2x3 @ 3x2 = 2x2)<br>
+[0] = [0.164*0.4-0.332*0.1+0.168*(-0.2), 0.164*(-0.3)-0.332*0.5+0.168*0.1]<br>
+= [0.066-0.033-0.034, -0.049-0.166+0.017] = [-0.001, -0.198]<br>
+[1] = [0.154*0.4+0.173*0.1-0.327*(-0.2), 0.154*(-0.3)+0.173*0.5-0.327*0.1]<br>
+= [0.062+0.017+0.065, -0.046+0.087-0.033] = [0.144, 0.008]<br>
+grad_h1_mores = [[-0.001, -0.198], [0.144, 0.008]]<br><br>
+grad_delta_low = grad_h1_mores @ R^T<br>
+= [[-0.001*0.6+(-0.198)*0.8], [0.144*0.6+0.008*0.8]]<br>
+= [[-0.159], [0.093]]<br><br>
+grad_W_s.weight = grad_delta_low^T @ h1_base = [-0.159, 0.093] @ [[0.021, 0.082], [-0.019, 0.250]]<br>
+= [-0.159*0.021+0.093*(-0.019), -0.159*0.082+0.093*0.250]<br>
+= [-0.005, 0.010]<br>
+grad_W_s.bias = -0.159 + 0.093 = -0.066</p>
+
+<p><b>Step 3e:</b><br>
+W_s.weight_new = [[0-0.1*(-0.005), 0-0.1*0.010]] = [[0.0005, -0.001]]<br>
+W_s.bias_new = [0-0.1*(-0.066)] = [0.007]</p>
+
+<p><b>Step 3f — MoReS 第 2 轮:</b><br>
+Wh_new = h1_base @ [[0.0005], [-0.001]] + 0.007<br>
+= [[0.021*0.0005+0.082*(-0.001)+0.007], [-0.019*0.0005+0.250*(-0.001)+0.007]]<br>
+= [[0.007], [0.007]]<br>
+delta_low = [[0.007-0.078], [0.007-0.189]] = [[-0.071], [-0.182]]<br>
+delta = [[-0.043, -0.057], [-0.109, -0.146]]<br>
+h1_mores = [[0.021-0.043, 0.082-0.057], [-0.019-0.109, 0.250-0.146]]<br>
+= [[-0.022, 0.025], [-0.128, 0.104]]<br>
+loss 约 1.075（略降）</p>
+
+<hr style="border-top:1px dashed #999">
+
+<p><b>Part 4 — 对比表:</b></p>
+<table style="font-size:6.5pt">
+<tr><th>方法</th><th>可训练参数</th><th>W 更新</th><th>Step 0 loss</th><th>Step 1 loss</th><th>初始=原始?</th></tr>
+<tr><td>Full FT</td><td>4</td><td>是</td><td>1.082</td><td>1.081</td><td>是</td></tr>
+<tr><td>LoRA</td><td>4</td><td>否</td><td>1.082</td><td>约1.082</td><td>是</td></tr>
+<tr><td>MoReS</td><td>5</td><td>否</td><td>1.076</td><td>约1.075</td><td>否</td></tr>
+</table>
+
+<hr style="border-top:1px dashed #999">
+
+<p><b>Part 5 — 思考题答案:</b></p>
+
+<p><b>1.</b> 在 2x2 模型中 LoRA r=1 确实没有参数优势（4 vs 4）。但在真实模型中 d=4096，Full FT 训练 4096x4096=16M 参数，而 LoRA r=8 只训练 4096*8*2=65K 参数。LoRA 的优势在于 r 远小于 d 时参数量大幅减少。另外，LoRA 冻结 W 意味着不需要存 W 的梯度和优化器状态，显存节省更大。</p>
+
+<p><b>2.</b> 如果 R 不保持正交（不是单位向量），"投影→投回"操作就不再是正交投影。如果 |R| > 1，会放大信号；如果 |R| < 1，会丢失信息。正交约束保证干预是"纯旋转"，不改变信息量。</p>
+
+<p><b>3.</b> 能。loss 对 W 的梯度 dL/dW = grad_h1^T @ h，其中 grad_h1 = grad_logits @ H。H 虽然冻结但仍参与前向和反向计算（作为常数），W 照样能得到非零梯度并更新。</p>
+
+<p><b>4.</b> B=0 保证初始 LoRA 贡献为零，即"不破坏预训练模型"。如果 B 也随机初始化，LoRA 一开始就会改变输出，可能导致 loss 跳跃甚至发散。零初始化是"从已知好的起点出发"的安全策略。</p>
+
+<p><b>5.</b> 去掉 R 方向的分量相当于一种正则化——减少了无用方向的信息。如果 R 恰好选在一个对当前任务不重要的方向上，去掉它反而让模型更"专注"。在我们的例子中，MoReS 初始 loss 确实比 Full FT / LoRA 略低，说明 R=[0.6, 0.8] 方向确实含有一些和目标无关的信息。</p>
+
+</div>
+
+</div><!-- end two-col -->
+
+</body>
+</html>

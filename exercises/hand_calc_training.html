@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>手算一次完整训练 — 从前向传播到参数更新</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:8pt;line-height:1.35;padding:8px 12px;max-width:none;margin:0 auto}
+@page{size:A4 portrait;margin:6mm 8mm}
+@media print{body{padding:0;font-size:7.5pt;line-height:1.3}}
+.two-col{column-count:2;column-gap:16px;column-rule:1px solid #ccc}
+.two-col h2,.two-col h3,.full-width{column-span:all}
+.no-break{break-inside:avoid;page-break-inside:avoid}
+h1{font-size:12pt;font-weight:700;border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:4px}
+h2{font-size:9.5pt;font-weight:700;margin:10px 0 3px;padding:2px 6px;background:#f0f0f0;color:#000;border:1px solid #000;border-radius:2px;page-break-after:avoid}
+h3{font-size:8pt;font-weight:700;margin:6px 0 2px;border-bottom:1px solid #999;padding-bottom:1px;page-break-after:avoid}
+p{margin:2px 0;font-size:7.5pt}
+table{width:100%;border-collapse:collapse;font-size:7pt;margin:3px 0}
+th,td{padding:2px 4px;border:1px solid #000;text-align:center;vertical-align:middle}
+th{background:#e8e8e8;color:#000;font-weight:700}
+.given{background:#f0f0ff;border:1px solid #0040a0;border-radius:2px;padding:4px 8px;margin:4px 0;font-family:var(--mono);font-size:7pt;line-height:1.4;break-inside:avoid}
+.given b{color:#0040a0}
+.hint{background:#f0fff0;border-left:2px solid #006400;padding:3px 6px;margin:3px 0;font-size:6.5pt}
+.hint b{color:#006400}
+.work{border:1px solid #000;border-radius:2px;padding:4px 6px;margin:4px 0;min-height:70px;background:repeating-linear-gradient(transparent,transparent 17px,#e8e8e8 17px,#e8e8e8 18px);break-inside:avoid}
+.work-tall{min-height:110px}
+.work-short{min-height:45px}
+.result-box{border:1.5px solid #a00000;border-radius:2px;padding:3px 8px;margin:3px 0;font-family:var(--mono);font-size:7.5pt;min-height:22px;break-inside:avoid}
+.pytorch-ref{background:#f0f0ff;border:1px solid #4040a0;border-radius:2px;padding:2px 6px;margin:2px 0;font-size:6pt;font-family:var(--mono)}
+.pytorch-ref b{color:#4040a0}
+.step{display:inline-block;width:16px;height:16px;background:#fff;color:#000;border:1px solid #000;text-align:center;line-height:15px;border-radius:50%;font-size:6.5pt;font-weight:700;margin-right:3px}
+pre{font-family:var(--mono);font-size:7pt;margin:2px 0;white-space:pre-wrap}
+hr{border:none;border-top:1px solid #000;margin:8px 0;column-span:all}
+.check{font-size:6.5pt;color:#666;margin:1px 0}
+</style>
+</head>
+<body>
+
+<h1>手算一次完整训练</h1>
+<p><b>所有计算你自己完成。</b>每一步只给你初始数据和公式提示，你在横线区域手写过程和结果，最后把结果填入红框。</p>
+<p style="font-size:6.5pt;color:#888">双栏排版，打印 A4 纵向。Part 0 数据页可撕下放旁边，答案在最后一页。</p>
+
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>Part 0: 初始数据（撕下来放在旁边）</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>整份练习都用下面这些数据。建议把这页撕下来或复印一份放在旁边随时查看。</p>
+
+<div class="hint"><b>这些数字哪来的？</b>全部是为了方便手算而编的小数。在真实模型中，它们各自有不同的初始化方式（见下表），然后通过训练逐步学到合理的值。</div>
+
+<table>
+<tr><th>参数</th><th>PyTorch 创建方式</th><th>初始化方法</th><th>初始值的含义</th><th>训练中会更新吗</th></tr>
+<tr>
+<td><b>E</b><br>Embedding<br>(3×2)</td>
+<td><code>nn.Embedding(3, 2)</code><br>内部创建 weight (3, 2)</td>
+<td>标准正态分布 N(0,1)<br><code>nn.init.normal_(E.weight)</code></td>
+<td>每一行是一个 token 的"语义向量"。初始随机，训练后语义相近的 token 向量会接近</td>
+<td>Full FT: 是<br>LoRA/MoReS: 通常冻结</td>
+</tr>
+<tr>
+<td><b>W, b</b><br>线性层<br>(2×2)+(2,)</td>
+<td><code>nn.Linear(2, 2)</code><br>内部创建 weight (2,2) 和 bias (2,)</td>
+<td>Kaiming 均匀分布<br><code>nn.init.kaiming_uniform_(W)</code><br>bias 用均匀分布 U(-1/√d, 1/√d)</td>
+<td>W 混合输入的各个维度（"思考"），b 做微调。初始值保证信号不爆炸也不消失</td>
+<td>Full FT: 是<br>LoRA: W 冻结，加 A/B 旁路<br>MoReS: W 冻结</td>
+</tr>
+<tr>
+<td><b>H</b><br>输出头 lm_head<br>(3×2)</td>
+<td><code>nn.Linear(2, 3)</code><br>内部创建 weight (3, 2)</td>
+<td>同上 Kaiming 均匀分布<br>有些模型让 H.weight = E.weight<br>（叫 weight tying / 权重共享）</td>
+<td>每一行代表一个 token 的"判别模式"。h 和某行点积越大 → 越倾向预测那个 token</td>
+<td>通常是：所有方法都训练<br>（或通过 weight tying 间接更新）</td>
+</tr>
+</table>
+
+<h3>词表</h3>
+<table style="width:auto">
+<tr><th>Token</th><th>ID</th></tr>
+<tr><td>猫</td><td>0</td></tr>
+<tr><td>坐</td><td>1</td></tr>
+<tr><td>了</td><td>2</td></tr>
+</table>
+
+<h3>模型参数</h3>
+
+<div class="given">
+<b>Embedding E</b> (3×2):
+<pre>E = [[0.1, 0.2],    ← ID=0 (猫)
+     [0.3, 0.4],    ← ID=1 (坐)
+     [0.5, 0.6]]    ← ID=2 (了)</pre>
+</div>
+
+<div class="given">
+<b>线性层 W</b> (2×2) 和偏置 b (2,):
+<pre>W = [[ 0.5, -0.3],
+     [ 0.2,  0.8]]
+
+b = [0.1, -0.1]</pre>
+</div>
+
+<div class="given">
+<b>输出头 H</b> — nn.Linear(2, 3)，即 lm_head<br>
+<span style="font-size:6.5pt">作用：把隐藏状态 (dim=2) 映射到词表 (vocab=3)，输出每个 token 的分数 (logits)。<br>
+在 PyTorch 中，nn.Linear(in=2, out=3) 的 weight shape 是 <b>(out, in) = (3, 2)</b>。<br>
+3 行分别对应：猫(行0)、坐(行1)、了(行2)。计算时做 h @ H.weight<sup>T</sup>，等价于 h 和每一行点积。</span>
+<pre>H.weight (3×2):
+  行0 (猫): [ 0.4, -0.3]
+  行1 (坐): [ 0.1,  0.5]
+  行2 (了): [-0.2,  0.1]</pre>
+<span style="font-size:6.5pt">logit(猫) = h·[0.4, -0.3]，logit(坐) = h·[0.1, 0.5]，logit(了) = h·[-0.2, 0.1]</span>
+</div>
+
+<h3>训练数据</h3>
+<table style="width:auto">
+<tr><th>位置</th><th>输入</th><th>目标 (正确的下一个 token)</th></tr>
+<tr><td>0</td><td>猫 (ID=0)</td><td>坐 (ID=1)</td></tr>
+<tr><td>1</td><td>坐 (ID=1)</td><td>了 (ID=2)</td></tr>
+</table>
+
+<h3>模型结构</h3>
+<div class="given">
+<pre>输入 [猫, 坐]
+   ↓
+① Embedding 查表 → h₀ (2×2)
+   ↓
+② 线性层: h₁ = h₀ @ Wᵀ + b → h₁ (2×2)
+   ↓
+③ 输出头: logits = h₁ @ Hᵀ → logits (2×3)
+   ↓
+④ Softmax → probs (2×3)
+   ↓
+⑤ Cross-Entropy Loss → 标量</pre>
+</div>
+
+<h3>你会用到的公式</h3>
+<table>
+<tr><th>操作</th><th>公式</th></tr>
+<tr><td>矩阵乘法</td><td>C[i,j] = Σₖ A[i,k] × B[k,j]</td></tr>
+<tr><td>nn.Linear</td><td>y = x @ Wᵀ + b（注意是 Wᵀ 不是 W）</td></tr>
+<tr><td>Softmax</td><td>P(i) = exp(xᵢ) / Σⱼ exp(xⱼ)</td></tr>
+<tr><td>Cross-Entropy</td><td>loss = -log(P(正确类))</td></tr>
+<tr><td>CE 梯度</td><td>∂L/∂logits = softmax - one_hot(target)</td></tr>
+<tr><td>线性层梯度</td><td>∂L/∂W = (∂L/∂h₁)ᵀ @ h₀，∂L/∂b = Σ ∂L/∂h₁</td></tr>
+<tr><td>SGD 更新</td><td>θ_new = θ - lr × ∂L/∂θ</td></tr>
+</table>
+
+<p class="check">常用近似值：exp(0) = 1，exp(0.05) ≈ 1.051，exp(0.1) ≈ 1.105，exp(-0.1) ≈ 0.905，log(0.33) ≈ -1.109，log(0.5) ≈ -0.693</p>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<div class="two-col">
+<h2 style="page-break-before:always">Part 1: Embedding 查表</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p><span class="step">1</span> 输入 token 是 [猫, 坐] = [ID=0, ID=1]。从 E 中查出每个 token 的向量。</p>
+
+<div class="hint"><b>提示：</b>Embedding 就是查表，E[0] 是猫的向量，E[1] 是坐的向量。不需要计算。</div>
+
+<p>写出 h₀ (shape: 2×2)：</p>
+<div class="work work-short"></div>
+<p>把结果填入：</p>
+<div class="result-box">h₀ = [[______, ______], [______, ______]]</div>
+
+<div class="pytorch-ref"><b>PyTorch:</b> h0 = embed(torch.tensor([0, 1]))</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>Part 2: 线性层</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p><span class="step">2</span> 计算 h₁ = h₀ @ Wᵀ + b。需要先算 Wᵀ（W 的转置）。</p>
+
+<div class="hint"><b>提示：</b>W 是 [[0.5, -0.3], [0.2, 0.8]]，转置后 Wᵀ = [[0.5, 0.2], [-0.3, 0.8]]。然后对每个位置做 [a, b] @ Wᵀ + b。</div>
+
+<h3>先写出 Wᵀ</h3>
+<div class="result-box">Wᵀ = [[______, ______], [______, ______]]</div>
+
+<h3>位置 0：h₀[0] = [0.1, 0.2]</h3>
+<p>计算 [0.1, 0.2] @ Wᵀ + b：</p>
+<div class="work"></div>
+<div class="result-box">h₁[位置0] = [______, ______]</div>
+
+<h3>位置 1：h₀[1] = [0.3, 0.4]</h3>
+<p>计算 [0.3, 0.4] @ Wᵀ + b：</p>
+<div class="work"></div>
+<div class="result-box">h₁[位置1] = [______, ______]</div>
+
+<p>合并：</p>
+<div class="result-box">h₁ = [[______, ______], [______, ______]]</div>
+
+<div class="pytorch-ref"><b>PyTorch:</b> h1 = linear(h0) &nbsp; # 内部做 h0 @ W.t() + b</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>Part 3: 输出头 (Logits)</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p><span class="step">3</span> 计算每个位置的 3 个 logit（猫、坐、了的分数）。</p>
+
+<div class="hint"><b>提示：</b>H 的 shape 是 (3, 2)，每一行对应一个 token：<br>
+&nbsp;&nbsp;H[0] = [0.4, -0.3] → 猫<br>
+&nbsp;&nbsp;H[1] = [0.1, 0.5] &nbsp;→ 坐<br>
+&nbsp;&nbsp;H[2] = [-0.2, 0.1] → 了<br><br>
+对每个位置的 h₁ = [a, b]：<br>
+&nbsp;&nbsp;logit(猫) = a×0.4 + b×(-0.3)<br>
+&nbsp;&nbsp;logit(坐) = a×0.1 + b×0.5<br>
+&nbsp;&nbsp;logit(了) = a×(-0.2) + b×0.1<br><br>
+就是 h₁ 和 H 每一行的点积。</div>
+
+<h3>位置 0：h₁[0] = 你在 Part 2 算出的值</h3>
+<p>计算 3 个 logit（猫、坐、了）：</p>
+<div class="work"></div>
+<div class="result-box">logits[位置0] = [猫:______, 坐:______, 了:______]</div>
+
+<h3>位置 1：h₁[1] = 你在 Part 2 算出的值</h3>
+<div class="work"></div>
+<div class="result-box">logits[位置1] = [猫:______, 坐:______, 了:______]</div>
+
+<div class="pytorch-ref"><b>PyTorch:</b> logits = output_head(h1) &nbsp; # (2, 2) → (2, 3)</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 4: Softmax</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p><span class="step">4</span> 对每个位置的 logits 做 softmax，得到概率分布。</p>
+
+<div class="hint"><b>提示：</b>Softmax 三步走：① 每个 logit 取 exp ② 三个 exp 值求和 ③ 每个 exp 值除以总和。结果应该是三个正数且加起来 = 1。<br><br>
+如果你的 logits 都很接近 0，exp 值会都接近 1，概率会接近 1/3 = 0.333。这说明模型还没学到东西。</div>
+
+<h3>位置 0</h3>
+<div class="work"></div>
+<div class="result-box">probs[位置0] = [P(猫):______, P(坐):______, P(了):______]</div>
+<p class="check">检查：三个概率加起来应该 ≈ 1.000</p>
+
+<h3>位置 1</h3>
+<div class="work"></div>
+<div class="result-box">probs[位置1] = [P(猫):______, P(坐):______, P(了):______]</div>
+<p class="check">检查：三个概率加起来应该 ≈ 1.000</p>
+
+<div class="pytorch-ref"><b>PyTorch:</b> probs = F.softmax(logits, dim=-1)</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>Part 5: Cross-Entropy Loss</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p><span class="step">5</span> 计算每个位置的 loss，然后取平均。</p>
+
+<div class="hint"><b>提示：</b>CE loss = -log(P(正确 token))。<br>
+位置 0 的正确 token 是 坐(ID=1)，取 probs[位置0] 中 P(坐) 那个值。<br>
+位置 1 的正确 token 是 了(ID=2)，取 probs[位置1] 中 P(了) 那个值。<br>
+总 loss = (loss₀ + loss₁) / 2。<br><br>
+参考：随机猜测 3 个类的 loss = -log(1/3) = log(3) ≈ 1.099。你算出来的 loss 应该接近这个值。</div>
+
+<h3>位置 0（目标 = 坐）</h3>
+<div class="work work-short"></div>
+<div class="result-box">loss₀ = -log(P(坐)) = -log(______) = ______</div>
+
+<h3>位置 1（目标 = 了）</h3>
+<div class="work work-short"></div>
+<div class="result-box">loss₁ = -log(P(了)) = -log(______) = ______</div>
+
+<h3>总 loss</h3>
+<div class="result-box">total_loss = (loss₀ + loss₁) / 2 = (______ + ______) / 2 = ______</div>
+
+<div class="hint"><b>直觉检查：</b>如果你的 loss ≈ 1.1（接近 log(3) = 1.099），模型基本在随机猜。如果远大于 1.1，检查你的计算。如果远小于 1.1，模型运气好碰对了。</div>
+
+<div class="pytorch-ref"><b>PyTorch:</b> loss = F.cross_entropy(logits, torch.tensor([1, 2]))</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 6: 反向传播 — 梯度计算（完整过程）</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>这是最难的部分。目标：算出 ∂L/∂W 和 ∂L/∂b，让 Part 7 能更新参数。</p>
+<p>反向传播 = 从 loss 出发，沿着前向传播的路径<b>倒着走</b>，用链式法则逐层算梯度。</p>
+
+<div class="given">
+<b>前向路径回顾：</b><br>
+h₀ → <b>线性层 (W, b)</b> → h₁ → <b>输出头 (H)</b> → logits → <b>softmax</b> → probs → <b>CE loss</b> → loss<br><br>
+<b>反向路径（倒着走）：</b><br>
+loss → <b>∂L/∂logits</b> (Step 6a) → <b>∂L/∂h₁</b> (Step 6b) → <b>∂L/∂W, ∂L/∂b</b> (Step 6c)
+</div>
+
+<!-- ─── Step 6a ─── -->
+<h3>Step 6a: ∂L/∂logits — 从 loss 反推到 logits 的梯度</h3>
+
+<p><b>公式：</b>Softmax + CE 组合的梯度有一个非常简洁的结果：</p>
+<div class="given">∂L/∂logits = <b>(softmax 输出 - one_hot(正确答案)) / batch_size</b></div>
+
+<p><b>为什么除以 batch_size？</b>因为 total_loss = (loss₀ + loss₁) / 2，除以 2 取平均，所以梯度也要除以 2。</p>
+
+<p><b>位置 0</b>（目标 = 坐, ID=1）：</p>
+<div class="given">
+softmax 输出（Part 4 的结果）= [P(猫), P(坐), P(了)] = [0.3316, 0.3441, 0.3244]<br>
+one_hot(坐=1) = [0, 1, 0]<br><br>
+grad_logits[0] = ([0.3316, 0.3441, 0.3244] - [0, 1, 0]) / 2<br>
+&nbsp;&nbsp;= [0.3316-0, 0.3441-1, 0.3244-0] / 2<br>
+&nbsp;&nbsp;= [0.3316, -0.6559, 0.3244] / 2<br>
+&nbsp;&nbsp;= <b>[0.1658, -0.3280, 0.1622]</b>
+</div>
+
+<p><b>位置 1</b>（目标 = 了, ID=2）：</p>
+<div class="given">
+softmax 输出 = [0.3089, 0.3716, 0.3195]<br>
+one_hot(了=2) = [0, 0, 1]<br><br>
+grad_logits[1] = ([0.3089, 0.3716, 0.3195] - [0, 0, 1]) / 2<br>
+&nbsp;&nbsp;= [0.3089, 0.3716, -0.6805] / 2<br>
+&nbsp;&nbsp;= <b>[0.1545, 0.1858, -0.3402]</b>
+</div>
+
+<div class="hint"><b>直觉：</b>梯度的正负很有意义。位置 0 中，坐 的梯度是 <b>-0.3280</b>（负数 = 需要增大这个 logit），猫 和 了 的梯度是正数（需要减小）。模型说"坐的分数不够高，猫和了的分数太高"，梯度指向修正的方向。</div>
+
+<!-- ─── Step 6b ─── -->
+<h3>Step 6b: ∂L/∂h₁ — 从 logits 反推到 h₁ 的梯度</h3>
+
+<p><b>前向</b>是 logits = h₁ 和 H 每行做点积。<b>反向</b>是 grad_h₁ = grad_logits @ H.weight。</p>
+
+<div class="given">
+H.weight (3×2) = [[0.4, -0.3], [0.1, 0.5], [-0.2, 0.1]]<br>
+<span style="font-size:6.5pt">（3 行分别是猫、坐、了的"判别向量"）</span>
+</div>
+
+<p><b>位置 0：</b>grad_logits[0] (1×3) @ H.weight (3×2) → (1×2)</p>
+<div class="given">
+grad_h₁[0][第0维] = 0.1658×<b>0.4</b> + (-0.3280)×<b>0.1</b> + 0.1622×<b>(-0.2)</b><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= 0.0663 - 0.0328 - 0.0324 = <b>0.0011</b><br><br>
+grad_h₁[0][第1维] = 0.1658×<b>(-0.3)</b> + (-0.3280)×<b>0.5</b> + 0.1622×<b>0.1</b><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= -0.0497 - 0.1640 + 0.0162 = <b>-0.1975</b><br><br>
+∴ grad_h₁[0] = <b>[0.0011, -0.1975]</b>
+</div>
+
+<p><b>位置 1：</b>grad_logits[1] (1×3) @ H.weight (3×2) → (1×2)</p>
+<div class="given">
+grad_h₁[1][第0维] = 0.1545×<b>0.4</b> + 0.1858×<b>0.1</b> + (-0.3402)×<b>(-0.2)</b><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= 0.0618 + 0.0186 + 0.0680 = <b>0.1484</b><br><br>
+grad_h₁[1][第1维] = 0.1545×<b>(-0.3)</b> + 0.1858×<b>0.5</b> + (-0.3402)×<b>0.1</b><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= -0.0464 + 0.0929 - 0.0340 = <b>0.0125</b><br><br>
+∴ grad_h₁[1] = <b>[0.1484, 0.0125]</b>
+</div>
+
+<div class="hint"><b>规律：</b>矩阵乘法的反向传播有一个统一规则——<br>
+前向：output = input @ Weight<sup>T</sup><br>
+反向：grad_input = grad_output @ Weight（不转置）<br>
+前向转置了，反向就不转置。对称的。</div>
+
+<!-- ─── Step 6c ─── -->
+<h3>Step 6c: ∂L/∂W 和 ∂L/∂b — 我们要更新的参数的梯度</h3>
+
+<p><b>前向</b>是 h₁ = h₀ @ W<sup>T</sup> + b。现在要算 W 和 b 的梯度。</p>
+
+<p><b>∂L/∂b（偏置的梯度）：</b>最简单——直接把所有位置的 grad_h₁ 加起来。</p>
+<div class="given">
+∂L/∂b = grad_h₁[0] + grad_h₁[1]<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= [0.0011, -0.1975] + [0.1484, 0.0125]<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= <b>[0.1495, -0.1850]</b>
+</div>
+
+<div class="hint"><b>为什么 b 的梯度这么简单？</b>因为前向时 b 被直接加到每个位置上（h₁ = ... + b），所以反向时梯度就是直接传过来，所有位置求和。</div>
+
+<p><b>∂L/∂W（权重的梯度）：</b>需要矩阵乘法。公式：</p>
+<div class="given">∂L/∂W[i, j] = Σ<sub>pos</sub> grad_h₁[pos, i] × h₀[pos, j]<br><br>
+<span style="font-size:6.5pt">即：W 的梯度 = grad_h₁ 的转置 @ h₀。shape: (2×2)ᵀ @ (2×2) = (2×2)，和 W 一样。</span>
+</div>
+
+<p>回顾 h₀ = [[0.1, 0.2], [0.3, 0.4]]（Part 1 的 Embedding 结果）。</p>
+
+<div class="given">
+<b>∂L/∂W[0,0]</b> = grad_h₁[pos0, 0] × h₀[pos0, 0] + grad_h₁[pos1, 0] × h₀[pos1, 0]<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= 0.0011 × 0.1 + 0.1484 × 0.3<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= 0.0001 + 0.0445 = <b>0.0446</b><br><br>
+
+<b>∂L/∂W[0,1]</b> = 0.0011 × 0.2 + 0.1484 × 0.4<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= 0.0002 + 0.0594 = <b>0.0596</b><br><br>
+
+<b>∂L/∂W[1,0]</b> = (-0.1975) × 0.1 + 0.0125 × 0.3<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= -0.0198 + 0.0038 = <b>-0.0160</b><br><br>
+
+<b>∂L/∂W[1,1]</b> = (-0.1975) × 0.2 + 0.0125 × 0.4<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= -0.0395 + 0.0050 = <b>-0.0345</b><br><br>
+
+∴ ∂L/∂W = [[<b>0.0446, 0.0596</b>], [<b>-0.0160, -0.0345</b>]]
+</div>
+
+<div class="hint"><b>直觉：</b>∂L/∂W 告诉你"W 的每个元素应该往哪个方向调、调多少"。<br>
+正梯度 → 需要减小（当前值太大了导致 loss 高）<br>
+负梯度 → 需要增大（当前值太小了）<br>
+数值越大 → 需要调整的幅度越大<br><br>
+在 Part 7，SGD 会做 W_new = W - lr × ∂L/∂W，正好把梯度方向"翻转"过来去减小 loss。</div>
+
+<div class="pytorch-ref"><b>PyTorch:</b> loss.backward() &nbsp; # 一行代码自动完成以上所有计算！梯度存在 W.grad 和 b.grad 中</div>
+
+<div class="hint"><b>回顾：</b>你刚才做了什么？<br>
+Step 6a: loss → ∂L/∂logits（用 softmax - one_hot 公式）<br>
+Step 6b: ∂L/∂logits → ∂L/∂h₁（反向过输出头 H）<br>
+Step 6c: ∂L/∂h₁ → ∂L/∂W, ∂L/∂b（反向过线性层）<br><br>
+这就是<b>链式法则</b>：从最后一层开始，逐层向前传递梯度。PyTorch 的 autograd 引擎自动做这件事，你永远不需要手算。但理解了这个过程，你就知道 <code>loss.backward()</code> 内部在干什么。</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>Part 7: 参数更新 (SGD)</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p><span class="step">7</span> 用 SGD 更新参数：θ_new = θ - lr × ∂L/∂θ。学习率 lr = 0.1。</p>
+
+<div class="hint"><b>提示：</b>把 W 的每个元素减去 0.1 × 对应的梯度值。b 也一样。<br>
+例如 W_new[0,0] = W[0,0] - 0.1 × ∂L/∂W[0,0] = 0.5 - 0.1 × (你算出的梯度)</div>
+
+<h3>更新 b</h3>
+<div class="work work-short"></div>
+<div class="result-box">b_new = [______, ______]</div>
+
+<h3>更新 W</h3>
+<div class="work"></div>
+<div class="result-box">W_new = [[______, ______], [______, ______]]</div>
+
+<div class="pytorch-ref"><b>PyTorch:</b> optimizer = SGD(lr=0.1); optimizer.step() &nbsp; # 自动更新</div>
+
+</div><!-- end two-col for Part 1-7 -->
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<div class="two-col">
+<h2 style="page-break-before:always">训练循环第 2 轮（用 Step 1 更新后的参数）</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<div class="hint"><b>说明：</b>现在用 Part 7 算出的 W_new 和 b_new 作为起点，再做一整轮：前向 → loss → 反向 → 更新。<br>
+Embedding E 和输出头 H <b>不变</b>（我们只训练 W 和 b）。h₀ 也不变（因为 Embedding 没变）。</div>
+
+<h3>当前参数（把 Part 7 的结果抄过来）</h3>
+<div class="result-box">W⁽²⁾ = [[______, ______], [______, ______]] &nbsp;&nbsp; b⁽²⁾ = [______, ______]</div>
+
+<h3>第 2 轮 · 前向：线性层</h3>
+<p>h₁ = h₀ @ W⁽²⁾ᵀ + b⁽²⁾（h₀ 还是 [[0.1, 0.2], [0.3, 0.4]]）</p>
+<div class="work"></div>
+<div class="result-box">h₁ = [[______, ______], [______, ______]]</div>
+
+<h3>第 2 轮 · 前向：logits + softmax + loss</h3>
+<p>logits = h₁ @ Hᵀ，然后 softmax，然后 CE loss。和第 1 轮完全相同的步骤。</p>
+<div class="work work-tall"></div>
+<div class="result-box">logits = [[______, ______, ______], [______, ______, ______]]</div>
+<div class="result-box">probs[0] = [______, ______, ______] &nbsp;&nbsp; probs[1] = [______, ______, ______]</div>
+<div class="result-box">loss₀ = ______ &nbsp;&nbsp; loss₁ = ______ &nbsp;&nbsp; <b>total_loss = ______</b></div>
+
+<h3>第 2 轮 · 反向传播</h3>
+<div class="work work-tall"></div>
+<div class="result-box">grad_logits[0] = [______, ______, ______] &nbsp;&nbsp; grad_logits[1] = [______, ______, ______]</div>
+<div class="result-box">grad_h₁[0] = [______, ______] &nbsp;&nbsp; grad_h₁[1] = [______, ______]</div>
+<div class="result-box">∂L/∂b = [______, ______]</div>
+<div class="result-box">∂L/∂W = [[______, ______], [______, ______]]</div>
+
+<h3>第 2 轮 · 参数更新 (lr=0.1)</h3>
+<div class="work"></div>
+<div class="result-box">W⁽³⁾ = [[______, ______], [______, ______]] &nbsp;&nbsp; b⁽³⁾ = [______, ______]</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">训练循环第 3 轮（用 Step 2 更新后的参数）</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<div class="hint"><b>说明：</b>用 W⁽³⁾ 和 b⁽³⁾ 再来一轮。你应该开始感觉到越来越熟练了——这就是"肌肉记忆"。</div>
+
+<h3>当前参数</h3>
+<div class="result-box">W⁽³⁾ = [[______, ______], [______, ______]] &nbsp;&nbsp; b⁽³⁾ = [______, ______]</div>
+
+<h3>第 3 轮 · 前向：线性层</h3>
+<div class="work"></div>
+<div class="result-box">h₁ = [[______, ______], [______, ______]]</div>
+
+<h3>第 3 轮 · 前向：logits + softmax + loss</h3>
+<div class="work work-tall"></div>
+<div class="result-box">logits = [[______, ______, ______], [______, ______, ______]]</div>
+<div class="result-box">probs[0] = [______, ______, ______] &nbsp;&nbsp; probs[1] = [______, ______, ______]</div>
+<div class="result-box">loss₀ = ______ &nbsp;&nbsp; loss₁ = ______ &nbsp;&nbsp; <b>total_loss = ______</b></div>
+
+<h3>第 3 轮 · 反向传播</h3>
+<div class="work work-tall"></div>
+<div class="result-box">grad_logits[0] = [______, ______, ______] &nbsp;&nbsp; grad_logits[1] = [______, ______, ______]</div>
+<div class="result-box">grad_h₁[0] = [______, ______] &nbsp;&nbsp; grad_h₁[1] = [______, ______]</div>
+<div class="result-box">∂L/∂b = [______, ______]</div>
+<div class="result-box">∂L/∂W = [[______, ______], [______, ______]]</div>
+
+<h3>第 3 轮 · 参数更新 (lr=0.1)</h3>
+<div class="work"></div>
+<div class="result-box">W⁽⁴⁾ = [[______, ______], [______, ______]] &nbsp;&nbsp; b⁽⁴⁾ = [______, ______]</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>训练总结：3 轮 loss 对比</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>把三轮的 loss 填入下表，观察趋势：</p>
+
+<table style="width:auto">
+<tr><th>轮次</th><th>total_loss</th><th>P(坐|猫) 位置0</th><th>P(了|坐) 位置1</th></tr>
+<tr><td>第 1 轮（Part 5）</td><td style="min-width:80px">__________</td><td style="min-width:80px">__________</td><td style="min-width:80px">__________</td></tr>
+<tr><td>第 2 轮</td><td>__________</td><td>__________</td><td>__________</td></tr>
+<tr><td>第 3 轮</td><td>__________</td><td>__________</td><td>__________</td></tr>
+</table>
+
+<div class="hint"><b>你应该观察到：</b><br>
+① loss 在逐步下降（虽然每次只降一点点）<br>
+② P(坐|猫) 在逐步上升（模型学到了"猫"后面应该接"坐"）<br>
+③ P(了|坐) 也在逐步上升（模型学到了"坐"后面应该接"了"）<br><br>
+这就是训练的全部本质：反复做"前向→loss→反向→更新"，让模型对正确答案越来越确定。<br><br>
+真实的 LLaVA 训练做几千到几万轮，但每一轮的数学和你刚才算的<b>完全一样</b>——只是矩阵更大（4096 维不是 2 维），层更多（32 层不是 1 层），优化器更复杂（AdamW 不是 SGD）。</div>
+
+</div><!-- end two-col for rounds 2-3 -->
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<div class="two-col">
+<h2 style="page-break-before:always">Part 9: 和 mmit 的联系</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>回顾你刚才手算的每一步，写出对应的 PyTorch 代码（填空）：</p>
+
+<table>
+<tr><th>你手算的步骤</th><th>PyTorch 一行代码</th></tr>
+<tr><td>Part 1: Embedding 查表</td><td>h0 = ____________(torch.tensor([0, 1]))</td></tr>
+<tr><td>Part 2: 线性层</td><td>h1 = ____________(h0)</td></tr>
+<tr><td>Part 3: 输出头</td><td>logits = ____________(h1)</td></tr>
+<tr><td>Part 4: Softmax</td><td>probs = F.____________(logits, dim=-1)</td></tr>
+<tr><td>Part 5: CE Loss</td><td>loss = F.____________(logits, targets)</td></tr>
+<tr><td>Part 6: 反向传播</td><td>loss.____________()</td></tr>
+<tr><td>Part 7: 参数更新</td><td>optimizer.____________()</td></tr>
+</table>
+
+<p style="margin-top:8px"><b>思考题（写在下面）：</b></p>
+
+<p>1. 如果用 LoRA 代替直接更新 W，你会冻结 W 并引入两个小矩阵 A (r×2) 和 B (2×r)。假设 r=1，A 和 B 各有多少参数？比直接训练 W (2×2=4 个参数) 少了多少？</p>
+<div class="work work-short"></div>
+
+<p>2. 如果用 MoReS，你不改 W，而是在 h₁ 上加一个 delta：h₁' = h₁ + Rᵀ(W_s·h₁ - R·h₁)。R 是 (1×2) 的单位向量，W_s 是 Linear(2,1)。MoReS 总共有多少个可训练参数？</p>
+<div class="work work-short"></div>
+
+<p>3. 如果位置 0 的 label 不是"坐"而是 -100（忽略），总 loss 怎么算？</p>
+<div class="work work-short"></div>
+
+</div><!-- end two-col for Part 9 -->
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<div class="two-col">
+<h2 style="page-break-before:always">参考答案</h2>
+<!-- ═══════════════════════════════════════════════ -->
+<p style="font-size:7pt;color:#888">建议做完所有部分再看答案。如果中间卡住了，只看卡住的那一步。</p>
+
+<div style="font-size:7pt;font-family:var(--mono);line-height:1.5;color:#555">
+
+<p><b>Part 1:</b> h₀ = [[0.1, 0.2], [0.3, 0.4]]（直接查表）</p>
+
+<p><b>Part 2:</b><br>
+Wᵀ = [[0.5, 0.2], [-0.3, 0.8]]<br>
+位置0: [0.1, 0.2] @ Wᵀ = [0.1×0.5+0.2×(-0.3), 0.1×0.2+0.2×0.8] = [-0.01, 0.18], + b = [0.09, 0.08]<br>
+位置1: [0.3, 0.4] @ Wᵀ = [0.3×0.5+0.4×(-0.3), 0.3×0.2+0.4×0.8] = [0.03, 0.38], + b = [0.13, 0.28]<br>
+h₁ = [[0.09, 0.08], [0.13, 0.28]]</p>
+
+<p><b>Part 3:</b><br>
+Hᵀ = [[0.4, -0.3], [0.1, 0.5], [-0.2, 0.1]]<br>
+位置0: [0.09, 0.08] @ Hᵀ → 猫:0.09×0.4+0.08×(-0.3)=0.012, 坐:0.09×0.1+0.08×0.5=0.049, 了:0.09×(-0.2)+0.08×0.1=-0.010<br>
+logits[0] = [0.012, 0.049, -0.010]<br>
+位置1: [0.13, 0.28] @ Hᵀ → 猫:0.13×0.4+0.28×(-0.3)=-0.032, 坐:0.13×0.1+0.28×0.5=0.153, 了:0.13×(-0.2)+0.28×0.1=0.002<br>
+logits[1] = [-0.032, 0.153, 0.002]</p>
+
+<p><b>Part 4:</b><br>
+位置0: exp=[1.012, 1.050, 0.990], sum=3.052, probs=[0.331, 0.344, 0.324]<br>
+位置1: exp=[0.9685, 1.1655, 1.0020], sum=3.1360, probs=[0.3089, 0.3716, 0.3195]</p>
+
+<p><b>Part 5:</b><br>
+位置0: target=坐, P(坐)=0.3441, loss₀ = -log(0.3441) = 1.067<br>
+位置1: target=了, P(了)=0.3195, loss₁ = -log(0.3195) = 1.141<br>
+total_loss = (1.067 + 1.141) / 2 = 1.104</p>
+
+<p><b>Part 6a:</b><br>
+grad_logits[0] = ([0.3316, 0.3441, 0.3244] - [0, 1, 0]) / 2 = [0.1658, -0.3280, 0.1622]<br>
+grad_logits[1] = ([0.309, 0.372, 0.320] - [0, 0, 1]) / 2 = [0.154, 0.186, -0.340]</p>
+
+<p><b>Part 6b:</b> grad_h₁ = grad_logits @ H.weight，H.weight (3×2) = [[0.4,-0.3],[0.1,0.5],[-0.2,0.1]]<br>
+grad_h₁[0] = [0.1658, -0.3280, 0.1622] @ H.weight<br>
+= [0.1658×0.4+(-0.3280)×0.1+0.1622×(-0.2), 0.1658×(-0.3)+(-0.3280)×0.5+0.1622×0.1]<br>
+= [0.0663-0.0328-0.0324, -0.0497-0.1640+0.0162] = [<b>0.0011, -0.1975</b>]<br>
+grad_h₁[1] = [0.1545, 0.1858, -0.3402] @ H.weight<br>
+= [0.0618+0.0186+0.0680, -0.0463+0.0929+(-0.0340)] = [<b>0.1484, 0.0125</b>]</p>
+
+<p><b>Part 6c:</b><br>
+∂L/∂b = [0.0011+0.1484, -0.1975+0.0125] = [<b>0.1495, -0.1850</b>]<br>
+∂L/∂W[i,j] = Σ_pos grad_h₁[pos,i] × h₀[pos,j]:<br>
+∂L/∂W[0,0] = 0.0011×0.1+0.1484×0.3 = 0.0001+0.0445 = 0.0446<br>
+∂L/∂W[0,1] = 0.0011×0.2+0.1484×0.4 = 0.0002+0.0594 = 0.0596<br>
+∂L/∂W[1,0] = -0.1975×0.1+0.0125×0.3 = -0.0198+0.0038 = -0.0160<br>
+∂L/∂W[1,1] = -0.1975×0.2+0.0125×0.4 = -0.0395+0.0050 = -0.0345<br>
+∂L/∂W = [[<b>0.0446, 0.0596</b>], [<b>-0.0160, -0.0345</b>]]</p>
+
+<p><b>Part 7:</b> lr=0.1<br>
+b_new = [0.1-0.1×0.1495, -0.1-0.1×(-0.1850)] = [<b>0.0851, -0.0815</b>]<br>
+W_new = [[0.5-0.1×0.0446, -0.3-0.1×0.0596], [0.2-0.1×(-0.0160), 0.8-0.1×(-0.0345)]]<br>
+= [[<b>0.4955, -0.3060</b>], [<b>0.2016, 0.8034</b>]]</p>
+
+<p><b>第 2 轮:</b><br>
+W⁽²⁾ = [[0.496, -0.306], [0.202, 0.803]], b⁽²⁾ = [0.085, -0.081]<br>
+h₁ = [[0.085, 0.100], [0.127, 0.299]]<br>
+logits[0] = [0.004, 0.059, -0.007], logits[1] = [-0.039, 0.162, 0.004]<br>
+probs[0] = [0.328, 0.347, 0.325], probs[1] = [0.305, 0.373, 0.322]<br>
+loss₀ = -log(0.347) = 1.058, loss₁ = -log(0.322) = 1.133<br>
+total_loss = 1.096 (之前是 1.103，降了 0.007)<br>
+grad_logits[0] = [0.164, -0.327, 0.163], grad_logits[1] = [0.152, 0.187, -0.339]<br>
+后续梯度和更新方法与第 1 轮完全相同，用新的数值代入即可。<br>
+W⁽³⁾ ≈ [[0.491, -0.312], [0.203, 0.807]], b⁽³⁾ ≈ [0.070, -0.063]</p>
+
+<p><b>第 3 轮:</b><br>
+用 W⁽³⁾, b⁽³⁾ 重复同样过程。<br>
+total_loss ≈ 1.089（继续下降）<br>
+P(坐|猫) ≈ 0.350, P(了|坐) ≈ 0.324（都在缓慢上升）</p>
+
+<p><b>3 轮 loss 趋势:</b> 1.103 → 1.096 → 1.089，每轮降约 0.007。方向正确！</p>
+
+<p><b>Part 9 思考题:</b><br>
+1. r=1: A 是 (1,2) = 2 个参数，B 是 (2,1) = 2 个参数，共 4 个。和 W 的 4 个参数一样多（r=1 时 LoRA 没优势，r 在实际中远小于 d 才有优势）。<br>
+2. MoReS: R (1×2) = 2 参数 + W_s weight (1×2) = 2 参数 + W_s bias (1) = 1 参数 = 共 5 个参数。<br>
+3. ignore_index=-100 时 loss = loss₁ / 1 = 1.139（只算位置 1，不除以 2）。</p>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>手算 Attention — 从 Q·K 到多头输出</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:8pt;line-height:1.35;padding:8px 12px;max-width:none;margin:0 auto}
+@page{size:A4 portrait;margin:6mm 8mm}
+@media print{body{padding:0;font-size:7.5pt;line-height:1.3}}
+.two-col{}
+
+.no-break{break-inside:avoid;page-break-inside:avoid}
+h1{font-size:12pt;font-weight:700;border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:4px}
+h2{font-size:9.5pt;font-weight:700;margin:10px 0 3px;padding:2px 6px;background:#f0f0f0;color:#000;border:1px solid #000;border-radius:2px;page-break-after:avoid}
+h3{font-size:8pt;font-weight:700;margin:6px 0 2px;border-bottom:1px solid #999;padding-bottom:1px;page-break-after:avoid}
+p{margin:2px 0;font-size:7.5pt}
+table{width:100%;border-collapse:collapse;font-size:7pt;margin:3px 0}
+th,td{padding:2px 4px;border:1px solid #000;text-align:center;vertical-align:middle}
+th{background:#e8e8e8;color:#000;font-weight:700}
+.given{background:#f0f0ff;border:1px solid #0040a0;border-radius:2px;padding:4px 8px;margin:4px 0;font-family:var(--mono);font-size:7pt;line-height:1.4;break-inside:avoid}
+.given b{color:#0040a0}
+.hint{background:#f0fff0;border-left:2px solid #006400;padding:3px 6px;margin:3px 0;font-size:6.5pt}
+.hint b{color:#006400}
+.work{border:1px solid #000;border-radius:2px;padding:4px 6px;margin:4px 0;min-height:70px;background:repeating-linear-gradient(transparent,transparent 17px,#e8e8e8 17px,#e8e8e8 18px);break-inside:avoid}
+.work-tall{min-height:110px}
+.work-short{min-height:45px}
+.result-box{border:1.5px solid #a00000;border-radius:2px;padding:3px 8px;margin:3px 0;font-family:var(--mono);font-size:7.5pt;min-height:22px;break-inside:avoid}
+.pytorch-ref{background:#f0f0ff;border:1px solid #4040a0;border-radius:2px;padding:2px 6px;margin:2px 0;font-size:6pt;font-family:var(--mono)}
+.pytorch-ref b{color:#4040a0}
+.step{display:inline-block;width:16px;height:16px;background:#fff;color:#000;border:1px solid #000;text-align:center;line-height:15px;border-radius:50%;font-size:6.5pt;font-weight:700;margin-right:3px}
+pre{font-family:var(--mono);font-size:7pt;margin:2px 0;white-space:pre-wrap}
+hr{border:none;border-top:1px solid #000;margin:8px 0;column-span:all}
+.check{font-size:6.5pt;color:#666;margin:1px 0}
+.row{display:flex;gap:10px;margin:3px 0;break-inside:avoid}
+.col-code{flex:1;min-width:0}
+.col-state{flex:1;min-width:0}
+</style>
+</head>
+<body>
+
+<h1>手算 Attention — 从 Q·K 到多头输出</h1>
+<p><b>用 seq_len=3, d=4, n_heads=2 手算完整的注意力机制。</b></p>
+<p>所有计算你自己完成。每一步只给你初始数据和公式提示，你在横线区域手写过程和结果，最后把结果填入红框。</p>
+<p style="font-size:6.5pt;color:#888">双栏排版，打印 A4 纵向。Part 0 数据页可撕下放旁边，答案在最后一页。</p>
+
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>Part 0: 初始数据（撕下来放在旁边）</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>整份练习都用下面这些权重矩阵。建议把这页撕下来或复印一份放在旁边随时查看。</p>
+
+<h3>模型配置</h3>
+<div class="given">
+<b>seq_len = 3</b>（3 个 token，可以想象为「猫 / 坐 / 了」）<br>
+<b>d_model = 4</b>，<b>n_heads = 2</b>，<b>head_dim = d_model / n_heads = 2</b>
+</div>
+
+<h3>输入 x（第 1 轮）</h3>
+<div class="given">
+<b>x</b> (3×4):
+<pre>x = [[ 0.1,  0.3, -0.2,  0.5],   ← token 0 (猫)
+     [ 0.4, -0.1,  0.6,  0.2],   ← token 1 (坐)
+     [ 0.3,  0.2,  0.1, -0.3]]   ← token 2 (了)</pre>
+</div>
+
+<h3>权重矩阵</h3>
+<div class="given">
+<b>W_q</b> (4×4):
+<pre>W_q = [[ 0.2,  0.1, -0.1,  0.3],
+       [ 0.4, -0.2,  0.1,  0.0],
+       [ 0.1,  0.3,  0.2, -0.1],
+       [-0.2,  0.0,  0.4,  0.1]]</pre>
+</div>
+
+<div class="given">
+<b>W_k</b> (4×4):
+<pre>W_k = [[ 0.3, -0.1,  0.2,  0.1],
+       [ 0.0,  0.4, -0.2,  0.3],
+       [ 0.2,  0.1,  0.3, -0.2],
+       [ 0.1, -0.3,  0.0,  0.4]]</pre>
+</div>
+
+<div class="given">
+<b>W_v</b> (4×4):
+<pre>W_v = [[ 0.1,  0.2,  0.3, -0.1],
+       [-0.2,  0.1,  0.0,  0.4],
+       [ 0.3, -0.1,  0.2,  0.1],
+       [ 0.0,  0.3, -0.2,  0.2]]</pre>
+</div>
+
+<div class="given">
+<b>W_o</b> (4×4) — 输出投影矩阵:
+<pre>W_o = [[ 0.2, -0.1,  0.3,  0.1],
+       [ 0.1,  0.3, -0.2,  0.0],
+       [-0.1,  0.2,  0.1,  0.3],
+       [ 0.3,  0.0,  0.2, -0.1]]</pre>
+</div>
+
+<h3>你会用到的公式</h3>
+<table>
+<tr><th>操作</th><th>公式</th></tr>
+<tr><td>Q/K/V 投影</td><td>Q = x @ W_q^T，K = x @ W_k^T，V = x @ W_v^T</td></tr>
+<tr><td>分头</td><td>(3,4) → 前 2 列 = head 0，后 2 列 = head 1</td></tr>
+<tr><td>注意力分数</td><td>scores = Q_h @ K_h^T / sqrt(head_dim)</td></tr>
+<tr><td>因果掩码</td><td>scores[i,j] = -inf 当 j > i</td></tr>
+<tr><td>Softmax</td><td>P(i) = exp(x_i) / sum_j exp(x_j)，exp(-inf) = 0</td></tr>
+<tr><td>加权求和</td><td>output_h = attn_weights @ V_h</td></tr>
+<tr><td>合并 + 输出</td><td>output = concat(head0, head1) @ W_o^T</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 1: Q, K, V 投影</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+
+
+<p>计算 <b>Q = x @ W_q^T</b>（3×4 矩阵乘 4×4 → 3×4 结果矩阵）。一共 12 个值。</p>
+
+<h3>计算 Q = x @ W_q^T</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>每个元素 = 输入 x 的第 i 行 与 W_q 的第 j 行 的点积（因为转置了 W_q）。例如 Q[0,0] = x[0] · W_q[0] = 0.1×0.2 + 0.3×0.1 + (-0.2)×(-0.1) + 0.5×0.3</div>
+<div class="result-box">Q (3×4) = </div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+<h3>计算 K = x @ W_k^T</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>同 Q 的方法，K = x @ W_k^T。每个元素 = x 的第 i 行 · W_k 的第 j 行。</div>
+<div class="result-box">K (3×4) = </div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+<h3>计算 V = x @ W_v^T</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>同 Q 的方法，V = x @ W_v^T。每个元素 = x 的第 i 行 · W_v 的第 j 行。</div>
+<div class="result-box">V (3×4) = </div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 2: 分头 (Split Heads)</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+
+
+<p>将 Q, K, V (3×4) 按列拆分成 2 个头，每头维度 = 2。</p>
+
+<h3>Q 分头</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>前 2 列给 head 0，后 2 列给 head 1。即 Q_h0 = Q[:, 0:2]，Q_h1 = Q[:, 2:4]。</div>
+<div class="result-box">Q_h0 (3×2) = </div>
+<div class="result-box">Q_h1 (3×2) = </div>
+</div>
+<div class="col-state">
+<div class="work work-short"></div>
+</div>
+</div>
+
+<h3>K 分头</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>同上，K_h0 = K[:, 0:2]，K_h1 = K[:, 2:4]。</div>
+<div class="result-box">K_h0 (3×2) = </div>
+<div class="result-box">K_h1 (3×2) = </div>
+</div>
+<div class="col-state">
+<div class="work work-short"></div>
+</div>
+</div>
+
+<h3>V 分头</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>同上，V_h0 = V[:, 0:2]，V_h1 = V[:, 2:4]。</div>
+<div class="result-box">V_h0 (3×2) = </div>
+<div class="result-box">V_h1 (3×2) = </div>
+</div>
+<div class="col-state">
+<div class="work work-short"></div>
+</div>
+</div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 3: 注意力分数（Head 0）</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+
+
+<p>只对 <b>head 0</b> 计算注意力分数：scores = Q_h0 @ K_h0^T / sqrt(2)</p>
+<p>结果是 3×3 矩阵，共 9 个值。</p>
+
+<h3>计算 scores_h0 = Q_h0 @ K_h0^T / sqrt(2)</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>每个元素 = Q 的第 i 行 · K 的第 j 行 的点积，然后除以 sqrt(2) ≈ 1.414。例如 scores[0,0] = (Q_h0[0] · K_h0[0]) / 1.414</div>
+<div class="result-box">scores_h0 (3×3) = </div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 4: 因果掩码 (Causal Mask)</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+
+
+<p>因果掩码确保每个 token 只能看到自己和前面的 token，不能看后面的。</p>
+
+<h3>掩码矩阵（可见=1，遮蔽=0）</h3>
+<div class="no-break">
+<table style="width:auto;margin:4px auto">
+<tr><th></th><th>j=0</th><th>j=1</th><th>j=2</th></tr>
+<tr><th>i=0</th><td>1</td><td>0</td><td>0</td></tr>
+<tr><th>i=1</th><td>1</td><td>1</td><td>0</td></tr>
+<tr><th>i=2</th><td>1</td><td>1</td><td>1</td></tr>
+</table>
+</div>
+
+<h3>应用掩码：将上三角位置替换为 -inf</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>位置 0 只能看自己；位置 1 能看 0 和 1；位置 2 能看 0、1、2 全部。将 scores[i,j] 设为 -inf 当 j > i。</div>
+<div class="result-box">masked_scores_h0 (3×3) = </div>
+</div>
+<div class="col-state">
+<div class="work"></div>
+</div>
+</div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 5: Softmax（逐行）</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+
+
+<p>对 masked_scores_h0 的每一行分别做 softmax。</p>
+
+<h3>第 0 行 softmax（1 个有效值）</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>exp(-inf) = 0，所以被遮蔽的位置不参与 softmax。第 0 行只有 1 个有效值 → softmax = [1.0, 0.0, 0.0]。</div>
+<div class="result-box">attn_h0[0] = </div>
+</div>
+<div class="col-state">
+<div class="work work-short"></div>
+</div>
+</div>
+
+<h3>第 1 行 softmax（2 个有效值）</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>2 个有效值 → exp 后除以总和。softmax([a, b]) = [exp(a)/(exp(a)+exp(b)), exp(b)/(exp(a)+exp(b))]。</div>
+<div class="result-box">attn_h0[1] = </div>
+</div>
+<div class="col-state">
+<div class="work"></div>
+</div>
+</div>
+
+<h3>第 2 行 softmax（3 个有效值）</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>3 个有效值全参与，标准 softmax。</div>
+<div class="result-box">attn_h0[2] = </div>
+</div>
+<div class="col-state">
+<div class="work"></div>
+</div>
+</div>
+
+<div class="result-box">完整 attn_weights_h0 (3×3) = </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 6: 加权求和（Head 0 输出）</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+
+
+<p>计算 output_h0 = attn_weights_h0 @ V_h0 → (3×3) @ (3×2) → (3×2)，共 6 个值。</p>
+
+<h3>计算 output_h0</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>输出的第 i 行 = sum_j weight[i,j] × V_h0[j]。第 0 行权重是 [1,0,0]，所以 output_h0[0] = V_h0[0]。</div>
+<div class="result-box">output_h0 (3×2) = </div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 7: Head 1（可选，相同步骤）</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+
+
+<p>重复 Part 3-6 对 <b>head 1</b> 做相同计算。此部分为可选练习，你也可以跳到 Part 8（答案页中会提供 head 1 的结果）。</p>
+
+<h3>scores_h1 = Q_h1 @ K_h1^T / sqrt(2)</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>用 Q_h1, K_h1 代替 h0 版本，其余步骤完全一样。scores = Q_h1 @ K_h1^T / sqrt(2)。</div>
+<div class="result-box">scores_h1 (3×3) = </div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+<h3>应用因果掩码 + Softmax</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>先将上三角设 -inf，再逐行 softmax，和 head 0 方法一样。</div>
+<div class="result-box">attn_weights_h1 (3×3) = </div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+<h3>output_h1 = attn_weights_h1 @ V_h1</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>output_h1 = attn_weights_h1 @ V_h1，和 head 0 方法一样。</div>
+<div class="result-box">output_h1 (3×2) = </div>
+</div>
+<div class="col-state">
+<div class="work"></div>
+</div>
+</div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 8: 合并头 + 输出投影</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+
+
+<p>将两个头的输出拼接，然后通过 W_o 输出投影。</p>
+
+<h3>步骤 1：拼接 concat = [output_h0 | output_h1] → (3×4)</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>每行：head 0 的 2 个值 + head 1 的 2 个值 = 4 个值。如果你跳过了 Part 7，可以用答案页的 output_h1。</div>
+<div class="result-box">concat (3×4) = </div>
+</div>
+<div class="col-state">
+<div class="work work-short"></div>
+</div>
+</div>
+
+<h3>步骤 2：输出投影 final = concat @ W_o^T → (3×4)</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>final = concat @ W_o^T，(3×4) @ (4×4) = (3×4)。每个元素 = concat 的第 i 行 · W_o 的第 j 行。</div>
+<div class="result-box">final output (3×4) = </div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+<p class="check">这就是整个 Self-Attention 层的输出！下面继续走完剩下的流程。</p>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 8b: 残差连接 + LM Head + Loss（走完全程）</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+
+
+<p>Attention 层只是 Transformer 的一部分。要计算 loss，还需要：残差连接 → 输出头 → Softmax → CE Loss。</p>
+
+<div class="given">
+<b>额外参数（输出头）：</b>我们的词表还是 3 个 token（猫=0, 坐=1, 了=2）。<br>
+lm_head = nn.Linear(4, 3)，weight (3×4)：
+<pre>H = [[ 0.2, -0.1,  0.3,  0.1],   ← 猫(行0)
+     [ 0.1,  0.3, -0.2,  0.0],   ← 坐(行1)
+     [-0.1,  0.2,  0.1,  0.3]]   ← 了(行2)</pre>
+<b>训练数据：</b>输入 [猫, 坐, 了]，目标 [坐, 了, 猫] = [1, 2, 0]<br>
+（每个位置预测下一个 token）
+</div>
+
+<h3>Step 1: 残差连接</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>公式：</b>attn_output = x + attention_output（把原始输入加回来）<br>
+x 是 Part 0 的输入，attention_output 是你刚在 Part 8 算出的 final output。<br>
+逐元素相加：attn_output[i,j] = x[i,j] + final[i,j]</div>
+<div class="result-box">attn_output (3×4) = </div>
+</div>
+<div class="col-state">
+<div class="work"></div>
+</div>
+</div>
+
+<h3>Step 2: LM Head — 输出 logits</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>公式：</b>对每个位置的 attn_output (1×4)，和 H 的每一行做点积，得到 3 个 logit。<br>
+logit(猫) = attn_output · H[0]<br>
+logit(坐) = attn_output · H[1]<br>
+logit(了) = attn_output · H[2]</div>
+<div class="result-box">logits[0] = [猫:______, 坐:______, 了:______]</div>
+<div class="result-box">logits[1] = [猫:______, 坐:______, 了:______]</div>
+<div class="result-box">logits[2] = [猫:______, 坐:______, 了:______]</div>
+</div>
+<div class="col-state">
+<p><b>位置 0：</b></p>
+<div class="work"></div>
+<p><b>位置 1：</b></p>
+<div class="work"></div>
+<p><b>位置 2：</b></p>
+<div class="work"></div>
+</div>
+</div>
+
+<h3>Step 3: Softmax（每个位置独立）</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>和之前一样，每行 3 个 logit → exp → 除以总和 → 3 个概率。</div>
+<div class="result-box">probs[0] = [P(猫):______, P(坐):______, P(了):______]</div>
+<div class="result-box">probs[1] = [P(猫):______, P(坐):______, P(了):______]</div>
+<div class="result-box">probs[2] = [P(猫):______, P(坐):______, P(了):______]</div>
+</div>
+<div class="col-state">
+<p><b>位置 0：</b></p>
+<div class="work work-short"></div>
+<p><b>位置 1：</b></p>
+<div class="work work-short"></div>
+<p><b>位置 2：</b></p>
+<div class="work work-short"></div>
+</div>
+</div>
+
+<h3>Step 4: Cross-Entropy Loss</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>公式：</b>每个位置 loss = -ln(P(正确 token))。<br>
+位置 0 目标=坐(1)：loss₀ = -ln(P(坐))<br>
+位置 1 目标=了(2)：loss₁ = -ln(P(了))<br>
+位置 2 目标=猫(0)：loss₂ = -ln(P(猫))<br>
+total_loss = (loss₀ + loss₁ + loss₂) / 3<br><br>
+参考：随机猜 3 个类 → loss = ln(3) ≈ 1.099</div>
+<div class="result-box">
+loss₀ = -ln(______) = ______<br>
+loss₁ = -ln(______) = ______<br>
+loss₂ = -ln(______) = ______<br>
+<b>total_loss = ______</b>
+</div>
+</div>
+<div class="col-state">
+<div class="work"></div>
+</div>
+</div>
+
+<!-- ────── 5a: grad_logits ────── -->
+<h3>Step 5a: ∂L/∂logits</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>公式：</b>∂L/∂logits = (softmax - one_hot) / batch_size<br><br>
+batch_size = 3<br>
+位置 0 目标=坐(1): one_hot = [0, 1, 0]<br>
+位置 1 目标=了(2): one_hot = [0, 0, 1]<br>
+位置 2 目标=猫(0): one_hot = [1, 0, 0]<br><br>
+做法：probs（Step 3 的结果）减去 one_hot，除以 3。</div>
+<div class="result-box">
+grad_logits[0] = [______, ______, ______]<br>
+grad_logits[1] = [______, ______, ______]<br>
+grad_logits[2] = [______, ______, ______]
+</div>
+</div>
+<div class="col-state">
+<p><b>位置 0：</b></p>
+<div class="work work-short"></div>
+<p><b>位置 1：</b></p>
+<div class="work work-short"></div>
+<p><b>位置 2：</b></p>
+<div class="work work-short"></div>
+</div>
+</div>
+
+<!-- ────── 5b: grad_attn_output ────── -->
+<h3>Step 5b: ∂L/∂(attn_output) — 反向过 H</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>前向：</b>logits = attn_output @ H<sup>T</sup><br>
+<b>反向：</b>grad_attn_output = grad_logits @ H<br><br>
+shape: (3×3) @ (3×4) = (3×4)<br>
+每个位置：grad_logits[i] (1×3) 和 H (3×4) 的第 j 列做点积。<br><br>
+H = [[0.2, -0.1, 0.3, 0.1],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.1, 0.3, -0.2, 0.0],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[-0.1, 0.2, 0.1, 0.3]]</div>
+<div class="result-box">
+grad_attn_output[0] = [__, __, __, __]<br>
+grad_attn_output[1] = [__, __, __, __]<br>
+grad_attn_output[2] = [__, __, __, __]
+</div>
+</div>
+<div class="col-state">
+<p><b>位置 0：</b></p>
+<div class="work"></div>
+<p><b>位置 1：</b></p>
+<div class="work"></div>
+<p><b>位置 2：</b></p>
+<div class="work"></div>
+</div>
+</div>
+
+<!-- ────── 5c: grad_H ────── -->
+<h3>Step 5c: ∂L/∂H — 输出头的梯度</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>公式：</b>∂L/∂H = grad_logits<sup>T</sup> @ attn_output<br><br>
+shape: (3×3)<sup>T</sup> @ (3×4) = (3×4)，和 H 同 shape。<br><br>
+attn_output = Step 1 残差结果。</div>
+<div class="result-box">
+∂L/∂H (3×4)：<br>
+行0(猫) = [__, __, __, __]<br>
+行1(坐) = [__, __, __, __]<br>
+行2(了) = [__, __, __, __]
+</div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+<!-- ────── 5d: residual ────── -->
+<h3>Step 5d: 残差连接 — 梯度直接传过来</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>前向：</b>attn_output = x + attn_final<br>
+<b>反向：</b>∂(x+y)/∂y = 1<br>
+所以 grad_attn_final = grad_attn_output，不用算。</div>
+<div class="result-box">
+grad_attn_final = grad_attn_output（直接抄 5b）
+</div>
+</div>
+<div class="col-state">
+</div>
+</div>
+
+<!-- ────── 5e-①: grad_concat ────── -->
+<h3>Step 5e-①: grad_concat = grad_attn_final @ W_o</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>前向：</b>attn_final = concat @ W_o<sup>T</sup><br>
+<b>反向：</b>grad_concat = grad_attn_final @ W_o<br>
+shape: (3×4) @ (4×4) = (3×4)<br><br>
+W_o 见 Part 0 数据页。</div>
+<div class="result-box">
+grad_concat：<br>
+[0] = [__, __, __, __]<br>
+[1] = [__, __, __, __]<br>
+[2] = [__, __, __, __]
+</div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+<!-- ────── 5e-②: grad_W_o ────── -->
+<h3>Step 5e-②: ∂L/∂W_o = grad_attn_final<sup>T</sup> @ concat</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>公式：</b>∂L/∂W_o = grad_attn_final<sup>T</sup> @ concat<br>
+shape: (4×3) @ (3×4) = (4×4)<br><br>
+concat = Part 8 合并头的结果。</div>
+<div class="result-box">
+∂L/∂W_o (4×4)：<br>
+[__, __, __, __]<br>
+[__, __, __, __]<br>
+[__, __, __, __]<br>
+[__, __, __, __]
+</div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+<div class="hint"><b>后续：</b>grad_concat 拆成 head0 (前 2 列) 和 head1 (后 2 列) 后，可以继续反向传到 softmax → scores → Q, K, V → W_q, W_k, W_v。原理相同但计算量大，<code>loss.backward()</code> 自动完成。</div>
+
+<div class="pytorch-ref"><b>PyTorch：</b>loss = F.cross_entropy(logits.view(-1,3), targets); loss.backward()</div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 9: 第 2 轮 — 不同输入，相同权重</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+
+
+<p>权重 W_q, W_k, W_v, W_o 不变，换一组新的输入。</p>
+
+<div class="given">
+<b>x (第 2 轮)</b> (3×4):
+<pre>x = [[ 0.5, -0.2,  0.3,  0.1],
+     [ 0.2,  0.4, -0.1,  0.3],
+     [-0.1,  0.3,  0.2,  0.4]]</pre>
+</div>
+
+<h3>Q, K, V 投影</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>Q = x @ W_q^T，K = x @ W_k^T，V = x @ W_v^T。方法同 Part 1。</div>
+<div class="result-box">Q (3×4) = </div>
+<div class="result-box">K (3×4) = </div>
+<div class="result-box">V (3×4) = </div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+<h3>分头 (head 0)</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>前 2 列 = head 0，后 2 列 = head 1。</div>
+<div class="result-box">Q_h0 = &nbsp;&nbsp;&nbsp;&nbsp; K_h0 = &nbsp;&nbsp;&nbsp;&nbsp; V_h0 = </div>
+</div>
+<div class="col-state">
+<div class="work work-short"></div>
+</div>
+</div>
+
+<h3>Scores → Mask → Softmax → Output (head 0)</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>scores = Q_h0 @ K_h0^T / sqrt(2) → 掩码 → softmax → output = attn @ V_h0。</div>
+<div class="result-box">scores_h0 = </div>
+<div class="result-box">attn_h0 = </div>
+<div class="result-box">output_h0 = </div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+<h3>Head 1（可选）+ 合并 + 输出投影</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>对 head 1 重复相同步骤，然后 concat = [h0 | h1]，final = concat @ W_o^T。</div>
+<div class="result-box">concat = </div>
+<div class="result-box">final output (3×4) = </div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 9（续）: 第 3 轮</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+
+
+<div class="given">
+<b>x (第 3 轮)</b> (3×4):
+<pre>x = [[-0.3,  0.1,  0.4,  0.2],
+     [ 0.6,  0.0, -0.2,  0.5],
+     [ 0.1, -0.4,  0.3,  0.1]]</pre>
+</div>
+
+<h3>Q, K, V 投影</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>Q = x @ W_q^T，K = x @ W_k^T，V = x @ W_v^T。方法同 Part 1。</div>
+<div class="result-box">Q (3×4) = </div>
+<div class="result-box">K (3×4) = </div>
+<div class="result-box">V (3×4) = </div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+<h3>分头 (head 0)</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>前 2 列 = head 0，后 2 列 = head 1。</div>
+<div class="result-box">Q_h0 = &nbsp;&nbsp;&nbsp;&nbsp; K_h0 = &nbsp;&nbsp;&nbsp;&nbsp; V_h0 = </div>
+</div>
+<div class="col-state">
+<div class="work work-short"></div>
+</div>
+</div>
+
+<h3>Scores → Mask → Softmax → Output (head 0)</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>scores = Q_h0 @ K_h0^T / sqrt(2) → 掩码 → softmax → output = attn @ V_h0。</div>
+<div class="result-box">scores_h0 = </div>
+<div class="result-box">attn_h0 = </div>
+<div class="result-box">output_h0 = </div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+<h3>Head 1（可选）+ 合并 + 输出投影</h3>
+<div class="row">
+<div class="col-code">
+<div class="hint"><b>提示：</b>对 head 1 重复相同步骤，然后 concat = [h0 | h1]，final = concat @ W_o^T。</div>
+<div class="result-box">concat = </div>
+<div class="result-box">final output (3×4) = </div>
+</div>
+<div class="col-state">
+<div class="work work-tall"></div>
+</div>
+</div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">答案</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<div class="two-col" style="font-size:7pt;font-family:var(--mono)">
+
+<h3>第 1 轮答案</h3>
+
+<div class="no-break">
+<p><b>Part 1 — Q, K, V:</b></p>
+<pre>Q = [[ 0.22, -0.04,  0.01, -0.05],
+     [ 0.07,  0.24,  0.11,  0.18],
+     [-0.02,  0.09,  0.14, -0.05]]
+
+K = [[ 0.01,  0.31, -0.11,  0.12],
+     [ 0.27, -0.10,  0.21,  0.15],
+     [ 0.06, -0.03,  0.17, -0.15]]
+
+V = [[-0.04,  0.21,  0.01,  0.23],
+     [ 0.18, -0.01,  0.27, -0.11],
+     [ 0.13, -0.16,  0.06, -0.02]]</pre>
+</div>
+
+<div class="no-break">
+<p><b>Part 2 — 分头:</b></p>
+<pre>Q_h0=[[ 0.22,-0.04],[ 0.07, 0.24],[-0.02, 0.09]]
+Q_h1=[[ 0.01,-0.05],[ 0.11, 0.18],[ 0.14,-0.05]]
+K_h0=[[ 0.01, 0.31],[ 0.27,-0.10],[ 0.06,-0.03]]
+K_h1=[[-0.11, 0.12],[ 0.21, 0.15],[ 0.17,-0.15]]
+V_h0=[[-0.04, 0.21],[ 0.18,-0.01],[ 0.13,-0.16]]
+V_h1=[[ 0.01, 0.23],[ 0.27,-0.11],[ 0.06,-0.02]]</pre>
+</div>
+
+<div class="no-break">
+<p><b>Part 3 — scores_h0 (除以 sqrt2 前的点积，再 /1.414):</b></p>
+<pre>scores_h0 = [[-0.0072,  0.0448,  0.0102],
+             [ 0.0531, -0.0036, -0.0021],
+             [ 0.0196, -0.0102, -0.0028]]</pre>
+</div>
+
+<div class="no-break">
+<p><b>Part 4 — 掩码后:</b></p>
+<pre>masked = [[-0.0072,   -inf,    -inf],
+          [ 0.0531, -0.0036,   -inf],
+          [ 0.0196, -0.0102, -0.0028]]</pre>
+</div>
+
+<div class="no-break">
+<p><b>Part 5 — Softmax:</b></p>
+<pre>attn_h0 = [[1.0000, 0.0000, 0.0000],
+           [0.5142, 0.4858, 0.0000],
+           [0.3391, 0.3292, 0.3317]]</pre>
+</div>
+
+<div class="no-break">
+<p><b>Part 6 — output_h0:</b></p>
+<pre>output_h0 = [[-0.0400,  0.2100],
+             [ 0.0669,  0.1031],
+             [ 0.0888,  0.0149]]</pre>
+</div>
+
+<div class="no-break">
+<p><b>Part 7 — Head 1:</b></p>
+<pre>scores_h1 = [[-0.0050, -0.0038,  0.0065],
+             [ 0.0067,  0.0354, -0.0059],
+             [-0.0151,  0.0155,  0.0221]]
+
+attn_h1 =   [[1.0000, 0.0000, 0.0000],
+             [0.4928, 0.5072, 0.0000],
+             [0.3258, 0.3360, 0.3382]]
+
+output_h1 = [[ 0.0100,  0.2300],
+             [ 0.1419,  0.0576],
+             [ 0.1143,  0.0312]]</pre>
+</div>
+
+<div class="no-break">
+<p><b>Part 8 — 合并 + 输出投影:</b></p>
+<pre>concat = [[-0.0400, 0.2100, 0.0100, 0.2300],
+          [ 0.0669, 0.1031, 0.1419, 0.0576],
+          [ 0.0888, 0.0149, 0.1143, 0.0312]]
+
+final = [[-0.0030,  0.0570,  0.1160, -0.0330],
+         [ 0.0514,  0.0093,  0.0454,  0.0427],
+         [ 0.0537, -0.0095,  0.0149,  0.0464]]</pre>
+</div>
+
+<div class="no-break">
+<p><b>Part 8b — 残差 + LM Head + Loss:</b></p>
+<pre>残差 = x + final:
+  [[ 0.097,  0.357, -0.084,  0.467],
+   [ 0.451, -0.091,  0.645,  0.243],
+   [ 0.354,  0.191,  0.115, -0.254]]
+
+logits (@ H^T):
+  [[ 0.005,  0.134,  0.193],
+   [ 0.317, -0.111,  0.074],
+   [ 0.061,  0.070, -0.062]]
+
+probs (softmax):
+  [[ 0.299,  0.340,  0.361],
+   [ 0.411,  0.268,  0.322],
+   [ 0.346,  0.349,  0.306]]
+
+loss0=-ln(P(坐)=0.340)=1.079
+loss1=-ln(P(了)=0.322)=1.133
+loss2=-ln(P(猫)=0.346)=1.062
+total_loss = 1.091
+
+grad_logits (÷3):
+  [[ 0.100, -0.220,  0.120],
+   [ 0.137,  0.089, -0.226],
+   [-0.218,  0.116,  0.102]]
+
+Step 5b: grad_attn_output = grad_logits @ H
+  位置0: [-0.014, -0.052,  0.086,  0.046]
+  位置1: [ 0.059, -0.032,  0.001, -0.054]
+  位置2: [-0.042,  0.077, -0.079,  0.009]
+
+Step 5c: ∂L/∂H = grad_logits^T @ attn_output
+  行0(猫): [-0.006, -0.018,  0.055,  0.135]
+  行1(坐): [ 0.060, -0.065,  0.089, -0.111]
+  行2(了): [-0.054,  0.083, -0.144, -0.025]
+
+Step 5d: grad_attn_final = grad_attn_output（直接传过来）
+
+Step 5e: grad_concat = grad_attn_final @ W_o
+  位置0: [-0.003,  0.003,  0.024,  0.020]
+  位置1: [-0.008, -0.015,  0.013,  0.012]
+  位置2: [ 0.010,  0.012, -0.034, -0.029]
+
+∂L/∂W_o = grad_attn_final^T @ concat
+  [[ 0.001,  0.003,  0.003, -0.001],
+   [ 0.007, -0.013,  0.004, -0.011],
+   [-0.010,  0.017, -0.008,  0.017],
+   [-0.005,  0.004, -0.006,  0.008]]</pre>
+</div>
+
+<hr>
+
+<h3>第 2 轮答案</h3>
+
+<div class="no-break">
+<pre>Q = [[ 0.08, 0.27, 0.04, 0.03],
+     [ 0.18,-0.01, 0.09,-0.05],
+     [ 0.11,-0.08, 0.08, 0.14]]
+
+K = [[ 0.24,-0.11, 0.15, 0.15],
+     [ 0.03, 0.27,-0.01, 0.02],
+     [ 0.02, 0.20,-0.01, 0.06]]
+
+V = [[ 0.09,-0.08, 0.24,-0.10],
+     [ 0.04, 0.12, 0.03, 0.20],
+     [ 0.07, 0.21, 0.02, 0.13]]</pre>
+</div>
+
+<div class="no-break">
+<pre>Q_h0=[[0.08,0.27],[0.18,-0.01],[0.11,-0.08]]
+K_h0=[[0.24,-0.11],[0.03,0.27],[0.02,0.20]]
+V_h0=[[0.09,-0.08],[0.04,0.12],[0.07,0.21]]
+
+scores_h0=[[-0.0074, 0.0532, 0.0393],
+           [ 0.0313, 0.0019, 0.0011],
+           [ 0.0249,-0.0129,-0.0098]]
+
+attn_h0=[[1.0000, 0.0000, 0.0000],
+         [0.5074, 0.4926, 0.0000],
+         [0.3414, 0.3288, 0.3298]]
+
+output_h0=[[0.0900,-0.0800],
+           [0.0654, 0.0185],
+           [0.0670, 0.0814]]</pre>
+</div>
+
+<div class="no-break">
+<pre>Q_h1=[[0.04,0.03],[0.09,-0.05],[0.08,0.14]]
+K_h1=[[0.15,0.15],[-0.01,0.02],[-0.01,0.06]]
+V_h1=[[0.24,-0.10],[0.03,0.20],[0.02,0.13]]
+
+scores_h1=[[0.0074, 0.0001, 0.0010],
+           [0.0042,-0.0013,-0.0028],
+           [0.0233, 0.0014, 0.0054]]
+
+attn_h1=[[1.0000, 0.0000, 0.0000],
+         [0.5014, 0.4986, 0.0000],
+         [0.3378, 0.3305, 0.3318]]
+
+output_h1=[[0.2400,-0.1000],
+           [0.1353, 0.0496],
+           [0.0976, 0.0754]]
+
+concat=[[0.0900,-0.0800,0.2400,-0.1000],
+        [0.0654, 0.0185,0.1353, 0.0496],
+        [0.0670, 0.0814,0.0976, 0.0754]]
+
+final=[[ 0.0880,-0.0630,-0.0310, 0.0850],
+       [ 0.0568,-0.0150, 0.0256, 0.0417],
+       [ 0.0421, 0.0116, 0.0420, 0.0321]]</pre>
+</div>
+
+<hr>
+
+<h3>第 3 轮答案</h3>
+
+<div class="no-break">
+<pre>Q = [[-0.03,-0.10, 0.06, 0.24],
+     [ 0.29, 0.22,-0.03,-0.15],
+     [-0.02, 0.15,-0.06, 0.11]]
+
+K = [[ 0.00, 0.02, 0.03, 0.02],
+     [ 0.19, 0.19,-0.04, 0.26],
+     [ 0.14,-0.19, 0.05, 0.17]]
+
+V = [[ 0.09, 0.15, 0.00,-0.01],
+     [-0.05, 0.08, 0.19, 0.14],
+     [ 0.01,-0.02, 0.14,-0.16]]</pre>
+</div>
+
+<div class="no-break">
+<pre>Q_h0=[[-0.03,-0.10],[0.29,0.22],[-0.02,0.15]]
+K_h0=[[0.00,0.02],[0.19,0.19],[0.14,-0.19]]
+V_h0=[[0.09,0.15],[-0.05,0.08],[0.01,-0.02]]
+
+scores_h0=[[-0.0014,-0.0175, 0.0105],
+           [ 0.0031, 0.0685,-0.0008],
+           [ 0.0021, 0.0175,-0.0221]]
+
+attn_h0=[[1.0000, 0.0000, 0.0000],
+         [0.4837, 0.5163, 0.0000],
+         [0.3343, 0.3394, 0.3263]]
+
+output_h0=[[0.0900, 0.1500],
+           [0.0177, 0.1139],
+           [0.0164, 0.0708]]</pre>
+</div>
+
+<div class="no-break">
+<pre>Q_h1=[[0.06,0.24],[-0.03,-0.15],[-0.06,0.11]]
+K_h1=[[0.03,0.02],[-0.04,0.26],[0.05,0.17]]
+V_h1=[[0.00,-0.01],[0.19,0.14],[0.14,-0.16]]
+
+scores_h1=[[0.0047, 0.0424, 0.0310],
+           [-0.0028,-0.0267,-0.0191],
+           [ 0.0003, 0.0219, 0.0111]]
+
+attn_h1=[[1.0000, 0.0000, 0.0000],
+         [0.5060, 0.4940, 0.0000],
+         [0.3297, 0.3369, 0.3333]]
+
+output_h1=[[0.0000,-0.0100],
+           [0.0939, 0.0641],
+           [0.1107,-0.0095]]
+
+concat=[[0.0900, 0.1500, 0.0000,-0.0100],
+        [0.0177, 0.1139, 0.0939, 0.0641],
+        [0.0164, 0.0708, 0.1107,-0.0095]]
+
+final=[[ 0.0020, 0.0540, 0.0180, 0.0280],
+       [ 0.0267, 0.0172, 0.0496, 0.0177],
+       [ 0.0285, 0.0007, 0.0207, 0.0280]]</pre>
+</div>
+
+</div>
+
+</body>
+</html>

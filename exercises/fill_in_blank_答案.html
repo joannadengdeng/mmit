@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PyTorch 填空练习 — 答案</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:9pt;line-height:1.4;padding:10px 18px;max-width:780px;margin:0 auto}
+@page{size:A4 portrait;margin:8mm 10mm}
+@media print{body{padding:0;max-width:none;font-size:8.5pt}}
+h1{font-size:14pt;font-weight:700;border-bottom:2.5px solid #000;padding-bottom:3px;margin-bottom:6px}
+h2{font-size:10.5pt;font-weight:700;margin:14px 0 4px;padding:3px 8px;background:#000;color:#fff;border-radius:3px}
+h3{font-size:9pt;font-weight:700;margin:6px 0 2px;border-bottom:1px solid #999;padding-bottom:1px}
+pre{background:#f5f5f5;border:1px solid #000;border-radius:2px;padding:5px 8px;font-family:var(--mono);font-size:7.5pt;line-height:1.4;margin:3px 0;white-space:pre-wrap}
+p{margin:2px 0;font-size:8pt}
+.tip{font-size:7pt;color:#666}
+.score-box{border:2px solid #000;padding:8px;margin:10px 0;text-align:center;font-size:10pt;font-weight:700}
+hr{border:none;border-top:1px solid #ccc;margin:4px 0}
+</style>
+</head>
+<body>
+
+<h1>PyTorch 填空练习 — 答案</h1>
+<p class="tip">对照题目检查你的填空是否正确。</p>
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<p class="tip">（建议先做完再对答案。）</p>
+<hr>
+
+<h3>第一部分：Tensor 创建 (15 空)</h3>
+<pre style="font-size:7pt">
+① torch.tensor  ② torch.zeros  ③ torch.ones  ④ torch.eye
+⑤ torch.arange  ⑥ torch.randn
+⑦ torch.randn  ⑧ torch.ones  ⑨ torch.zeros  ⑩ torch.randint  ⑪ torch.eye
+⑫ torch.zeros  ⑬ torch.ones  ⑭ randn_like  ⑮ zeros_like
+</pre>
+
+<h3>第二部分：Tensor 属性与信息 (12 空)</h3>
+<pre style="font-size:7pt">
+⑯ shape  ⑰ dtype  ⑱ device  ⑲ dim  ⑳ numel  ㉑ size
+㉒ size  ㉓ shape  ㉔ shape  ㉕ item  ㉖ numel  ㉗ device
+</pre>
+
+<h3>第三部分：Tensor 变形 (20 空)</h3>
+<pre style="font-size:7pt">
+㉘ view（或 reshape）  ㉙ reshape（或 view）  ㉚ view  ㉛ view（或 reshape）
+㉜ t  ㉝ transpose  ㉞ transpose  ㉟ transpose  ㊱ permute
+㊲ unsqueeze  ㊳ squeeze  ㊴ unsqueeze  ㊵ squeeze
+㊶ contiguous  ㊷ flatten  ㊸ flatten
+㊹ transpose  ㊺ contiguous  ㊻ view（或 reshape）
+</pre>
+
+<h3>第四部分：Tensor 数学运算 (16 空)</h3>
+<pre style="font-size:7pt">
+㊼ @  ㊽ transpose  ㊾ sqrt  ㊿ @
+51 sum  52 mean  53 max  54 argmax
+55 exp  56 log  57 sqrt  58 clamp
+59 pow  60 sum（或 mean）  61 norm  62 topk
+</pre>
+
+<h3>第五部分：Tensor 设备与梯度 (12 空)</h3>
+<pre style="font-size:7pt">
+63 to  64 float  65 bool  66 map_location
+67 clone  68 detach  69 requires_grad  70 requires_grad
+71 masked_fill_  72 nonzero  73 mask  74 where
+</pre>
+
+<h3>第六部分：激活函数 (16 空)</h3>
+<pre style="font-size:7pt">
+75 relu  76 gelu  77 silu  78 softmax
+79 max  80 torch.exp  81 sum  82 /
+83 sqrt  84 pow  85 tanh
+86 silu  87 up
+88 sigmoid  89 tanh
+90 softmax  91 -1
+</pre>
+
+<h3>第七部分：Loss 函数 (20 空)</h3>
+<pre style="font-size:7pt">
+92 cross_entropy  93 -100  94 none  95 sum
+96 :-1  97 1:  98 reshape（或 view）  99 reshape（或 view）
+100 logsumexp  101 arange  102 -  103 mean
+104 none  105 exp  106 **  107 mean
+108 log_softmax  109 mean  110 arange  111 1 - smoothing
+112 normalize  113 @  114 arange  115 cross_entropy
+</pre>
+
+<h3>第八部分：nn.Module 与初始化 (22 空)</h3>
+<pre style="font-size:7pt">
+116 Module  117 super  118 Parameter  119 Parameter
+120 ones  121 pow  122 mean  123 sqrt
+124 training  125 float  126 p
+127 Parameter  128 weight  129 Embedding
+130 zeros  131 kaiming_uniform_  132 t  133 scale
+134 register_buffer  135 orthogonal_
+136 ModuleList  137 Identity
+</pre>
+
+<h3>第九部分：Attention 全套 (24 空)</h3>
+<pre style="font-size:7pt">
+138 size  139 @  140 transpose  141 sqrt  142 softmax  143 @
+144 transpose  145 masked_fill  146 softmax  147 dropout  148 @
+149 triu  150 ones  151 bool  152 masked_fill_
+153 Linear  154 Linear  155 view  156 transpose  157 transpose
+158 transpose  159 contiguous  160 view  161 o_proj
+162 q_proj  163 k_proj  164 v_proj  165 o_proj
+</pre>
+
+<h3>第十部分：Transformer Block 与 MLP (16 空)</h3>
+<pre style="font-size:7pt">
+166 gate_proj  167 up_proj  168 silu  169 down_proj
+170 norm1  171 attn  172 h  173 norm2  174 mlp  175 h
+176 Embedding  177 ModuleList  178 embed  179 norm  180 lm_head
+</pre>
+
+<h3>第十一部分：训练循环 (20 空)</h3>
+<pre style="font-size:7pt">
+181 train  182 AdamW  183 backward  184 step  185 zero_grad
+186 backward  187 clip_grad_norm_  188 step  189 zero_grad  190 item
+191 zero_grad  192 accum_steps  193 backward  194 0  195 step
+196 train  197 eval
+198 1e-5（或其他小学习率）  199 1e-4（或其他大学习率）
+</pre>
+
+<h3>第十二部分：保存、加载、Hook、推理 (18 空)</h3>
+<pre style="font-size:7pt">
+200 save  201 state_dict  202 load  203 load_state_dict
+204 parameters  205 requires_grad  206 numel  207 requires_grad
+208 output  209 detach  210 register_forward_hook  211 no_grad  212 remove
+213 linear  214 W  215 t  216 delta
+217 eval  218 no_grad  219 softmax  220 multinomial
+</pre>
+
+<div class="score-box">
+总分统计：_______ / 211 空<br>
+<span style="font-size:8pt">180+ = 非常扎实 | 140-180 = 基础不错 | 100-140 = 需要复习 | &lt;100 = 重读教学指南</span>
+</div>
+
+</body>
+</html>

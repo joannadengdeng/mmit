@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>nn.Module 完整拆解 — 打印版</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:7.5pt;line-height:1.35;padding:8px 10px;max-width:none;margin:0 auto}
+@page{size:A4 portrait;margin:5mm 6mm}
+@media print{body{padding:0;font-size:7pt;line-height:1.25}}
+h1{font-size:11pt;font-weight:700;border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:4px}
+h2{font-size:8.5pt;font-weight:700;margin:8px 0 3px;padding:2px 6px;background:#fff;border:1.5px solid #000;border-radius:2px;page-break-after:avoid}
+p{margin:2px 0;font-size:7pt}
+.row{display:flex;gap:8px;margin:4px 0;page-break-inside:avoid}
+.col-code{flex:1;min-width:0}
+.col-state{flex:1;min-width:0}
+pre.code{background:#fff;border:1px solid #000;border-radius:2px;padding:4px 6px;font-family:var(--mono);font-size:6.5pt;line-height:1.4;margin:0;white-space:pre-wrap;word-break:break-word}
+.kw{color:#000;font-weight:700}.fn{color:#000;font-weight:600;text-decoration:underline}.str{color:#000}.cm{color:#444;font-style:italic}.num{color:#000}
+.state{background:#fff;border:2px solid #000;border-radius:2px;padding:4px 6px;font-family:var(--mono);font-size:6.5pt;line-height:1.35;margin:0}
+.state b{color:#000}
+.output{background:#fff;border:1px solid #000;border-left:4px solid #000;border-radius:2px;padding:4px 6px;font-family:var(--mono);font-size:6.5pt;line-height:1.35;margin:3px 0}
+.output b{color:#000}
+.danger{background:#fff;border:2px dashed #000;border-radius:2px;padding:4px 6px;font-size:6.5pt;margin:3px 0}
+.danger b{color:#000}
+.note{background:#fff;border-left:3px solid #000;padding:3px 6px;margin:3px 0;font-size:6.5pt}
+.note b{color:#000}
+.graph{font-family:var(--mono);font-size:6pt;line-height:1.2;white-space:pre;background:#fff;border:1px solid #000;padding:4px 6px;margin:4px 0;border-radius:2px;page-break-inside:avoid}
+table{width:100%;border-collapse:collapse;font-size:6.5pt;margin:3px 0}
+th,td{padding:2px 4px;border:1px solid #000;text-align:left;vertical-align:top}
+th{background:#fff;font-weight:700;border-bottom:2px solid #000}
+hr{border:none;border-top:1px solid #000;margin:6px 0}
+.label-code{font-size:6pt;color:#000;font-weight:700;margin-bottom:1px;text-transform:uppercase}
+.label-state{font-size:6pt;color:#000;font-weight:700;margin-bottom:1px;text-transform:uppercase}
+</style>
+</head>
+<body>
+
+<h1>nn.Module 完整拆解 — 左边代码，右边内部状态</h1>
+<p>横向 A4 打印。左列 = 你写的代码，右列 = nn.Module 内部此刻的字典状态 + 实际输出值。</p>
+
+<hr>
+
+<!-- ═══════════════ Step 0 ═══════════════ -->
+<h2>Step 0: super().__init__() — 创建空字典</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">你写的代码</div>
+<pre class="code"><span class="kw">import</span> torch
+<span class="kw">import</span> torch.nn <span class="kw">as</span> nn
+
+<span class="kw">class</span> <span class="fn">TinyModel</span>(nn.Module):
+  <span class="kw">def</span> <span class="fn">__init__</span>(self):
+    <span class="fn">super</span>().__init__()
+    <span class="cm"># ← 执行到这里暂停</span></pre>
+</div>
+<div class="col-state">
+<div class="label-state">nn.Module 内部此刻的状态</div>
+<div class="state">
+<b>super().__init__() 创建了 6 个空字典/属性：</b>
+<pre>self._parameters        = {}
+self._modules           = {}
+self._buffers           = {}
+self._forward_hooks     = {}
+self._forward_pre_hooks = {}
+self.training           = True</pre>
+全部是空的，等着后面的赋值来填充。
+</div>
+<div class="danger"><b>如果不调 super().__init__()：</b>这 6 个全不存在。后面 <code>self.linear = nn.Linear(...)</code> 直接报错：<code>AttributeError: cannot assign module before Module.__init__() call</code></div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Step 1 ═══════════════ -->
+<h2>Step 1: self.embed = nn.Embedding(3, 4)</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">你写的代码</div>
+<pre class="code">    self.embed = nn.<span class="fn">Embedding</span>(<span class="num">3</span>, <span class="num">4</span>)
+    <span class="cm"># 3 个 token，每个 4 维向量</span>
+
+<span class="cm"># Python 执行 self.embed = ... 时</span>
+<span class="cm"># 触发 nn.Module.__setattr__：</span>
+<span class="cm">#</span>
+<span class="cm"># def __setattr__(self, name, value):</span>
+<span class="cm">#   if isinstance(value, Module):</span>
+<span class="cm">#     self._modules[name] = value</span>
+<span class="cm">#   elif isinstance(value, Parameter):</span>
+<span class="cm">#     self._parameters[name] = value</span>
+<span class="cm">#   else:</span>
+<span class="cm">#     普通属性</span></pre>
+</div>
+<div class="col-state">
+<div class="label-state">执行后内部状态</div>
+<div class="state">
+<pre>self._parameters = {}     <span class="cm">← 没变</span>
+self._modules = {
+  <b>"embed": Embedding(3, 4)</b>  ← 新增！
+}
+
+<b>embed 自己也是 Module，内部有：</b>
+embed._parameters = {
+  "weight": Parameter(3, 4)
+}
+embed._modules = {}</pre>
+</div>
+<div class="output">
+<b>embed.weight 的实际值（随机初始化）：</b>
+<pre>tensor([[-0.43,  0.85,  0.21, -0.68],  ← token 0
+        [ 1.05, -0.32,  0.56,  0.19],  ← token 1
+        [-0.78,  0.45, -0.13,  0.93]]) ← token 2
+shape: (3, 4), requires_grad: True</pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Step 2 ═══════════════ -->
+<h2>Step 2: self.linear = nn.Linear(4, 4)</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">你写的代码</div>
+<pre class="code">    self.linear = nn.<span class="fn">Linear</span>(<span class="num">4</span>, <span class="num">4</span>)
+    <span class="cm"># in=4, out=4</span>
+
+<span class="cm"># __setattr__ 检测到 Linear</span>
+<span class="cm"># 是 Module → 存入 _modules</span></pre>
+</div>
+<div class="col-state">
+<div class="label-state">执行后内部状态</div>
+<div class="state">
+<pre>self._modules = {
+  "embed":  Embedding(3, 4),
+  <b>"linear": Linear(4, 4)</b>  ← 新增！
+}
+
+<b>linear 内部有 2 个参数：</b>
+linear._parameters = {
+  "weight": Parameter(<b>4, 4</b>)
+  "bias":   Parameter(<b>4</b>)
+}</pre>
+</div>
+<div class="output">
+<b>linear.weight 实际值（Kaiming 初始化）：</b>
+<pre>tensor([[ 0.21, -0.48,  0.13,  0.36],
+        [-0.11,  0.39, -0.25,  0.04],
+        [ 0.42, -0.02,  0.29, -0.37],
+        [-0.28,  0.16,  0.41, -0.09]])
+shape: (<b>4, 4</b>)  ← 注意是 (out, in) 不是 (in, out)!</pre>
+<b>linear.bias 实际值：</b>
+<pre>tensor([0.18, -0.24, 0.07, -0.13])  shape: (4,)</pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Step 3 ═══════════════ -->
+<h2>Step 3: self.R = nn.Parameter(...)</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">你写的代码</div>
+<pre class="code">    self.R = nn.<span class="fn">Parameter</span>(
+      torch.<span class="fn">randn</span>(<span class="num">1</span>, <span class="num">4</span>)
+    )
+    <span class="cm"># 自定义的可训练参数</span>
+
+<span class="cm"># __setattr__ 检测到 Parameter</span>
+<span class="cm"># → 存入 _parameters（不是 _modules!）</span></pre>
+</div>
+<div class="col-state">
+<div class="label-state">执行后内部状态</div>
+<div class="state">
+<pre>self._parameters = {
+  <b>"R": Parameter(1, 4)</b>  ← 新增！
+}
+self._modules = {
+  "embed":  Embedding(3, 4),
+  "linear": Linear(4, 4)
+}
+<span class="cm">← Parameter 和 Module 存在不同字典</span>
+<span class="cm">← 但 .parameters() 两个都会遍历</span></pre>
+</div>
+<div class="output">
+<b>R 的实际值：</b>
+<pre>tensor([[0.52, -0.81, 0.30, 0.15]])
+shape: (1, 4), requires_grad: True</pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Step 4 ═══════════════ -->
+<h2>Step 4: self.scale = 2.0 和 self.mask = tensor（普通属性！）</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">你写的代码</div>
+<pre class="code">    self.scale = <span class="num">2.0</span>
+    <span class="cm"># 普通 float</span>
+
+    self.mask = torch.<span class="fn">ones</span>(<span class="num">3</span>, <span class="num">3</span>)
+    <span class="cm"># 普通 tensor（不是 Parameter!）</span>
+
+<span class="cm"># __setattr__ 检测到：</span>
+<span class="cm">#   2.0 → 不是 Module 不是 Parameter</span>
+<span class="cm">#   → 当普通 Python 属性存储</span>
+<span class="cm">#   → 不进任何字典！</span></pre>
+</div>
+<div class="col-state">
+<div class="label-state">执行后内部状态（关键对比）</div>
+<div class="state">
+<pre>self._parameters = {"R": Parameter(1,4)}
+self._modules    = {"embed": ..., "linear": ...}
+
+<b>self.scale = 2.0       ← 不在任何字典!</b>
+<b>self.mask  = tensor(3,3) ← 不在任何字典!</b></pre>
+</div>
+<div class="danger">
+<b>后果对比：</b>
+<table>
+<tr><th>操作</th><th>R (Parameter)</th><th>linear (Module)</th><th>scale (float)</th><th>mask (tensor)</th></tr>
+<tr><td>.parameters()</td><td><b>✓ 找得到</b></td><td><b>✓ 递归找</b></td><td>✗ 找不到</td><td>✗ 找不到</td></tr>
+<tr><td>optimizer 更新</td><td><b>✓ 会更新</b></td><td><b>✓ 会更新</b></td><td>✗ 不更新</td><td>✗ 不更新</td></tr>
+<tr><td>.to("cuda")</td><td><b>✓ 会移动</b></td><td><b>✓ 会移动</b></td><td>N/A</td><td>✗ <b>不移动!</b></td></tr>
+<tr><td>state_dict()</td><td><b>✓ 会保存</b></td><td><b>✓ 会保存</b></td><td>✗ 不保存</td><td>✗ 不保存</td></tr>
+</table>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Step 5 ═══════════════ -->
+<h2>Step 5: model.named_parameters() — 看到底能找到谁</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">你写的代码</div>
+<pre class="code">model = TinyModel()
+
+<span class="kw">for</span> name, p <span class="kw">in</span> model.<span class="fn">named_parameters</span>():
+    <span class="fn">print</span>(
+      <span class="str">f"{name:20s}"</span>,
+      <span class="str">f"shape={p.shape}"</span>,
+      <span class="str">f"grad={p.requires_grad}"</span>
+    )
+
+<span class="fn">print</span>(<span class="str">"scale在吗:"</span>,
+  <span class="str">"scale"</span> <span class="kw">in</span>
+    dict(model.<span class="fn">named_parameters</span>()))
+<span class="fn">print</span>(<span class="str">"mask在吗:"</span>,
+  <span class="str">"mask"</span> <span class="kw">in</span>
+    dict(model.<span class="fn">named_parameters</span>()))</pre>
+</div>
+<div class="col-state">
+<div class="label-state">实际输出</div>
+<div class="output">
+<pre>R                    shape=torch.Size([1, 4])  grad=True
+embed.weight         shape=torch.Size([3, 4])  grad=True
+linear.weight        shape=torch.Size([4, 4])  grad=True
+linear.bias          shape=torch.Size([4])     grad=True
+
+scale在吗: <b>False</b>
+mask在吗:  <b>False</b></pre>
+</div>
+<div class="state">
+<b>遍历路径：</b>
+<pre>① self._parameters
+     → 找到 "R"
+② self._modules["embed"]._parameters
+     → 找到 "embed.weight"
+③ self._modules["linear"]._parameters
+     → 找到 "linear.weight"
+     → 找到 "linear.bias"
+
+共 4 个 Parameter
+= 1×4 + 3×4 + 4×4 + 4 = <b>36 个值</b></pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Step 6 ═══════════════ -->
+<h2>Step 6: model(x) — __call__ 的完整执行流程</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">你写的代码</div>
+<pre class="code"><span class="cm"># forward 定义</span>
+<span class="kw">def</span> <span class="fn">forward</span>(self, x):
+  h = self.embed(x)
+  h = self.linear(h)
+  h = h + F.<span class="fn">linear</span>(h, self.R) * self.scale
+  <span class="kw">return</span> h
+
+<span class="cm"># 调用</span>
+x = torch.<span class="fn">tensor</span>([<span class="num">0</span>, <span class="num">1</span>, <span class="num">2</span>])
+output = model(x)
+<span class="cm"># ↑ 是 model(x) 不是 model.forward(x)!</span></pre>
+</div>
+<div class="col-state">
+<div class="label-state">model(x) 内部发生了什么</div>
+<div class="state">
+<b>model(x) = nn.Module.__call__(x)：</b>
+<pre>def __call__(self, *args):
+
+  <b>① 运行 pre_hooks</b>
+  for hook in self._forward_pre_hooks:
+      hook(self, args)
+  → 目前为空，跳过
+
+  <b>② 调用 self.forward(x)</b>
+  → self.embed(x)
+      → Embedding.__call__(x)
+        → embed.forward: 查表
+        → 返回 (3, 4) tensor
+  → self.linear(h)
+      → Linear.__call__(h)
+        → linear.forward: h @ W.T + b
+        → 返回 (3, 4) tensor
+  → F.linear(h, self.R)
+      → 纯函数，不触发 __call__
+      → h @ R.T → (3, 1)
+
+  <b>③ 运行 post_hooks</b>
+  → 目前为空，跳过
+
+  return result</pre>
+</div>
+<div class="output">
+<b>每一步的实际 shape：</b>
+<pre>x:                     (3,)     int64
+embed(x):              (3, 4)   float32
+linear(h):             (3, 4)   float32
+F.linear(h, self.R):   (3, 1)   float32
+h + (...) * 2.0:       (3, 4)   float32
+output:                (3, 4)</pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Step 7 ═══════════════ -->
+<h2>Step 7: register_forward_hook — 不改代码就修改行为</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">你写的代码</div>
+<pre class="code"><span class="cm"># 定义 hook</span>
+<span class="kw">def</span> <span class="fn">my_hook</span>(module, input, output):
+    <span class="fn">print</span>(<span class="str">f"Hook! output[0,0]="</span>
+          <span class="str">f"{output[0,0]:.4f}"</span>)
+    <span class="kw">return</span> output + <span class="num">0.01</span>
+
+<span class="cm"># 注册到 linear 层</span>
+handle = model.linear \
+  .<span class="fn">register_forward_hook</span>(my_hook)
+
+<span class="cm"># 调用模型</span>
+output = model(x)
+
+<span class="cm"># 移除 hook</span>
+handle.<span class="fn">remove</span>()
+
+<span class="cm"># 再调一次</span>
+output2 = model(x)
+<span class="cm"># ← 没有 print → hook 已经不在了</span></pre>
+</div>
+<div class="col-state">
+<div class="label-state">内部状态变化 + 实际输出</div>
+<div class="state">
+<b>注册后：</b>
+<pre>model.linear._forward_hooks = {
+  <b>0: my_hook</b>  ← 新增！
+}</pre>
+</div>
+<div class="output">
+<b>model(x) 时的 print 输出：</b>
+<pre>Hook! output[0,0]=0.2847
+
+→ linear.__call__(h) 执行时：
+  ① linear.forward(h) → 原始输出
+  ② my_hook(linear, (h,), 原始输出)
+     → print 被调用
+     → return output + 0.01
+  ③ 后续计算用的是 +0.01 后的值</pre>
+</div>
+<div class="state">
+<b>handle.remove() 后：</b>
+<pre>model.linear._forward_hooks = {}  ← 清空了</pre>
+</div>
+<div class="output">
+<b>再次 model(x)：</b>
+<pre>（没有 print 输出）
+→ hook 已不存在，output 是原始值</pre>
+</div>
+<div class="note"><b>MoReS 就是这样工作的：</b>在 9 个 LLaMA 层注册 hook，hook 内部做 h'=h+R^T(Wh-Rh)。模型代码一行不改。</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Step 8 ═══════════════ -->
+<h2>Step 8: 冻结参数 + 只训练 R</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">你写的代码</div>
+<pre class="code"><span class="cm"># 冻结全部</span>
+<span class="kw">for</span> p <span class="kw">in</span> model.<span class="fn">parameters</span>():
+    p.requires_grad = <span class="kw">False</span>
+
+<span class="cm"># 只解冻 R</span>
+model.R.requires_grad = <span class="kw">True</span>
+
+<span class="cm"># 验证</span>
+<span class="kw">for</span> name, p <span class="kw">in</span> model.<span class="fn">named_parameters</span>():
+    <span class="fn">print</span>(<span class="str">f"{name:15s}"</span>,
+          <span class="str">f"grad={p.requires_grad}"</span>)
+
+<span class="cm"># 创建 optimizer</span>
+opt = torch.optim.<span class="fn">AdamW</span>(
+  [p <span class="kw">for</span> p <span class="kw">in</span> model.<span class="fn">parameters</span>()
+   <span class="kw">if</span> p.requires_grad],
+  lr=<span class="num">1e-3</span>
+)
+<span class="fn">print</span>(<span class="str">"optimizer参数数:"</span>,
+  len(opt.param_groups[<span class="num">0</span>][<span class="str">'params'</span>]))</pre>
+</div>
+<div class="col-state">
+<div class="label-state">实际输出</div>
+<div class="output">
+<pre>R               grad=<b>True</b>   ← 唯一可训练
+embed.weight    grad=False  ← 冻结
+linear.weight   grad=False  ← 冻结
+linear.bias     grad=False  ← 冻结
+
+optimizer参数数: <b>1</b>   ← 只有 R</pre>
+</div>
+<div class="state">
+<b>requires_grad 不改变字典结构</b>
+<pre>_parameters 还是 {"R": ...}
+_modules 还是 {"embed":..., "linear":...}
+→ 字典没变，只是每个 Parameter 对象
+  上的 requires_grad 属性变了
+
+.parameters() 遍历时能找到所有 4 个
+但 optimizer 只收到 [R] 这 1 个
+因为列表推导式过滤了 requires_grad=False</pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Step 9 ═══════════════ -->
+<h2>Step 9: .to(device) / .eval() / .train()</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">你写的代码</div>
+<pre class="code">model.<span class="fn">to</span>(<span class="str">"cpu"</span>)
+
+model.<span class="fn">eval</span>()
+<span class="fn">print</span>(model.training,
+      model.embed.training,
+      model.linear.training)
+
+model.<span class="fn">train</span>()
+<span class="fn">print</span>(model.training)</pre>
+</div>
+<div class="col-state">
+<div class="label-state">.to() 和 .eval() 的递归路径</div>
+<div class="state">
+<b>.to("cpu") 递归遍历：</b>
+<pre>self._parameters["R"]    → R.to("cpu")     ✓
+self._buffers            → 空，跳过
+self._modules["embed"]   → embed.to("cpu")
+  → embed._parameters["weight"].to("cpu")  ✓
+self._modules["linear"]  → linear.to("cpu")
+  → linear weight, bias .to("cpu")         ✓
+
+<b>self.mask (普通 tensor) → 不遍历！不移动！</b>
+→ 如果模型在 GPU，mask 还在 CPU → 报错！</pre>
+</div>
+<div class="output">
+<pre>False False False   ← .eval() 递归设所有 training=False
+True                ← .train() 递归设回 True</pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Step 10 ═══════════════ -->
+<h2>Step 10: state_dict() / save / load</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">你写的代码</div>
+<pre class="code">sd = model.<span class="fn">state_dict</span>()
+
+<span class="kw">for</span> k, v <span class="kw">in</span> sd.items():
+    <span class="fn">print</span>(<span class="str">f"{k:20s} {v.shape}"</span>)
+
+<span class="fn">print</span>(<span class="str">"scale在吗:"</span>,
+  <span class="str">"scale"</span> <span class="kw">in</span> sd)
+<span class="fn">print</span>(<span class="str">"mask在吗:"</span>,
+  <span class="str">"mask"</span> <span class="kw">in</span> sd)
+
+<span class="cm"># 保存</span>
+torch.<span class="fn">save</span>(sd, <span class="str">"model.pt"</span>)
+
+<span class="cm"># 加载到新模型</span>
+model2 = TinyModel()
+<span class="fn">print</span>(<span class="str">"加载前 R:"</span>,
+  model2.R[<span class="num">0</span>,<span class="num">0</span>].item())
+
+sd2 = torch.<span class="fn">load</span>(<span class="str">"model.pt"</span>,
+  map_location=<span class="str">"cpu"</span>)
+model2.<span class="fn">load_state_dict</span>(sd2)
+
+<span class="fn">print</span>(<span class="str">"加载后 R:"</span>,
+  model2.R[<span class="num">0</span>,<span class="num">0</span>].item())</pre>
+</div>
+<div class="col-state">
+<div class="label-state">实际输出</div>
+<div class="output">
+<pre>R                    torch.Size([1, 4])
+embed.weight         torch.Size([3, 4])
+linear.weight        torch.Size([4, 4])
+linear.bias          torch.Size([4])
+
+scale在吗: <b>False</b>  ← 不在！
+mask在吗:  <b>False</b>  ← 不在！
+
+加载前 R: <b>-1.23</b>   ← 随机值（新模型）
+加载后 R: <b>0.52</b>    ← 和原模型一样！</pre>
+</div>
+<div class="state">
+<b>state_dict() 收集路径：</b>
+<pre>self._parameters → "R"
+self._modules["embed"]._parameters
+  → "embed.weight"
+self._modules["linear"]._parameters
+  → "linear.weight", "linear.bias"
+
+不含 _buffers（空）
+不含 scale、mask（普通属性）</pre>
+<b>load_state_dict(sd2) 填充路径：</b>
+<pre>"R" → model2._parameters["R"].data = sd2["R"]
+"embed.weight" → model2._modules["embed"]
+  ._parameters["weight"].data = ...
+同理 linear.weight, linear.bias
+
+strict=True(默认): key 必须完全匹配
+strict=False: 只填匹配的，跳过多余的</pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ 总图 ═══════════════ -->
+<h2>总图：nn.Module 内部的完整字典结构</h2>
+
+<div class="graph">
+model (TinyModel)
+│
+├── _parameters = {"R": Parameter(1,4)}           ← model.R
+│
+├── _modules = {
+│     "embed": Embedding(3,4)                      ← model.embed
+│     │  └── _parameters = {"weight": Param(3,4)}      ← model.embed.weight
+│     │
+│     "linear": Linear(4,4)                        ← model.linear
+│        ├── _parameters = {"weight": Param(4,4),       ← model.linear.weight
+│        │                   "bias":   Param(4,)}        ← model.linear.bias
+│        └── _forward_hooks = {0: my_hook}               ← hook 存这里
+│   }
+│
+├── _buffers = {}                ← register_buffer 的在这里
+├── _forward_hooks = {}          ← model 级 hook
+├── _forward_pre_hooks = {}
+├── training = True              ← .train()/.eval()
+│
+├── scale = 2.0                  ← 普通属性，不在任何字典
+└── mask = tensor(3,3)           ← 普通 tensor，不被追踪！
+
+──────────────────────────────────────────────────────────────────
+
+.parameters()   遍历: _parameters + 递归 _modules 的 _parameters
+.state_dict()   收集: 同上 + _buffers
+.to(device)     移动: 同上 + _buffers （不含普通属性）
+model(x)        执行: __call__ → pre_hooks → forward → post_hooks</div>
+
+<div class="note"><b>一句话总结：</b>nn.Module 的魔法 = <code>__setattr__</code> 自动分拣到字典 + 各种方法递归遍历这些字典。如果不在字典里（普通属性），就什么自动化功能都享受不到。</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>附录：nn.Module 关键方法的简化源码</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>下面是 nn.Module 中你会间接调用到的核心方法。这些方法你不需要自己写，但理解它们才能明白"为什么 self.linear = nn.Linear(...) 就能被自动追踪"。</p>
+
+<!-- ─── __setattr__ ─── -->
+<h2>__setattr__ — 赋值时自动分拣</h2>
+<p>每次你写 <code>self.xxx = yyy</code>，Python 不是直接存，而是先调这个方法。nn.Module 重写了它来做"自动分拣"。</p>
+
+<div class="row">
+<div class="col-code">
+<div class="label-code">简化源码</div>
+<pre class="code"><span class="cm"># torch/nn/modules/module.py 简化版</span>
+
+<span class="kw">def</span> <span class="fn">__setattr__</span>(self, name, value):
+
+  <span class="cm"># 情况 1: 赋值的是 Parameter</span>
+  <span class="kw">if</span> isinstance(value, Parameter):
+    <span class="cm"># 从 _modules 里删掉同名的（如果有）</span>
+    self._modules.pop(name, <span class="kw">None</span>)
+    <span class="cm"># 存入 _parameters 字典</span>
+    self._parameters[name] = value
+
+  <span class="cm"># 情况 2: 赋值的是 Module</span>
+  <span class="kw">elif</span> isinstance(value, Module):
+    <span class="cm"># 从 _parameters 里删掉同名的</span>
+    self._parameters.pop(name, <span class="kw">None</span>)
+    <span class="cm"># 存入 _modules 字典</span>
+    self._modules[name] = value
+
+  <span class="cm"># 情况 3: 其他（int, float, tensor, ...）</span>
+  <span class="kw">else</span>:
+    <span class="cm"># 当普通 Python 属性存储</span>
+    <span class="cm"># 不进任何字典！</span>
+    object.__setattr__(self, name, value)</pre>
+</div>
+<div class="col-state">
+<div class="label-state">触发场景 + 实际效果</div>
+<div class="output">
+<b>你写的代码 → 触发的分支 → 结果：</b>
+<pre>
+self.linear = nn.Linear(4,4)
+  → 情况 2: isinstance(Linear, Module) = True
+  → self._modules["linear"] = Linear对象
+  → <b>被 .parameters() 找到 ✓</b>
+
+self.R = nn.Parameter(tensor)
+  → 情况 1: isinstance(Parameter) = True
+  → self._parameters["R"] = Parameter对象
+  → <b>被 .parameters() 找到 ✓</b>
+
+self.scale = 2.0
+  → 情况 3: float 既不是 Module 也不是 Parameter
+  → object.__setattr__(self, "scale", 2.0)
+  → <b>普通属性，不被追踪 ✗</b>
+
+self.mask = torch.ones(3,3)
+  → 情况 3: Tensor 不是 Parameter！
+  → <b>普通属性，不被追踪 ✗</b>
+  → 要追踪就用 nn.Parameter(tensor)
+    或 self.register_buffer("mask", tensor)
+</pre>
+</div>
+</div>
+</div>
+
+<!-- ─── __call__ ─── -->
+<h2>__call__ — model(x) 的真正入口</h2>
+<p>你写 <code>model(x)</code> 时调的不是 forward，而是这个方法。它在 forward 前后插入 hook。</p>
+
+<div class="row">
+<div class="col-code">
+<div class="label-code">简化源码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">__call__</span>(self, *args, **kwargs):
+
+  <span class="cm"># ① 运行所有 pre_hook</span>
+  <span class="kw">for</span> hook <span class="kw">in</span> self._forward_pre_hooks.values():
+    result = hook(self, args)
+    <span class="kw">if</span> result <span class="kw">is not None</span>:
+      args = result
+
+  <span class="cm"># ② 调用你写的 forward</span>
+  result = self.<span class="fn">forward</span>(*args, **kwargs)
+
+  <span class="cm"># ③ 运行所有 post_hook</span>
+  <span class="kw">for</span> hook <span class="kw">in</span> self._forward_hooks.values():
+    hook_result = hook(self, args, result)
+    <span class="kw">if</span> hook_result <span class="kw">is not None</span>:
+      result = hook_result  <span class="cm"># 替换输出！</span>
+
+  <span class="kw">return</span> result</pre>
+</div>
+<div class="col-state">
+<div class="label-state">执行流程示例</div>
+<div class="output">
+<b>model(x) 时实际发生的事：</b>
+<pre>
+model(x)
+  │
+  ├─ ① _forward_pre_hooks
+  │    MoReS 用这个捕获 input_ids:
+  │    hook 把 input_ids 存到 model 上
+  │    以便后面的 post_hook 使用
+  │
+  ├─ ② self.forward(x)
+  │    你写的前向逻辑
+  │    内部调用 self.embed(x) 时
+  │    又触发 Embedding.__call__(x)
+  │    → 同样的 pre_hook/forward/post_hook
+  │
+  └─ ③ _forward_hooks
+       MoReS 的干预在这里：
+       hook 拿到 forward 的 output
+       做 h' = h + R^T(Wh - Rh)
+       return 修改后的 h'
+       → 替换原始 output
+</pre>
+<b>所以 model(x) ≠ model.forward(x) !</b>
+直接调 forward 跳过了 hook。
+</div>
+</div>
+</div>
+
+<!-- ─── parameters / named_parameters ─── -->
+<h2>parameters() / named_parameters() — 递归遍历所有参数</h2>
+
+<div class="row">
+<div class="col-code">
+<div class="label-code">简化源码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">named_parameters</span>(self, prefix=<span class="str">''</span>):
+  <span class="cm"># 第一步: 自己的 _parameters</span>
+  <span class="kw">for</span> name, param <span class="kw">in</span> self._parameters.items():
+    <span class="kw">yield</span> prefix + name, param
+
+  <span class="cm"># 第二步: 递归遍历每个子模块</span>
+  <span class="kw">for</span> mod_name, module <span class="kw">in</span> self._modules.items():
+    subprefix = prefix + mod_name + <span class="str">'.'</span>
+    <span class="cm"># 递归！子模块也走同样的逻辑</span>
+    <span class="kw">yield from</span> module.<span class="fn">named_parameters</span>(subprefix)
+
+<span class="kw">def</span> <span class="fn">parameters</span>(self):
+  <span class="kw">for</span> _, param <span class="kw">in</span> self.<span class="fn">named_parameters</span>():
+    <span class="kw">yield</span> param</pre>
+</div>
+<div class="col-state">
+<div class="label-state">遍历过程追踪</div>
+<div class="output">
+<b>model.named_parameters() 的遍历路径：</b>
+<pre>
+① self._parameters (prefix="")
+   → yield "R", Parameter(1,4)
+
+② self._modules["embed"] (prefix="embed.")
+   → embed._parameters
+   → yield "embed.weight", Parameter(3,4)
+
+③ self._modules["linear"] (prefix="linear.")
+   → linear._parameters
+   → yield "linear.weight", Parameter(4,4)
+   → yield "linear.bias", Parameter(4,)
+
+结果:
+  R              → shape (1, 4)
+  embed.weight   → shape (3, 4)
+  linear.weight  → shape (4, 4)
+  linear.bias    → shape (4,)
+
+注意: scale 和 mask 不在 _parameters
+也不在 _modules 里 → 永远遍历不到
+</pre>
+</div>
+</div>
+</div>
+
+<!-- ─── state_dict / load_state_dict ─── -->
+<h2>state_dict() / load_state_dict() — 保存和加载</h2>
+
+<div class="row">
+<div class="col-code">
+<div class="label-code">简化源码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">state_dict</span>(self, prefix=<span class="str">''</span>):
+  result = {}
+
+  <span class="cm"># 收集自己的 _parameters</span>
+  <span class="kw">for</span> name, param <span class="kw">in</span> self._parameters.items():
+    result[prefix + name] = param.data
+
+  <span class="cm"># 收集自己的 _buffers</span>
+  <span class="kw">for</span> name, buf <span class="kw">in</span> self._buffers.items():
+    result[prefix + name] = buf
+
+  <span class="cm"># 递归收集子模块</span>
+  <span class="kw">for</span> mod_name, module <span class="kw">in</span> self._modules.items():
+    subprefix = prefix + mod_name + <span class="str">'.'</span>
+    result.update(module.<span class="fn">state_dict</span>(subprefix))
+
+  <span class="kw">return</span> result
+
+<span class="kw">def</span> <span class="fn">load_state_dict</span>(self, sd, strict=<span class="kw">True</span>):
+  <span class="cm"># 遍历 sd 的每个 key</span>
+  <span class="cm"># 根据 "." 分割找到对应的子模块和参数</span>
+  <span class="cm"># 把 sd[key] 的值复制到对应的 Parameter.data</span>
+  <span class="cm">#</span>
+  <span class="cm"># strict=True: key 不完全匹配就报错</span>
+  <span class="cm"># strict=False: 只填匹配的，跳过不匹配的</span></pre>
+</div>
+<div class="col-state">
+<div class="label-state">实际效果</div>
+<div class="output">
+<b>state_dict() 返回的字典：</b>
+<pre>
+{
+  "R":             tensor(1, 4),
+  "embed.weight":  tensor(3, 4),
+  "linear.weight": tensor(4, 4),
+  "linear.bias":   tensor(4,)
+}
+</pre>
+<b>不含：</b>
+<pre>
+  scale (2.0)      → 不在 _parameters
+  mask (tensor)    → 不在 _parameters 也不在 _buffers
+</pre>
+<b>load_state_dict(sd) 的匹配过程：</b>
+<pre>
+"R" → self._parameters["R"].data = sd["R"]
+"embed.weight"
+  → self._modules["embed"]
+    ._parameters["weight"].data = sd[...]
+"linear.weight" → 同理
+"linear.bias" → 同理
+</pre>
+</div>
+</div>
+</div>
+
+<!-- ─── to() ─── -->
+<h2>to(device) — 递归移动所有参数到指定设备</h2>
+
+<div class="row">
+<div class="col-code">
+<div class="label-code">简化源码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">to</span>(self, *args, **kwargs):
+  <span class="cm"># 移动自己的 _parameters</span>
+  <span class="kw">for</span> name, param <span class="kw">in</span> self._parameters.items():
+    self._parameters[name] = \
+      Parameter(param.data.to(*args, **kwargs))
+
+  <span class="cm"># 移动自己的 _buffers</span>
+  <span class="kw">for</span> name, buf <span class="kw">in</span> self._buffers.items():
+    self._buffers[name] = buf.to(*args, **kwargs)
+
+  <span class="cm"># 递归移动子模块</span>
+  <span class="kw">for</span> module <span class="kw">in</span> self._modules.values():
+    module.<span class="fn">to</span>(*args, **kwargs)
+
+  <span class="kw">return</span> self</pre>
+</div>
+<div class="col-state">
+<div class="label-state">实际效果</div>
+<div class="output">
+<b>model.to("cuda") 移动路径：</b>
+<pre>
+self._parameters["R"]   → R.to("cuda")  ✓
+self._buffers            → 空，跳过
+self._modules["embed"]  → 递归
+  embed._parameters["weight"].to("cuda") ✓
+self._modules["linear"] → 递归
+  linear weight, bias .to("cuda")       ✓
+</pre>
+<b>不移动的：</b>
+<pre>
+self.scale = 2.0        → float, 无需移动
+self.mask = tensor(3,3) → 普通属性，不遍历！
+  → mask 还在 CPU
+  → 运行时 mask 和 GPU 上的 h 做运算
+  → RuntimeError: device mismatch!
+</pre>
+</div>
+</div>
+</div>
+
+<!-- ─── train / eval ─── -->
+<h2>train() / eval() — 递归切换训练/推理模式</h2>
+
+<div class="row">
+<div class="col-code">
+<div class="label-code">简化源码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">train</span>(self, mode=<span class="kw">True</span>):
+  self.training = mode
+  <span class="kw">for</span> module <span class="kw">in</span> self._modules.values():
+    module.<span class="fn">train</span>(mode)  <span class="cm"># 递归</span>
+  <span class="kw">return</span> self
+
+<span class="kw">def</span> <span class="fn">eval</span>(self):
+  <span class="kw">return</span> self.<span class="fn">train</span>(<span class="kw">False</span>)</pre>
+</div>
+<div class="col-state">
+<div class="label-state">实际效果</div>
+<div class="output">
+<b>model.eval() 后：</b>
+<pre>
+model.training        = False
+model.embed.training  = False
+model.linear.training = False
+</pre>
+<b>谁会检查 self.training？</b>
+<pre>
+Dropout.forward():
+  if self.training:
+    随机丢弃 + 缩放
+  else:
+    原样返回（不丢弃）
+
+BatchNorm.forward():
+  if self.training:
+    用当前 batch 的统计量
+  else:
+    用 running mean/var
+</pre>
+忘了调 eval() → Dropout 在推理时还在随机丢弃 → 每次预测结果不一样！
+</div>
+</div>
+</div>
+
+<!-- ─── register_forward_hook ─── -->
+<h2>register_forward_hook() — 注册钩子</h2>
+
+<div class="row">
+<div class="col-code">
+<div class="label-code">简化源码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">register_forward_hook</span>(self, hook):
+  <span class="cm"># hook 签名: hook(module, input, output) -> output 或 None</span>
+
+  handle = RemovableHandle(self._forward_hooks)
+  self._forward_hooks[handle.id] = hook
+
+  <span class="kw">return</span> handle
+  <span class="cm"># handle.remove() 会从字典中删除这个 hook</span>
+
+<span class="kw">def</span> <span class="fn">register_forward_pre_hook</span>(self, hook):
+  <span class="cm"># hook 签名: hook(module, args) -> args 或 None</span>
+
+  handle = RemovableHandle(self._forward_pre_hooks)
+  self._forward_pre_hooks[handle.id] = hook
+
+  <span class="kw">return</span> handle</pre>
+</div>
+<div class="col-state">
+<div class="label-state">MoReS 的实际用法</div>
+<div class="output">
+<b>MoReS 注册 hook 的代码（简化）：</b>
+<pre>
+intervention = OrthogonalIntervention(4096, rank=1)
+
+def make_hook(iv):
+  def hook(module, input, output):
+    h = output[0]
+    h_new = iv(h)  # h' = h + R^T(Wh-Rh)
+    return (h_new,) + output[1:]
+  return hook
+
+# 在第 0, 1, 2, 3, 27, 28, 29, 30, 31 层注册
+for idx in [0,1,2,3,27,28,29,30,31]:
+  model.layers[idx].register_forward_hook(
+    make_hook(intervention)
+  )
+</pre>
+<b>效果：</b>
+<pre>
+model.layers[0]._forward_hooks = {0: hook}
+model.layers[1]._forward_hooks = {1: hook}
+...共 9 个层有 hook
+
+model(x) 时，每个有 hook 的层：
+  layer.forward(h) → 原始输出
+  → hook(layer, (h,), 原始输出)
+  → return 修改后的 h'
+</pre>
+</div>
+</div>
+</div>
+
+<!-- ─── 总览表 ─── -->
+<h2>总览：nn.Module 的 10 个关键方法</h2>
+
+<table>
+<tr><th>方法</th><th>你写的代码</th><th>内部做了什么</th><th>遍历哪个字典</th></tr>
+<tr><td><b>__init__</b></td><td><code>super().__init__()</code></td><td>创建 _parameters, _modules 等 6 个空字典</td><td>—</td></tr>
+<tr><td><b>__setattr__</b></td><td><code>self.xxx = yyy</code></td><td>检测类型 → 自动存入对应字典</td><td>_parameters 或 _modules</td></tr>
+<tr><td><b>__call__</b></td><td><code>model(x)</code></td><td>pre_hooks → forward → post_hooks</td><td>_forward_pre_hooks, _forward_hooks</td></tr>
+<tr><td><b>forward</b></td><td>你自己写的</td><td>定义数据流</td><td>—</td></tr>
+<tr><td><b>parameters()</b></td><td><code>model.parameters()</code></td><td>递归收集所有 Parameter</td><td>_parameters + 递归 _modules</td></tr>
+<tr><td><b>state_dict()</b></td><td><code>model.state_dict()</code></td><td>递归收集参数值</td><td>_parameters + _buffers + 递归 _modules</td></tr>
+<tr><td><b>load_state_dict()</b></td><td><code>model.load_state_dict(sd)</code></td><td>按 key 填入参数值</td><td>同上</td></tr>
+<tr><td><b>to()</b></td><td><code>model.to("cuda")</code></td><td>递归移动到设备</td><td>_parameters + _buffers + 递归 _modules</td></tr>
+<tr><td><b>train()/eval()</b></td><td><code>model.eval()</code></td><td>递归设置 self.training</td><td>递归 _modules</td></tr>
+<tr><td><b>register_forward_hook</b></td><td><code>layer.register_forward_hook(fn)</code></td><td>存入 _forward_hooks</td><td>_forward_hooks</td></tr>
+</table>
+
+<div class="note"><b>核心规律：</b>几乎所有方法都是"遍历 _parameters + _buffers + 递归遍历 _modules"。理解了这个递归结构，就理解了 nn.Module 的一切。</div>
+
+</body>
+</html>

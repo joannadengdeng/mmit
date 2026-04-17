@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PyTorch 填空练习 — 打印版（200+ 空）</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:9pt;line-height:1.45;padding:10px 18px;max-width:780px;margin:0 auto}
+@page{size:A4 portrait;margin:8mm 10mm}
+@media print{body{padding:0;max-width:none;font-size:8.5pt}}
+h1{font-size:14pt;font-weight:700;border-bottom:2.5px solid #000;padding-bottom:3px;margin-bottom:6px}
+h2{font-size:10.5pt;font-weight:700;margin:14px 0 4px;padding:3px 8px;background:#000;color:#fff;border-radius:3px;page-break-after:avoid}
+h3{font-size:9pt;font-weight:700;margin:8px 0 3px;border-bottom:1px solid #999;padding-bottom:1px;page-break-after:avoid}
+p{margin:2px 0;font-size:8.5pt}
+pre{background:#f5f5f5;border:1px solid #000;border-radius:2px;padding:6px 10px;font-family:var(--mono);font-size:8pt;line-height:1.8;margin:3px 0;white-space:pre-wrap;page-break-inside:avoid}
+.blank{display:inline-block;min-width:160px;border-bottom:2.5px solid #000;color:#fff;font-weight:700;letter-spacing:0}
+.blank-long{min-width:260px}
+.blank-short{min-width:100px}
+.kw{color:#a00050;font-weight:600}
+.fn{color:#0040a0;font-weight:600}
+.cm{color:#888;font-style:italic}
+.str{color:#006400}
+.num{color:#a04000}
+.section-info{font-size:7.5pt;color:#666;margin-bottom:4px}
+.answer-box{border:1px dashed #999;padding:4px 8px;margin:3px 0;min-height:20px;font-family:var(--mono);font-size:8pt;background:#fafafa;page-break-inside:avoid}
+.note{background:#fff8e0;border-left:2px solid #806000;padding:3px 8px;margin:4px 0;font-size:7.5pt}
+.note b{color:#806000}
+.tip{font-size:7pt;color:#666;margin:2px 0}
+.score-box{border:2px solid #000;padding:8px;margin:10px 0;text-align:center;font-size:10pt;font-weight:700}
+hr{border:none;border-top:1px solid #ccc;margin:6px 0}
+</style>
+</head>
+<body>
+
+<h1>PyTorch 填空练习（加强版）</h1>
+<p>姓名：________________  日期：________________  得分：______ / 211</p>
+<p class="section-info">规则：在 <span class="blank" style="min-width:40px;font-size:7pt">______</span> 处填入正确的 PyTorch 代码。每空 1 分。共 12 个部分，211 空。</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>第一部分：Tensor 创建 (15 分)</h2>
+<p class="section-info">测试你对各种 tensor 创建方式的熟练度。每种方式在不同场景下反复出现。</p>
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<h3>1.1 基本创建 (6 分)</h3>
+<pre>
+<span class="kw">import</span> torch
+
+<span class="cm"># 从 Python 列表创建 tensor</span>
+a = <span class="blank">______________</span>([1.0, 2.0, 3.0])                          <span class="cm"># ①</span>
+
+<span class="cm"># 创建 3×4 的全零矩阵</span>
+b = <span class="blank">______________</span>(3, 4)                                      <span class="cm"># ②</span>
+
+<span class="cm"># 创建 2×3 的全一矩阵</span>
+c = <span class="blank">______________</span>(2, 3)                                      <span class="cm"># ③</span>
+
+<span class="cm"># 创建 4×4 的单位矩阵（对角线为 1）</span>
+d = <span class="blank">______________</span>(4)                                          <span class="cm"># ④</span>
+
+<span class="cm"># 创建 0,1,2,...,9 的序列 tensor</span>
+e = <span class="blank">______________</span>(10)                                         <span class="cm"># ⑤</span>
+
+<span class="cm"># 创建 3×4 的标准正态分布随机 tensor</span>
+f = <span class="blank">______________</span>(3, 4)                                      <span class="cm"># ⑥</span>
+</pre>
+
+<h3>1.2 用于 mmit 的 tensor 创建 (5 分)</h3>
+<pre>
+<span class="cm"># MoReS 的 R 矩阵：r×d 的正态分布随机矩阵</span>
+r, d = 8, 4096
+R = <span class="blank">______________</span>(r, d)                                      <span class="cm"># ⑦</span>
+
+<span class="cm"># 创建因果掩码的全 1 矩阵：seq_len × seq_len</span>
+seq_len = 128
+ones_mask = <span class="blank">______________</span>(seq_len, seq_len)                   <span class="cm"># ⑧</span>
+
+<span class="cm"># 创建零初始化的 LoRA B 矩阵：d_out × r</span>
+d_out = 4096
+B_lora = <span class="blank">______________</span>(d_out, r)                              <span class="cm"># ⑨</span>
+
+<span class="cm"># 创建词表大小的随机整数 tensor (0 到 31999)，模拟 token ids</span>
+fake_ids = <span class="blank">______________</span>(0, 32000, (2, 20))                   <span class="cm"># ⑩</span>
+
+<span class="cm"># 创建 r×r 单位矩阵（用于正交惩罚 RR^T - I）</span>
+I = <span class="blank">______________</span>(r)                                          <span class="cm"># ⑪</span>
+</pre>
+
+<h3>1.3 指定 dtype 和 device (4 分)</h3>
+<pre>
+<span class="cm"># 创建 bfloat16 精度的全零 tensor</span>
+x = <span class="blank">______________</span>(2, 4096, dtype=torch.bfloat16)              <span class="cm"># ⑫</span>
+
+<span class="cm"># 创建 bool 类型的全一 tensor（用作 mask）</span>
+m = <span class="blank">______________</span>(10, 10, dtype=torch.bool)                   <span class="cm"># ⑬</span>
+
+<span class="cm"># 创建和 x 相同 shape/dtype/device 的随机 tensor</span>
+y = torch.<span class="blank">______________</span>(x)                                    <span class="cm"># ⑭</span>
+
+<span class="cm"># 创建和 x 相同 shape 的全零 tensor</span>
+z = torch.<span class="blank">______________</span>(x)                                    <span class="cm"># ⑮</span>
+</pre>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>第二部分：Tensor 属性与信息 (12 分)</h2>
+<p class="section-info">获取 tensor 的元信息。这些属性在调试和编写模型时高频使用。</p>
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<h3>2.1 基本属性 (6 分)</h3>
+<pre>
+x = torch.randn(2, 10, 4096)
+
+<span class="cm"># 获取 shape</span>
+print(x.<span class="blank blank-short">______</span>)          <span class="cm"># → torch.Size([2, 10, 4096])       ⑯</span>
+
+<span class="cm"># 获取数据类型</span>
+print(x.<span class="blank blank-short">______</span>)          <span class="cm"># → torch.float32                   ⑰</span>
+
+<span class="cm"># 获取所在设备</span>
+print(x.<span class="blank blank-short">______</span>)          <span class="cm"># → cpu                             ⑱</span>
+
+<span class="cm"># 获取维度数量</span>
+print(x.<span class="blank blank-short">______</span>())         <span class="cm"># → 3                               ⑲</span>
+
+<span class="cm"># 获取元素总数</span>
+print(x.<span class="blank blank-short">______</span>())         <span class="cm"># → 81920                           ⑳</span>
+
+<span class="cm"># 获取第 0 维的大小（batch size）</span>
+batch = x.<span class="blank blank-short">______</span>(0)       <span class="cm"># → 2                               ㉑</span>
+</pre>
+
+<h3>2.2 在 mmit 场景中使用 (6 分)</h3>
+<pre>
+<span class="cm"># 场景 1：获取 LLaVA 隐藏状态的 batch size</span>
+hidden = torch.randn(4, 128, 4096)
+B = hidden.<span class="blank blank-short">______</span>(0)      <span class="cm"># → 4                               ㉒</span>
+
+<span class="cm"># 场景 2：获取序列长度</span>
+S = hidden.<span class="blank blank-short">______</span>[1]      <span class="cm"># → 128                             ㉓</span>
+
+<span class="cm"># 场景 3：获取隐藏维度</span>
+D = hidden.<span class="blank blank-short">______</span>[-1]     <span class="cm"># → 4096                            ㉔</span>
+
+<span class="cm"># 场景 4：把 loss tensor 变成 Python float 来打印</span>
+loss = torch.tensor(2.34)
+print(f"loss = {loss.<span class="blank blank-short">______</span>():.4f}")                             <span class="cm"># ㉕</span>
+
+<span class="cm"># 场景 5：获取参数总量</span>
+w = torch.randn(4096, 4096)
+total_params = w.<span class="blank blank-short">______</span>()  <span class="cm"># → 16777216                        ㉖</span>
+
+<span class="cm"># 场景 6：检查 tensor 在哪个设备（决定是否需要 .to()）</span>
+<span class="kw">if</span> hidden.<span class="blank blank-short">______</span>.type != <span class="str">'cuda'</span>:                               <span class="cm"># ㉗</span>
+    hidden = hidden.to(<span class="str">'cuda'</span>)
+</pre>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>第三部分：Tensor 变形 (20 分)</h2>
+<p class="section-info">变形操作是多头注意力的核心。每个操作在不同上下文中反复练习。</p>
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<h3>3.1 view 和 reshape (4 分)</h3>
+<pre>
+x = torch.randn(2, 12)
+
+<span class="cm"># 变成 (2, 3, 4)</span>
+y = x.<span class="blank">______________</span>(2, 3, 4)                                  <span class="cm"># ㉘</span>
+
+<span class="cm"># 变成 (6, 4) — 合并前两维</span>
+z = y.<span class="blank">______________</span>(-1, 4)                                     <span class="cm"># ㉙</span>
+
+<span class="cm"># 多头注意力：(B, S, H*d) → (B, S, H, d)</span>
+B, S, H, d = 2, 10, 8, 64
+qkv = torch.randn(B, S, H*d)
+qkv_heads = qkv.<span class="blank">______________</span>(B, S, H, d)                     <span class="cm"># ㉚</span>
+
+<span class="cm"># 合并多头输出：(B, S, H, d) → (B, S, D)</span>
+out = torch.randn(B, S, H, d)
+merged = out.<span class="blank">______________</span>(B, S, H*d)                          <span class="cm"># ㉛</span>
+</pre>
+
+<h3>3.2 transpose 和 permute (5 分)</h3>
+<pre>
+<span class="cm"># 2D 矩阵转置：(3, 4) → (4, 3)</span>
+m = torch.randn(3, 4)
+m_t = m.<span class="blank blank-short">______</span>()                                               <span class="cm"># ㉜</span>
+
+<span class="cm"># 3D tensor 转置最后两维：(B, S, D) → (B, D, S)  — 转置 K</span>
+K = torch.randn(2, 10, 128)
+K_t = K.<span class="blank">______________</span>(-2, -1)                                  <span class="cm"># ㉝</span>
+
+<span class="cm"># 多头拆分后转置：(B, S, H, d) → (B, H, S, d)</span>
+Q = torch.randn(B, S, H, d)
+Q_heads = Q.<span class="blank">______________</span>(1, 2)                                <span class="cm"># ㉞</span>
+
+<span class="cm"># 多头合并前先转回来：(B, H, S, d) → (B, S, H, d)</span>
+out_heads = torch.randn(B, H, S, d)
+out_back = out_heads.<span class="blank">______________</span>(1, 2)                       <span class="cm"># ㉟</span>
+
+<span class="cm"># 4D tensor 重排序：(B, C, H, W) → (B, H, W, C)  — 图片通道移到最后</span>
+img = torch.randn(1, 3, 224, 224)
+img_hwc = img.<span class="blank">______________</span>(0, 2, 3, 1)                       <span class="cm"># ㊱</span>
+</pre>
+
+<h3>3.3 unsqueeze 和 squeeze (4 分)</h3>
+<pre>
+<span class="cm"># 添加 batch 维度：(10, 4096) → (1, 10, 4096)</span>
+h = torch.randn(10, 4096)
+h_batch = h.<span class="blank">______________</span>(0)                                  <span class="cm"># ㊲</span>
+
+<span class="cm"># 去掉 batch 维度：(1, 10, 4096) → (10, 4096)</span>
+h_back = h_batch.<span class="blank">______________</span>(0)                              <span class="cm"># ㊳</span>
+
+<span class="cm"># 掩码升维用于广播：(S,) → (1, 1, 1, S)  — attention mask</span>
+mask_1d = torch.ones(128)
+mask_4d = mask_1d.<span class="blank">______________</span>(0).unsqueeze(0).unsqueeze(0)   <span class="cm"># ㊴</span>
+
+<span class="cm"># 去掉所有大小为 1 的维度：(1, 1, 10, 1) → (10,)</span>
+bloated = torch.randn(1, 1, 10, 1)
+slim = bloated.<span class="blank">______________</span>()                                <span class="cm"># ㊵</span>
+</pre>
+
+<h3>3.4 contiguous 和 flatten (4 分)</h3>
+<pre>
+<span class="cm"># transpose 之后内存不连续，需要 contiguous 才能 view</span>
+x = torch.randn(2, 8, 10, 64)    <span class="cm"># (B, H, S, d)</span>
+x = x.transpose(1, 2)             <span class="cm"># (B, S, H, d) — 不连续!</span>
+x = x.<span class="blank">______________</span>()                                        <span class="cm"># ㊶</span>
+x = x.view(2, 10, -1)             <span class="cm"># 现在可以 view 了</span>
+
+<span class="cm"># flatten 从 dim=1 开始：(2, 3, 4) → (2, 12)</span>
+y = torch.randn(2, 3, 4)
+y_flat = y.<span class="blank">______________</span>(1)                                   <span class="cm"># ㊷</span>
+
+<span class="cm"># flatten 整个 tensor：(2, 3, 4) → (24,)</span>
+y_all = y.<span class="blank">______________</span>()                                      <span class="cm"># ㊸</span>
+</pre>
+
+<h3>3.5 综合练习：多头注意力变形 (3 分)</h3>
+<pre>
+<span class="cm"># 完整多头流程：一步不漏</span>
+B, S, H, d = 2, 10, 8, 64
+D = H * d  <span class="cm"># 512</span>
+
+Q = torch.randn(B, S, D)
+<span class="cm"># 拆分多头 → 转置 → 计算 → 转回 → 连续化 → 合并</span>
+Q = Q.view(B, S, H, d).<span class="blank">______________</span>(1, 2)                   <span class="cm"># → (B,H,S,d)  ㊹</span>
+<span class="cm"># ...（注意力计算后）</span>
+out = Q.transpose(1, 2).<span class="blank">______________</span>().<span class="blank">______________</span>(B, S, D)  <span class="cm"># ㊺㊻</span>
+</pre>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>第四部分：Tensor 数学运算 (16 分)</h2>
+<p class="section-info">深度学习中常用的数学运算，包括矩阵乘法、统计量和数值操作。</p>
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<h3>4.1 矩阵乘法与点积 (4 分)</h3>
+<pre>
+Q = torch.randn(2, 10, 128)
+K = torch.randn(2, 10, 128)
+V = torch.randn(2, 10, 128)
+
+<span class="cm"># Q·K^T：(B,S,d) × (B,d,S) → (B,S,S)</span>
+scores = Q <span class="blank blank-short">______</span> K.<span class="blank">______________</span>(-2, -1)                     <span class="cm"># ㊼㊽</span>
+
+<span class="cm"># 缩放（除以 sqrt(d_k)）</span>
+<span class="kw">import</span> math
+scores = scores / math.<span class="blank blank-short">______</span>(128)                              <span class="cm"># ㊾</span>
+
+<span class="cm"># 加权求和：(B,S,S) × (B,S,d) → (B,S,d)</span>
+weights = F.softmax(scores, dim=-1)
+output = weights <span class="blank blank-short">______</span> V                                      <span class="cm"># ㊿</span>
+</pre>
+
+<h3>4.2 统计运算 (4 分)</h3>
+<pre>
+x = torch.randn(2, 10, 4096)
+
+<span class="cm"># 沿最后一维求和</span>
+s = x.<span class="blank blank-short">______</span>(dim=-1)                                          <span class="cm"># 51</span>
+
+<span class="cm"># 沿最后一维求均值</span>
+m = x.<span class="blank blank-short">______</span>(dim=-1)                                          <span class="cm"># 52</span>
+
+<span class="cm"># 求最大值及其索引</span>
+vals, idxs = x.<span class="blank blank-short">______</span>(dim=-1)                                 <span class="cm"># 53</span>
+
+<span class="cm"># 求最大值的索引（只要索引，不要值）</span>
+best = x.<span class="blank blank-short">______</span>(dim=-1)                                       <span class="cm"># 54</span>
+</pre>
+
+<h3>4.3 数学函数 (4 分)</h3>
+<pre>
+x = torch.randn(3, 4)
+
+<span class="cm"># 指数运算 e^x</span>
+ex = torch.<span class="blank blank-short">______</span>(x)                                          <span class="cm"># 55</span>
+
+<span class="cm"># 自然对数 ln(x)</span>
+lx = torch.<span class="blank blank-short">______</span>(ex)                                         <span class="cm"># 56</span>
+
+<span class="cm"># 平方根</span>
+sx = torch.<span class="blank blank-short">______</span>(torch.tensor(128.0))                         <span class="cm"># 57</span>
+
+<span class="cm"># clamp：把值限制在 [min, max] 范围内</span>
+clamped = x.<span class="blank blank-short">______</span>(min=-1.0, max=1.0)                          <span class="cm"># 58</span>
+</pre>
+
+<h3>4.4 mmit 场景中的数学运算 (4 分)</h3>
+<pre>
+<span class="cm"># 正交惩罚 ||RR^T - I||² — MoReS 中用</span>
+R = torch.randn(8, 4096)
+I = torch.eye(8)
+penalty = (R @ R.t() - I).<span class="blank blank-short">______</span>(2).<span class="blank blank-short">______</span>()                  <span class="cm"># 59 60</span>
+
+<span class="cm"># 选 top-k by norm — 选最重要的 k 个 token</span>
+h = torch.randn(10, 4096)               <span class="cm"># 10 个 token</span>
+norms = h.<span class="blank blank-short">______</span>(dim=-1)                                      <span class="cm"># 61</span>
+top_vals, top_ids = norms.<span class="blank blank-short">______</span>(k=5)                           <span class="cm"># 62</span>
+</pre>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>第五部分：Tensor 设备与梯度 (12 分)</h2>
+<p class="section-info">模型训练中关于设备管理、梯度控制和类型转换的关键操作。</p>
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<h3>5.1 设备转移与类型转换 (4 分)</h3>
+<pre>
+h = torch.randn(2, 10, 4096)
+
+<span class="cm"># 移到 GPU 并转换为 bfloat16</span>
+h_gpu = h.<span class="blank blank-short">______</span>(device=<span class="str">'cuda'</span>, dtype=torch.bfloat16)          <span class="cm"># 63</span>
+
+<span class="cm"># 只转换数据类型为 float32（常用于混合精度训练最后的 loss 计算）</span>
+h_fp32 = h_gpu.<span class="blank blank-short">______</span>()                                       <span class="cm"># 64</span>
+
+<span class="cm"># 转换为 bool 类型（用于 mask）</span>
+mask_int = torch.tensor([1, 0, 1, 0])
+mask_bool = mask_int.<span class="blank blank-short">______</span>()                                  <span class="cm"># 65</span>
+
+<span class="cm"># 加载模型到 CPU（避免 GPU OOM）</span>
+state = torch.load(<span class="str">"model.pt"</span>, <span class="blank">______________</span>=<span class="str">"cpu"</span>)           <span class="cm"># 66</span>
+</pre>
+
+<h3>5.2 梯度控制 (4 分)</h3>
+<pre>
+h = torch.randn(2, 10, 4096, requires_grad=True)
+
+<span class="cm"># 深拷贝（修改副本不影响原件）</span>
+h_copy = h.<span class="blank blank-short">______</span>()                                            <span class="cm"># 67</span>
+
+<span class="cm"># 切断梯度流（不让梯度反向传播到这里）— 常用于 MoReS 干预</span>
+h_no_grad = h.<span class="blank blank-short">______</span>()                                         <span class="cm"># 68</span>
+
+<span class="cm"># 冻结模型参数：不要梯度</span>
+<span class="kw">for</span> p <span class="kw">in</span> model.parameters():
+    p.<span class="blank">______________</span> = False                                    <span class="cm"># 69</span>
+
+<span class="cm"># 标记某个 tensor 需要梯度（LoRA 新加的参数）</span>
+A = torch.empty(8, 4096)
+A.<span class="blank">______________</span> = True                                        <span class="cm"># 70</span>
+</pre>
+
+<h3>5.3 masked_fill 与高级索引 (4 分)</h3>
+<pre>
+scores = torch.randn(2, 10, 10)  <span class="cm"># 注意力分数</span>
+
+<span class="cm"># 把 mask=True 的位置设为 -inf（因果掩码）</span>
+causal = torch.triu(torch.ones(10, 10), diagonal=1).bool()
+scores.<span class="blank">______________</span>(causal, float(<span class="str">'-inf'</span>))                    <span class="cm"># 71</span>
+
+<span class="cm"># 找出非零元素的索引</span>
+x = torch.tensor([0, 3, 0, 5, 0])
+nonzero_ids = x.<span class="blank">______________</span>()                               <span class="cm"># 72</span>
+
+<span class="cm"># 用布尔索引选择特定 token</span>
+h = torch.randn(10, 4096)
+mask = torch.tensor([True, False, True, False, False,
+                     True, False, False, True, False])
+selected = h[<span class="blank blank-short">______</span>]                                           <span class="cm"># 73</span>
+
+<span class="cm"># where：根据条件选择</span>
+a = torch.tensor([1.0, 2.0, 3.0])
+b = torch.tensor([10.0, 20.0, 30.0])
+cond = torch.tensor([True, False, True])
+result = torch.<span class="blank blank-short">______</span>(cond, a, b)    <span class="cm"># → [1, 20, 3]         74</span>
+</pre>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>第六部分：激活函数 (16 分)</h2>
+<p class="section-info">激活函数是非线性的来源。同一个函数在不同上下文中反复出现。</p>
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<h3>6.1 常见激活函数 (4 分)</h3>
+<pre>
+<span class="kw">import</span> torch.nn.functional <span class="kw">as</span> F
+
+x = torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0])
+
+<span class="cm"># ReLU: max(0, x)</span>
+y1 = F.<span class="blank blank-short">______</span>(x)                                              <span class="cm"># 75</span>
+
+<span class="cm"># GELU: 用在 BERT/GPT 中</span>
+y2 = F.<span class="blank blank-short">______</span>(x)                                              <span class="cm"># 76</span>
+
+<span class="cm"># SiLU/Swish: x * sigmoid(x)，用在 LLaMA 的 SwiGLU 中</span>
+y3 = F.<span class="blank blank-short">______</span>(x)                                              <span class="cm"># 77</span>
+
+<span class="cm"># Softmax: 沿最后一维把数字变成概率</span>
+logits = torch.tensor([2.0, 1.0, 0.1])
+probs = F.<span class="blank">______________</span>(logits, dim=-1)                       <span class="cm"># 78</span>
+</pre>
+
+<h3>6.2 手写 Softmax (4 分)</h3>
+<pre>
+<span class="kw">def</span> <span class="fn">my_softmax</span>(x, dim=-1):
+    <span class="cm"># Step 1: 减去最大值（数值稳定）</span>
+    x_max = x.<span class="blank blank-short">______</span>(dim=dim, keepdim=True).values               <span class="cm"># 79</span>
+    x_stable = x - x_max
+
+    <span class="cm"># Step 2: 取指数</span>
+    exp_x = <span class="blank">______________</span>(x_stable)                              <span class="cm"># 80</span>
+
+    <span class="cm"># Step 3: 归一化</span>
+    sum_exp = exp_x.<span class="blank blank-short">______</span>(dim=dim, keepdim=True)                <span class="cm"># 81</span>
+
+    <span class="cm"># Step 4: 返回</span>
+    <span class="kw">return</span> exp_x <span class="blank blank-short">______</span> sum_exp                                   <span class="cm"># 82</span>
+</pre>
+
+<h3>6.3 手写 GELU 近似 (4 分)</h3>
+<pre>
+<span class="kw">def</span> <span class="fn">gelu_approx</span>(x):
+    <span class="cm"># GELU ≈ 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))</span>
+    c = math.<span class="blank blank-short">______</span>(2.0 / math.pi)                               <span class="cm"># 83</span>
+    inner = c * (x + 0.044715 * x.<span class="blank blank-short">______</span>(3))                     <span class="cm"># 84</span>
+    <span class="kw">return</span> 0.5 * x * (1.0 + torch.<span class="blank blank-short">______</span>(inner))                  <span class="cm"># 85</span>
+</pre>
+
+<h3>6.4 SwiGLU 模式 (2 分)</h3>
+<pre>
+<span class="cm"># LLaMA 的 SwiGLU MLP 中的核心运算</span>
+gate = torch.randn(2, 10, 4096)
+up   = torch.randn(2, 10, 4096)
+
+<span class="cm"># SwiGLU: silu(gate) * up</span>
+hidden = F.<span class="blank blank-short">______</span>(gate) * <span class="blank blank-short">______</span>                               <span class="cm"># 86 87</span>
+</pre>
+
+<h3>6.5 激活函数再练习 (2 分)</h3>
+<pre>
+<span class="cm"># sigmoid: 把值压到 (0, 1)，用于门控</span>
+gate_logit = torch.tensor([0.0, 2.0, -2.0])
+gate_prob = torch.<span class="blank blank-short">______</span>(gate_logit)                            <span class="cm"># 88</span>
+
+<span class="cm"># tanh: 把值压到 (-1, 1)</span>
+t = torch.<span class="blank blank-short">______</span>(torch.tensor([0.0, 2.0, -2.0]))                <span class="cm"># 89</span>
+</pre>
+
+<h3>6.6 softmax 再练习 (2 分) — 不同场景复习</h3>
+<pre>
+<span class="cm"># 注意力权重：沿最后一维 softmax</span>
+attn_scores = torch.randn(2, 8, 10, 10)
+attn_weights = F.<span class="blank">______________</span>(attn_scores, dim=<span class="blank blank-short">______</span>)       <span class="cm"># 90 91</span>
+</pre>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>第七部分：Loss 函数 (20 分)</h2>
+<p class="section-info">语言模型和多模态模型中最重要的 loss 函数实现。</p>
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<h3>7.1 Cross-Entropy Loss 基础 (4 分)</h3>
+<pre>
+logits = torch.randn(4, 10)          <span class="cm"># (batch=4, classes=10)</span>
+targets = torch.tensor([3, 7, 1, 5])
+
+<span class="cm"># 方式 1：一步计算（内部自动做 softmax + log + NLL）</span>
+loss = F.<span class="blank">______________</span>(logits, targets)                       <span class="cm"># 92</span>
+
+<span class="cm"># 方式 2：带 ignore_index（-100 的位置不计 loss）</span>
+labels = torch.tensor([3, -100, 1, 5])
+loss = F.cross_entropy(logits, labels, ignore_index=<span class="blank blank-short">______</span>)    <span class="cm"># 93</span>
+
+<span class="cm"># 方式 3：不取均值，返回每个样本的 loss</span>
+per_sample = F.cross_entropy(logits, targets, reduction=<span class="str">'<span class="blank blank-short">______</span>'</span>)  <span class="cm"># 94</span>
+
+<span class="cm"># 方式 4：取总和而不是均值</span>
+total = F.cross_entropy(logits, targets, reduction=<span class="str">'<span class="blank blank-short">______</span>'</span>)      <span class="cm"># 95</span>
+</pre>
+
+<h3>7.2 语言模型 Shift (4 分)</h3>
+<pre>
+<span class="cm"># VLM 中的用法：logits 是 (B, seq, vocab)，labels 是 (B, seq)</span>
+<span class="cm"># 需要 shift：logits[:-1] 预测 labels[1:]</span>
+logits_3d = torch.randn(2, 20, 32000)
+labels_3d = torch.randint(0, 32000, (2, 20))
+
+<span class="cm"># shift logits：去掉最后一个时间步</span>
+shift_logits = logits_3d[:, <span class="blank blank-short">______</span>]                              <span class="cm"># 96</span>
+
+<span class="cm"># shift labels：去掉第一个时间步</span>
+shift_labels = labels_3d[:, <span class="blank blank-short">______</span>]                              <span class="cm"># 97</span>
+
+<span class="cm"># reshape 后计算 loss</span>
+loss = F.cross_entropy(
+    shift_logits.<span class="blank">______________</span>(-1, 32000),                     <span class="cm"># 98</span>
+    shift_labels.<span class="blank">______________</span>(-1)                               <span class="cm"># 99</span>
+)
+</pre>
+
+<h3>7.3 手写 Cross-Entropy (4 分)</h3>
+<pre>
+<span class="kw">def</span> <span class="fn">my_ce_loss</span>(logits, targets):
+    <span class="cm"># Step 1: log_softmax（数值稳定版）</span>
+    log_probs = logits - logits.<span class="blank">______________</span>(dim=-1, keepdim=True)  <span class="cm"># 100</span>
+
+    <span class="cm"># Step 2: 取正确类别的 log 概率</span>
+    B = logits.size(0)
+    correct_log_probs = log_probs[torch.<span class="blank">______________</span>(B), targets]  <span class="cm"># 101</span>
+
+    <span class="cm"># Step 3: 取负号</span>
+    <span class="kw">return</span> (<span class="blank blank-short">______</span>correct_log_probs).<span class="blank blank-short">______</span>()                    <span class="cm"># 102 103</span>
+</pre>
+
+<h3>7.4 Focal Loss (4 分)</h3>
+<pre>
+<span class="kw">def</span> <span class="fn">focal_loss</span>(logits, targets, gamma=2.0):
+    <span class="cm"># 先算每个样本的 CE（不取均值）</span>
+    ce = F.cross_entropy(logits, targets, reduction=<span class="str">'<span class="blank blank-short">______</span>'</span>)     <span class="cm"># 104</span>
+
+    <span class="cm"># 从 CE 反推概率：p = exp(-CE)</span>
+    p = torch.<span class="blank blank-short">______</span>(-ce)                                        <span class="cm"># 105</span>
+
+    <span class="cm"># Focal 权重：(1-p)^gamma</span>
+    weight = (1 - p) <span class="blank blank-short">______</span> gamma                                 <span class="cm"># 106</span>
+
+    <span class="cm"># 加权后的 loss</span>
+    <span class="kw">return</span> (weight * ce).<span class="blank blank-short">______</span>()                                 <span class="cm"># 107</span>
+</pre>
+
+<h3>7.5 Label Smoothing (4 分)</h3>
+<pre>
+<span class="kw">def</span> <span class="fn">label_smoothing_loss</span>(logits, targets, smoothing=0.1):
+    n_classes = logits.size(-1)
+    B = logits.size(0)
+
+    <span class="cm"># log softmax</span>
+    log_probs = F.<span class="blank">______________</span>(logits, dim=-1)                  <span class="cm"># 108</span>
+
+    <span class="cm"># 均匀分布的那一部分</span>
+    smooth_loss = -log_probs.<span class="blank blank-short">______</span>(dim=-1)                       <span class="cm"># 109</span>
+
+    <span class="cm"># 正确类别的那一部分</span>
+    nll_loss = -log_probs[torch.<span class="blank">______________</span>(B), targets]        <span class="cm"># 110</span>
+
+    <span class="cm"># 加权组合</span>
+    loss = (<span class="blank blank-short">______</span>) * nll_loss + smoothing * smooth_loss           <span class="cm"># 111</span>
+    <span class="kw">return</span> loss.mean()
+</pre>
+
+<h3>7.6 InfoNCE 对比学习 Loss (4 分)</h3>
+<pre>
+<span class="kw">def</span> <span class="fn">info_nce_loss</span>(q, k, temperature=0.07):
+    <span class="cm"># q, k: (B, D) — 已归一化的查询和正样本</span>
+
+    <span class="cm"># L2 归一化</span>
+    q = F.<span class="blank">______________</span>(q, dim=-1)                               <span class="cm"># 112</span>
+    k = F.normalize(k, dim=-1)
+
+    <span class="cm"># 相似度矩阵：(B, B)</span>
+    sim = q <span class="blank blank-short">______</span> k.t() / temperature                            <span class="cm"># 113</span>
+
+    <span class="cm"># 正样本在对角线上，标签就是 0,1,2,...,B-1</span>
+    labels = torch.<span class="blank">______________</span>(q.size(0), device=q.device)     <span class="cm"># 114</span>
+
+    <span class="cm"># 用 cross entropy</span>
+    <span class="kw">return</span> F.<span class="blank">______________</span>(sim, labels)                           <span class="cm"># 115</span>
+</pre>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>第八部分：nn.Module 与初始化 (22 分)</h2>
+<p class="section-info">自定义模块是 PyTorch 的核心。练习构建各种常见组件。</p>
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<h3>8.1 定义 MyLinear (4 分)</h3>
+<pre>
+<span class="kw">class</span> <span class="fn">MyLinear</span>(nn.<span class="blank">______________</span>):                               <span class="cm"># 116</span>
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, in_dim, out_dim):
+        <span class="blank">______________</span>().__init__()                               <span class="cm"># 117</span>
+
+        self.weight = nn.<span class="blank">______________</span>(torch.randn(out_dim, in_dim))  <span class="cm"># 118</span>
+        self.bias = nn.<span class="blank">______________</span>(torch.zeros(out_dim))             <span class="cm"># 119</span>
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        <span class="kw">return</span> x @ self.weight.t() + self.bias
+</pre>
+
+<h3>8.2 RMSNorm (4 分)</h3>
+<pre>
+<span class="kw">class</span> <span class="fn">RMSNorm</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, dim):
+        super().__init__()
+        self.weight = nn.Parameter(torch.<span class="blank blank-short">______</span>(dim))             <span class="cm"># 120</span>
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        <span class="cm"># RMS = sqrt(mean(x^2))</span>
+        rms = x.<span class="blank blank-short">______</span>(2).<span class="blank blank-short">______</span>(dim=-1, keepdim=True).<span class="blank blank-short">______</span>()  <span class="cm"># 121 122 123</span>
+        <span class="kw">return</span> x / (rms + 1e-6) * self.weight
+</pre>
+
+<h3>8.3 MyDropout (4 分)</h3>
+<pre>
+<span class="kw">class</span> <span class="fn">MyDropout</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, p=0.1):
+        super().__init__()
+        self.p = p
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        <span class="kw">if not</span> self.<span class="blank">______________</span>:                                <span class="cm"># 124</span>
+            <span class="kw">return</span> x
+
+        mask = (torch.rand_like(x) > self.p).<span class="blank blank-short">______</span>()            <span class="cm"># 125</span>
+        <span class="kw">return</span> x * mask / (1 - self.<span class="blank blank-short">______</span>)                        <span class="cm"># 126</span>
+</pre>
+
+<h3>8.4 MyEmbedding (3 分)</h3>
+<pre>
+<span class="kw">class</span> <span class="fn">MyEmbedding</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, vocab_size, embed_dim):
+        super().__init__()
+        self.weight = nn.<span class="blank">______________</span>(torch.randn(vocab_size, embed_dim))  <span class="cm"># 127</span>
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, token_ids):
+        <span class="cm"># 查表：用 token_ids 索引 weight 矩阵的行</span>
+        <span class="kw">return</span> self.<span class="blank blank-short">______</span>[token_ids]                               <span class="cm"># 128</span>
+
+<span class="cm"># 使用内建版本：</span>
+emb = nn.<span class="blank">______________</span>(32000, 4096)                             <span class="cm"># 129</span>
+</pre>
+
+<h3>8.5 LoRALinear (5 分)</h3>
+<pre>
+<span class="kw">class</span> <span class="fn">LoRALinear</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, base_linear, r=8, alpha=16):
+        super().__init__()
+        d_in = base_linear.in_features
+        d_out = base_linear.out_features
+        self.base = base_linear
+        self.scale = alpha / r
+
+        self.A = nn.Parameter(torch.empty(r, d_in))
+        self.B = nn.Parameter(torch.<span class="blank blank-short">______</span>(d_out, r))              <span class="cm"># 130</span>
+        nn.init.<span class="blank">______________</span>(self.A)                              <span class="cm"># 131</span>
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        base_out = self.base(x)
+        lora_out = (x @ self.A.<span class="blank blank-short">______</span>()) @ self.B.t()               <span class="cm"># 132</span>
+        <span class="kw">return</span> base_out + self.<span class="blank blank-short">______</span> * lora_out                     <span class="cm"># 133</span>
+</pre>
+
+<h3>8.6 register_buffer 与初始化 (2 分)</h3>
+<pre>
+<span class="kw">class</span> <span class="fn">MyModule</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, dim):
+        super().__init__()
+        <span class="cm"># register_buffer: 不参与训练但会保存在 state_dict 中</span>
+        self.<span class="blank">______________</span>(<span class="str">'mask'</span>, torch.ones(dim))               <span class="cm"># 134</span>
+        <span class="cm"># nn.Parameter: 参与训练</span>
+        self.weight = nn.Parameter(torch.randn(dim))
+
+<span class="cm"># 正交初始化（MoReS 中常用）</span>
+R = torch.empty(8, 4096)
+nn.init.<span class="blank">______________</span>(R)                                      <span class="cm"># 135</span>
+</pre>
+
+<h3>8.7 nn.ModuleList 与 nn.Identity (2 分)</h3>
+<pre>
+<span class="cm"># ModuleList：存放多个子模块（会被 .parameters() 发现）</span>
+layers = nn.<span class="blank">______________</span>([nn.Linear(512, 512) <span class="kw">for</span> _ <span class="kw">in</span> range(6)])  <span class="cm"># 136</span>
+
+<span class="cm"># Identity：什么都不做，常用于条件性地替换某层</span>
+skip = nn.<span class="blank">______________</span>()                                      <span class="cm"># 137</span>
+</pre>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>第九部分：Attention 全套 (24 分)</h2>
+<p class="section-info">注意力机制是 Transformer 的心脏。同样的模式反复练习直到滚瓜烂熟。</p>
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<h3>9.1 Scaled Dot-Product Attention — 第一遍 (6 分)</h3>
+<pre>
+<span class="kw">def</span> <span class="fn">attention_v1</span>(Q, K, V):
+    <span class="cm"># Q, K, V: (B, S, d_k)</span>
+    d_k = Q.<span class="blank blank-short">______</span>(-1)                                           <span class="cm"># 138</span>
+
+    <span class="cm"># Step 1: Q · K^T</span>
+    scores = Q <span class="blank blank-short">______</span> K.<span class="blank">______________</span>(-2, -1)                   <span class="cm"># 139 140</span>
+
+    <span class="cm"># Step 2: 缩放</span>
+    scores = scores / math.<span class="blank blank-short">______</span>(d_k)                            <span class="cm"># 141</span>
+
+    <span class="cm"># Step 3: softmax</span>
+    weights = F.<span class="blank">______________</span>(scores, dim=-1)                    <span class="cm"># 142</span>
+
+    <span class="cm"># Step 4: 加权求和</span>
+    output = weights <span class="blank blank-short">______</span> V                                    <span class="cm"># 143</span>
+
+    <span class="kw">return</span> output
+</pre>
+
+<h3>9.2 Scaled Dot-Product Attention — 第二遍（带掩码和 dropout）(6 分)</h3>
+<pre>
+<span class="kw">def</span> <span class="fn">attention_v2</span>(Q, K, V, mask=None, dropout_p=0.0):
+    d_k = Q.size(-1)
+
+    scores = Q @ K.<span class="blank">______________</span>(-2, -1) / math.sqrt(d_k)       <span class="cm"># 144</span>
+
+    <span class="cm"># 掩码：把 mask=True 的位置设为 -inf</span>
+    <span class="kw">if</span> mask <span class="kw">is not</span> None:
+        scores = scores.<span class="blank">______________</span>(mask, float(<span class="str">'-inf'</span>))       <span class="cm"># 145</span>
+
+    weights = F.<span class="blank">______________</span>(scores, dim=-1)                    <span class="cm"># 146</span>
+
+    <span class="cm"># 训练时 dropout 注意力权重</span>
+    <span class="kw">if</span> dropout_p > 0:
+        weights = F.<span class="blank">______________</span>(weights, p=dropout_p)            <span class="cm"># 147</span>
+
+    output = weights <span class="blank blank-short">______</span> V                                    <span class="cm"># 148</span>
+
+    <span class="kw">return</span> output, weights
+</pre>
+
+<h3>9.3 因果掩码创建 (4 分)</h3>
+<pre>
+<span class="kw">def</span> <span class="fn">make_causal_mask</span>(seq_len):
+    <span class="cm"># 上三角为 True（需要屏蔽的未来位置）</span>
+    mask = torch.<span class="blank blank-short">______</span>(torch.<span class="blank blank-short">______</span>(seq_len, seq_len), diagonal=1)  <span class="cm"># 149 150</span>
+    <span class="kw">return</span> mask.<span class="blank blank-short">______</span>()                                          <span class="cm"># 151</span>
+
+<span class="cm"># 使用掩码</span>
+S = 10
+causal = make_causal_mask(S)
+scores = torch.randn(2, S, S)
+scores.<span class="blank">______________</span>(causal, float(<span class="str">'-inf'</span>))                     <span class="cm"># 152</span>
+</pre>
+
+<h3>9.4 多头注意力完整实现 (10 分)</h3>
+<pre>
+<span class="kw">class</span> <span class="fn">MultiHeadAttention</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, dim=512, n_heads=8):
+        super().__init__()
+        self.n_heads = n_heads
+        self.head_dim = dim // n_heads
+        self.q_proj = nn.<span class="blank">______________</span>(dim, dim, bias=False)       <span class="cm"># 153</span>
+        self.k_proj = nn.Linear(dim, dim, bias=False)
+        self.v_proj = nn.Linear(dim, dim, bias=False)
+        self.o_proj = nn.<span class="blank">______________</span>(dim, dim, bias=False)       <span class="cm"># 154</span>
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x, mask=None):
+        B, S, D = x.shape
+        H = self.n_heads
+        d = self.head_dim
+
+        <span class="cm"># 线性投影</span>
+        Q = self.q_proj(x)
+        K = self.k_proj(x)
+        V = self.v_proj(x)
+
+        <span class="cm"># 拆成多头: (B, S, D) → (B, S, H, d) → (B, H, S, d)</span>
+        Q = Q.<span class="blank blank-short">______</span>(B, S, H, d).<span class="blank">______________</span>(1, 2)              <span class="cm"># 155 156</span>
+        K = K.view(B, S, H, d).<span class="blank">______________</span>(1, 2)                <span class="cm"># 157</span>
+        V = V.view(B, S, H, d).transpose(1, 2)
+
+        <span class="cm"># 注意力计算</span>
+        scores = Q @ K.transpose(-2, -1) / math.sqrt(d)
+        <span class="kw">if</span> mask <span class="kw">is not</span> None:
+            scores = scores.masked_fill(mask, float(<span class="str">'-inf'</span>))
+        weights = F.softmax(scores, dim=-1)
+        out = weights @ V                                <span class="cm"># (B, H, S, d)</span>
+
+        <span class="cm"># 合并多头: (B, H, S, d) → (B, S, H, d) → (B, S, D)</span>
+        out = out.<span class="blank">______________</span>(1, 2)                              <span class="cm"># 158</span>
+        out = out.<span class="blank">______________</span>()                                  <span class="cm"># 159</span>
+        out = out.<span class="blank blank-short">______</span>(B, S, D)                                  <span class="cm"># 160</span>
+
+        <span class="cm"># 输出投影</span>
+        <span class="kw">return</span> self.<span class="blank">______________</span>(out)                              <span class="cm"># 161</span>
+</pre>
+
+<h3>9.5 Cross-Attention（解码器侧）(4 分)</h3>
+<pre>
+<span class="kw">class</span> <span class="fn">CrossAttention</span>(nn.Module):
+    <span class="cm"># Q 来自解码器，K/V 来自编码器</span>
+    <span class="kw">def</span> <span class="fn">forward</span>(self, dec_hidden, enc_hidden):
+        <span class="cm"># Q 来自解码器</span>
+        Q = self.<span class="blank">______________</span>(dec_hidden)                         <span class="cm"># 162</span>
+
+        <span class="cm"># K, V 来自编码器（不是解码器！）</span>
+        K = self.<span class="blank">______________</span>(enc_hidden)                         <span class="cm"># 163</span>
+        V = self.<span class="blank">______________</span>(enc_hidden)                         <span class="cm"># 164</span>
+
+        <span class="cm"># 后续和 self-attention 一样：拆头 → 注意力 → 合并</span>
+        <span class="cm"># ... (省略)</span>
+        <span class="kw">return</span> self.<span class="blank">______________</span>(out)                              <span class="cm"># 165</span>
+</pre>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>第十部分：Transformer Block 与 MLP (16 分)</h2>
+<p class="section-info">组装完整的 Transformer 解码器层和语言模型。</p>
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<h3>10.1 SwiGLU MLP (4 分)</h3>
+<pre>
+<span class="kw">class</span> <span class="fn">SwiGLU_MLP</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, dim, hidden_dim):
+        super().__init__()
+        self.gate_proj = nn.Linear(dim, hidden_dim, bias=False)
+        self.up_proj   = nn.Linear(dim, hidden_dim, bias=False)
+        self.down_proj = nn.Linear(hidden_dim, dim, bias=False)
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        gate = self.<span class="blank">______________</span>(x)                               <span class="cm"># 166</span>
+        up   = self.<span class="blank">______________</span>(x)                               <span class="cm"># 167</span>
+        hidden = F.<span class="blank blank-short">______</span>(gate) * up                                <span class="cm"># 168</span>
+        <span class="kw">return</span> self.<span class="blank">______________</span>(hidden)                            <span class="cm"># 169</span>
+</pre>
+
+<h3>10.2 Transformer Block (6 分)</h3>
+<pre>
+<span class="kw">class</span> <span class="fn">TransformerBlock</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, dim, n_heads, mlp_hidden):
+        super().__init__()
+        self.norm1 = RMSNorm(dim)
+        self.attn  = MultiHeadAttention(dim, n_heads)
+        self.norm2 = RMSNorm(dim)
+        self.mlp   = SwiGLU_MLP(dim, mlp_hidden)
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x, mask=None):
+        <span class="cm"># Pre-norm + Attention + Residual</span>
+        h = self.<span class="blank blank-short">______</span>(x)                                        <span class="cm"># 170</span>
+        h = self.<span class="blank blank-short">______</span>(h, mask)                                   <span class="cm"># 171</span>
+        x = x + <span class="blank blank-short">______</span>                                              <span class="cm"># 172  (残差连接)</span>
+
+        <span class="cm"># Pre-norm + MLP + Residual</span>
+        h = self.<span class="blank blank-short">______</span>(x)                                        <span class="cm"># 173</span>
+        h = self.<span class="blank blank-short">______</span>(h)                                        <span class="cm"># 174</span>
+        x = x + <span class="blank blank-short">______</span>                                              <span class="cm"># 175  (残差连接)</span>
+
+        <span class="kw">return</span> x
+</pre>
+
+<h3>10.3 完整语言模型 (6 分)</h3>
+<pre>
+<span class="kw">class</span> <span class="fn">TinyLM</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, vocab_size, dim, n_layers, n_heads, mlp_hidden):
+        super().__init__()
+        self.embed = nn.<span class="blank">______________</span>(vocab_size, dim)             <span class="cm"># 176</span>
+        self.layers = nn.<span class="blank">______________</span>(                             <span class="cm"># 177</span>
+            [TransformerBlock(dim, n_heads, mlp_hidden) <span class="kw">for</span> _ <span class="kw">in</span> range(n_layers)]
+        )
+        self.norm = RMSNorm(dim)
+        self.lm_head = nn.Linear(dim, vocab_size, bias=False)
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, input_ids, labels=None):
+        <span class="cm"># 词嵌入</span>
+        h = self.<span class="blank blank-short">______</span>(input_ids)                                 <span class="cm"># 178</span>
+
+        <span class="cm"># 过所有层</span>
+        <span class="kw">for</span> layer <span class="kw">in</span> self.layers:
+            h = layer(h)
+
+        <span class="cm"># 最终 norm + lm_head</span>
+        h = self.<span class="blank blank-short">______</span>(h)                                        <span class="cm"># 179</span>
+        logits = self.<span class="blank">______________</span>(h)                              <span class="cm"># 180</span>
+
+        <span class="cm"># 如果有 labels 就算 loss</span>
+        <span class="kw">if</span> labels <span class="kw">is not</span> None:
+            loss = F.cross_entropy(
+                logits[:, :-1].reshape(-1, logits.size(-1)),
+                labels[:, 1:].reshape(-1)
+            )
+            <span class="kw">return</span> logits, loss
+        <span class="kw">return</span> logits
+</pre>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>第十一部分：训练循环 (20 分)</h2>
+<p class="section-info">训练循环的每一步反复练习，直到形成肌肉记忆。</p>
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<h3>11.1 基本训练循环 (5 分)</h3>
+<pre>
+model.<span class="blank blank-short">______</span>()                                                 <span class="cm"># 181  (切换到训练模式)</span>
+optimizer = torch.optim.<span class="blank blank-short">______</span>(model.parameters(), lr=1e-4)    <span class="cm"># 182</span>
+
+<span class="kw">for</span> batch <span class="kw">in</span> dataloader:
+    logits = model(batch[<span class="str">'input_ids'</span>])
+    loss = F.cross_entropy(logits, batch[<span class="str">'labels'</span>])
+
+    loss.<span class="blank blank-short">______</span>()                                                <span class="cm"># 183  (反向传播)</span>
+    optimizer.<span class="blank blank-short">______</span>()                                           <span class="cm"># 184  (更新参数)</span>
+    optimizer.<span class="blank">______________</span>()                                    <span class="cm"># 185  (清零梯度)</span>
+</pre>
+
+<h3>11.2 带梯度裁剪的训练循环 (5 分)</h3>
+<pre>
+model.train()
+optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5)
+
+<span class="kw">for</span> batch <span class="kw">in</span> dataloader:
+    logits = model(batch[<span class="str">'input_ids'</span>])
+    loss = F.cross_entropy(logits, batch[<span class="str">'labels'</span>])
+
+    loss.<span class="blank blank-short">______</span>()                                                <span class="cm"># 186</span>
+
+    <span class="cm"># 梯度裁剪：防止梯度爆炸</span>
+    torch.nn.utils.<span class="blank">______________</span>(model.parameters(), max_norm=1.0)  <span class="cm"># 187</span>
+
+    optimizer.<span class="blank blank-short">______</span>()                                           <span class="cm"># 188</span>
+    optimizer.<span class="blank">______________</span>()                                    <span class="cm"># 189</span>
+
+    print(f"loss = {loss.<span class="blank blank-short">______</span>():.4f}")                           <span class="cm"># 190</span>
+</pre>
+
+<h3>11.3 梯度累积 (6 分)</h3>
+<pre>
+accum_steps = 4
+optimizer.<span class="blank">______________</span>()                                      <span class="cm"># 191  (循环前先清零)</span>
+
+<span class="kw">for</span> i, batch <span class="kw">in</span> enumerate(dataloader):
+    logits = model(batch[<span class="str">'input_ids'</span>])
+    loss = F.cross_entropy(logits, batch[<span class="str">'labels'</span>])
+
+    <span class="cm"># 关键：loss 除以累积步数</span>
+    loss = loss / <span class="blank">______________</span>                                   <span class="cm"># 192</span>
+
+    loss.<span class="blank blank-short">______</span>()                                                <span class="cm"># 193</span>
+
+    <span class="cm"># 每 N 步才真正更新</span>
+    <span class="kw">if</span> (i + 1) % accum_steps == <span class="blank blank-short">______</span>:                            <span class="cm"># 194</span>
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.<span class="blank blank-short">______</span>()                                       <span class="cm"># 195</span>
+        optimizer.zero_grad()
+</pre>
+
+<h3>11.4 model.train() vs model.eval() (2 分)</h3>
+<pre>
+<span class="cm"># 训练时：启用 dropout、batchnorm 的训练行为</span>
+model.<span class="blank blank-short">______</span>()                                                 <span class="cm"># 196</span>
+
+<span class="cm"># 验证/推理时：关闭 dropout、batchnorm 用 running stats</span>
+model.<span class="blank blank-short">______</span>()                                                 <span class="cm"># 197</span>
+</pre>
+
+<h3>11.5 参数组 (2 分)</h3>
+<pre>
+<span class="cm"># 不同参数用不同学习率</span>
+optimizer = torch.optim.AdamW([
+    {<span class="str">'params'</span>: model.backbone.parameters(), <span class="str">'lr'</span>: <span class="blank blank-short">______</span>},      <span class="cm"># 198 (小lr)</span>
+    {<span class="str">'params'</span>: model.head.parameters(),     <span class="str">'lr'</span>: <span class="blank blank-short">______</span>},      <span class="cm"># 199 (大lr)</span>
+])
+</pre>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>第十二部分：保存、加载、Hook、推理 (18 分)</h2>
+<p class="section-info">模型持久化、参数管理、Hook 干预和推理生成。</p>
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<h3>12.1 保存与加载 — 第一遍 (4 分)</h3>
+<pre>
+<span class="cm"># 保存模型参数</span>
+torch.<span class="blank blank-short">______</span>(model.<span class="blank">______________</span>(), <span class="str">"model.pt"</span>)                <span class="cm"># 200 201</span>
+
+<span class="cm"># 加载参数（先到 CPU）</span>
+state = torch.<span class="blank blank-short">______</span>(<span class="str">"model.pt"</span>, map_location=<span class="str">"cpu"</span>)           <span class="cm"># 202</span>
+
+<span class="cm"># 加载到模型（允许部分缺失）</span>
+model.<span class="blank">______________</span>(state, strict=False)                       <span class="cm"># 203</span>
+</pre>
+
+<h3>12.2 冻结/解冻与可训练参数统计 (4 分)</h3>
+<pre>
+<span class="cm"># 冻结所有参数</span>
+<span class="kw">for</span> p <span class="kw">in</span> model.<span class="blank">______________</span>():                                <span class="cm"># 204</span>
+    p.<span class="blank">______________</span> = False                                    <span class="cm"># 205</span>
+
+<span class="cm"># 只解冻 LoRA 参数</span>
+<span class="kw">for</span> name, p <span class="kw">in</span> model.named_parameters():
+    <span class="kw">if</span> <span class="str">'lora'</span> <span class="kw">in</span> name:
+        p.requires_grad = True
+
+<span class="cm"># 统计可训练参数量</span>
+trainable = sum(
+    p.<span class="blank blank-short">______</span>() <span class="kw">for</span> p <span class="kw">in</span> model.parameters() <span class="kw">if</span> p.<span class="blank">______________</span>  <span class="cm"># 206 207</span>
+)
+print(f"可训练参数: {trainable:,}")
+</pre>
+
+<h3>12.3 register_forward_hook (6 分)</h3>
+<pre>
+<span class="cm"># Hook 工厂函数：用闭包捕获 layer_name</span>
+<span class="kw">def</span> <span class="fn">make_hook</span>(storage, layer_name):
+    <span class="kw">def</span> <span class="fn">hook_fn</span>(module, input, <span class="blank blank-short">______</span>):                           <span class="cm"># 208</span>
+        <span class="cm"># 把输出存到 storage 字典中（切断梯度）</span>
+        storage[layer_name] = output.<span class="blank blank-short">______</span>()                    <span class="cm"># 209</span>
+    <span class="kw">return</span> hook_fn
+
+<span class="cm"># 使用 hook</span>
+hidden_states = {}
+handles = []
+<span class="kw">for</span> i, layer <span class="kw">in</span> enumerate(model.layers):
+    h = layer.<span class="blank">______________</span>(make_hook(hidden_states, f"layer_{i}"))  <span class="cm"># 210</span>
+    handles.append(h)
+
+<span class="cm"># 前向传播后，hidden_states 就有每层的输出了</span>
+<span class="kw">with</span> torch.<span class="blank">______________</span>():                                    <span class="cm"># 211</span>
+    model(input_ids)
+
+<span class="cm"># 用完后移除 hook</span>
+<span class="kw">for</span> h <span class="kw">in</span> handles:
+    h.<span class="blank blank-short">______</span>()                                                  <span class="cm"># 212</span>
+</pre>
+
+<h3>12.4 MoReS 干预模式 (4 分)</h3>
+<pre>
+<span class="cm"># MoReS 核心：在隐藏状态上做低秩干预</span>
+R = torch.randn(8, 4096)      <span class="cm"># 低秩投影矩阵</span>
+W = nn.Linear(8, 8, bias=False)  <span class="cm"># 变换矩阵</span>
+
+h = torch.randn(2, 10, 4096)  <span class="cm"># 原始隐藏状态</span>
+
+<span class="cm"># Step 1: 投影到低秩空间</span>
+h_low = F.<span class="blank blank-short">______</span>(h, R)                                        <span class="cm"># 213  (B,S,4096) × (4096,8)^T = (B,S,8)</span>
+
+<span class="cm"># Step 2: 在低秩空间做变换</span>
+delta_low = <span class="blank blank-short">______</span>(h_low)                                      <span class="cm"># 214</span>
+
+<span class="cm"># Step 3: 投回原始空间</span>
+delta = F.linear(delta_low, R.<span class="blank blank-short">______</span>())                          <span class="cm"># 215  (B,S,8) × (8,4096)^T = (B,S,4096)</span>
+
+<span class="cm"># Step 4: 残差干预</span>
+h_new = h + <span class="blank blank-short">______</span>                                              <span class="cm"># 216</span>
+</pre>
+
+<h3>12.5 推理生成 (4 分) — 不算梯度 + 采样</h3>
+<pre>
+<span class="cm"># 推理模式</span>
+model.<span class="blank blank-short">______</span>()                                                 <span class="cm"># 217</span>
+
+<span class="cm"># 不计算梯度（省内存 + 加速）</span>
+<span class="kw">with</span> torch.<span class="blank">______________</span>():                                    <span class="cm"># 218</span>
+    logits = model(input_ids)
+
+    <span class="cm"># 取最后一个 token 的 logits，转成概率</span>
+    probs = F.<span class="blank">______________</span>(logits[:, -1, :], dim=-1)            <span class="cm"># 219</span>
+
+    <span class="cm"># 按概率采样一个 token</span>
+    next_token = torch.<span class="blank">______________</span>(probs, num_samples=1)       <span class="cm"># 220</span>
+</pre>
+
+<div class="score-box">
+总分: _______ / 211
+</div>
+
+</body>
+</html>

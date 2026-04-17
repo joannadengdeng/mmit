@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>mores.py 图解 — OrthogonalIntervention</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:8.5pt;line-height:1.4;padding:12px 20px;max-width:980px;margin:0 auto}
+
+@page{size:A4 portrait;margin:6mm}
+@media print{
+  body{padding:0;max-width:none;font-size:8pt;line-height:1.35}
+  .print-hint{display:none!important}
+  h2{page-break-after:avoid}
+  h3{page-break-after:avoid}
+  /* 所有内容块: 如果放不下就整体移到下一页 */
+  .vis, .pytorch, pre.code, table, .note{page-break-inside:avoid}
+}
+
+.print-hint{background:#fffbe0;border:1.5px solid #806000;padding:4px 10px;margin-bottom:6px;font-size:8pt;color:#806000;border-radius:3px}
+.print-hint b{color:#000}
+h1{font-size:13pt;font-weight:700;border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:3px}
+.subtitle{font-size:8pt;color:#444;font-style:italic;margin-bottom:8px}
+h2{font-size:10.5pt;font-weight:700;margin:10px 0 5px;padding:4px 8px;background:#000;color:#fff;border-radius:3px}
+h3{font-size:9pt;font-weight:700;margin:6px 0 3px;border-bottom:1px solid #ccc;padding-bottom:1px}
+p{margin:3px 0;font-size:8pt}
+
+pre.code{background:#f8f8f8;border:1px solid #000;border-radius:2px;padding:5px 8px;font-family:var(--mono);font-size:7.5pt;line-height:1.4;margin:4px 0;white-space:pre-wrap;word-break:break-word}
+.code .kw{color:#a00050;font-weight:600}.code .fn{color:#0040a0;font-weight:600}.code .str{color:#006400}.code .cm{color:#666;font-style:italic}.code .num{color:#a04000}
+
+.vis{border:1.2px solid #000;border-radius:3px;padding:6px 10px;margin:4px 0;background:#fafafa}
+.vis .vis-title{font-weight:700;font-size:9pt;margin-bottom:4px;color:#a00000}
+.vis-row{display:flex;align-items:center;gap:5px;margin:2px 0;font-family:var(--mono);font-size:7.5pt;flex-wrap:wrap}
+.vis-box{border:1px solid #000;padding:3px 8px;border-radius:2px;background:#fff;text-align:center;min-width:45px;font-size:7pt}
+.vis-box.param{background:#fff0f0;border-color:#a00000;font-weight:700}
+.vis-box.result{background:#e8f0ff;border-color:#0040a0}
+.vis-box.input{background:#fff8e0;border-color:#806000}
+.vis-box.frozen{background:#f0f5f0;border-color:#006400;border-style:dashed}
+.vis-arrow{font-size:12pt;font-weight:700;color:#000}
+.vis-eq{font-size:11pt;font-weight:700;color:#a00000}
+.vis-label{font-size:6.5pt;color:#666;font-style:italic}
+
+.pytorch{margin:3px 0;padding:5px 8px;background:#f0f0ff;border:1px solid #0040a0;border-radius:2px;font-size:7.5pt}
+.pytorch .pt-title{font-weight:700;color:#0040a0;font-size:8pt;margin-bottom:2px;font-family:var(--mono)}
+
+.note{background:#fff8e0;border-left:2.5px solid #806000;padding:4px 8px;margin:3px 0;font-size:7.5pt}
+.note b{color:#806000}
+
+table{width:100%;border-collapse:collapse;font-size:7pt;margin:3px 0}
+th,td{padding:2px 5px;border:1px solid #000;text-align:left;vertical-align:top}
+th{background:#000;color:#fff}
+</style>
+</head>
+<body>
+
+<div class="print-hint"><b>📄</b> Cmd+P, A4 纵向, 最小边距, 勾选"背景图形"</div>
+
+<h1>mores.py 图解 — Part 1: OrthogonalIntervention (Line 43-135)</h1>
+<p class="subtitle">90 行代码分成 4 个块讲解。图表为主，代码为辅。基于 LLaVA-1.5-7B (hidden_dim=4096, rank=1)。</p>
+
+<!-- ============================================================ -->
+<h2>Block 1: __init__ — 创建 8,193 个参数 (Line 52-70)</h2>
+
+<pre class="code"><span class="cm"># 创建两个可训练参数: R (正交投影方向) 和 W (学习的引导)</span>
+self.R = nn.Parameter(torch.empty(rank, hidden_dim))   <span class="cm"># (1, 4096)</span>
+nn.init.orthogonal_(self.R)                             <span class="cm"># 变成单位向量</span>
+
+self.W = nn.Linear(hidden_dim, rank, bias=True)         <span class="cm"># Linear(4096 → 1)</span>
+nn.init.zeros_(self.W.weight)                           <span class="cm"># 全零 → 初始干预=0</span>
+nn.init.zeros_(self.W.bias)
+
+self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()</pre>
+
+<div class="vis">
+<div class="vis-title">创建后的参数状态</div>
+<div class="vis-row">
+  <div class="vis-box param">R<br>nn.Parameter (1, 4096)<br>4,096 params<br>正交初始化: ||R|| = 1</div>
+  <div class="vis-box param">W.weight<br>nn.Linear 内部 (1, 4096)<br>4,096 params<br>全零: 初始干预 = 0</div>
+  <div class="vis-box param">W.bias<br>(1,)<br>1 param<br>全零</div>
+  <div style="font-size:14pt;font-weight:700">→ 8,193 total</div>
+</div>
+</div>
+
+<h3>这里用到的 PyTorch API</h3>
+<table>
+<tr><th>API</th><th>做什么</th><th>为什么用它</th></tr>
+<tr><td><code>nn.Parameter(tensor)</code></td><td>把 tensor 注册为可训练参数</td><td>这样 optimizer 能找到它并更新它。普通 tensor 不会被训练</td></tr>
+<tr><td><code>torch.empty(1, 4096)</code></td><td>创建未初始化的 tensor</td><td>下一行会用正交初始化覆盖，所以初始值无所谓</td></tr>
+<tr><td><code>nn.init.orthogonal_(R)</code></td><td>用正交矩阵填充 R</td><td>rank=1 时 R 变成单位向量。正交保证"投影→投回"不丢信息</td></tr>
+<tr><td><code>nn.Linear(4096, 1)</code></td><td>全连接层: y = Wx + b</td><td>自动创建 weight (1,4096) 和 bias (1,) 两个 Parameter</td></tr>
+<tr><td><code>nn.init.zeros_(tensor)</code></td><td>全部填 0</td><td>W=0 → 训练初期干预效果=0，模型行为不变，慢慢学</td></tr>
+<tr><td><code>nn.Dropout(0.05)</code></td><td>训练时随机 5% 值变 0</td><td>防过拟合。推理时自动关闭</td></tr>
+<tr><td><code>nn.Identity()</code></td><td>什么都不做 (y = x)</td><td>dropout=0 时的占位符，避免 if/else</td></tr>
+</table>
+
+<div class="note">
+<b>关键设计：</b>W 初始化为零 → 训练第一步时 <code>Wh = 0</code>，干预 delta ≈ 0，模型输出和原模型一样。然后 W 逐步学出非零值，模型被慢慢引导。这比一开始就大幅修改更安全。
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 2: orthogonal_penalty — 正交约束 (Line 72-76)</h2>
+
+<pre class="code">RRt = self.R @ self.R.t()                             <span class="cm"># (1,4096) × (4096,1) → (1,1)</span>
+I = torch.eye(self.rank, device=self.R.device, ...)    <span class="cm"># [[1.0]]</span>
+return (RRt - I).pow(2).sum()                          <span class="cm"># ||R·R^T - I||²</span></pre>
+
+<div class="vis">
+<div class="vis-title">正交约束怎么工作</div>
+<div class="vis-row">
+  <div class="vis-box param">R<br>(1, 4096)</div>
+  <div class="vis-arrow">×</div>
+  <div class="vis-box param">R^T<br>(4096, 1)</div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box result">RR^T<br>(1, 1)<br>= [[s]]</div>
+  <div class="vis-eq">−</div>
+  <div class="vis-box">I<br>[[1.0]]</div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box result">[[s−1]]</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">(s−1)²</div>
+</div>
+<div class="vis-label">如果 R 是单位向量 (||R||=1) → s=1.0 → penalty=0。训练时 R 偏离 → s≠1 → penalty>0 → loss 把它拉回来。</div>
+</div>
+
+<table>
+<tr><th>API</th><th>做什么</th></tr>
+<tr><td><code>A @ B</code></td><td>矩阵乘法 (等于 torch.matmul)</td></tr>
+<tr><td><code>.t()</code></td><td>2D tensor 转置: (m,n) → (n,m)</td></tr>
+<tr><td><code>torch.eye(n, device, dtype)</code></td><td>n×n 单位矩阵。device/dtype 必须和 R 一致</td></tr>
+<tr><td><code>.pow(2).sum()</code></td><td>每元素平方 → 全部求和 = Frobenius 范数²</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 style="page-break-before:always">Block 3: forward 路径 A — steer 所有 token (Line 99-105)</h2>
+
+<p>当 <code>vis_mask=None</code> 且 <code>steer_ratio≥1.0</code> 时走这条路。一次矩阵运算搞定全部 620 个位置。</p>
+
+<pre class="code">Rh = F.linear(h, R)               <span class="cm"># 投影到 1 维</span>
+Wh = self.W(h)                     <span class="cm"># Linear 算"该修正多少"</span>
+delta_low = self.dropout(Wh - Rh)  <span class="cm"># 差值 (在 1 维子空间)</span>
+delta = F.linear(delta_low, R.t()) <span class="cm"># 投回 4096 维</span>
+return h + delta                   <span class="cm"># 加到原 h 上</span></pre>
+
+<div class="vis">
+<div class="vis-title">5 步数据流 + shape</div>
+
+<div class="vis-row">
+  <div class="vis-box input">h<br>(1, 620, <b>4096</b>)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">F.linear(h, R)<br>= h @ R^T</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">Rh<br>(1, 620, <b>1</b>)</div>
+  <div class="vis-label">4096 维 → 1 个标量<br>每个 token 和 R 的点积</div>
+</div>
+
+<div class="vis-row">
+  <div class="vis-box input">h<br>(1, 620, <b>4096</b>)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">self.W(h)<br>= h @ W^T + b</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">Wh<br>(1, 620, <b>1</b>)</div>
+  <div class="vis-label">学到的"应该修正到什么"<br>训练初期 W=0 → Wh=0</div>
+</div>
+
+<div class="vis-row">
+  <div class="vis-box result">Wh<br>(1,620,1)</div>
+  <div class="vis-eq">−</div>
+  <div class="vis-box result">Rh<br>(1,620,1)</div>
+  <div class="vis-arrow">→ dropout →</div>
+  <div class="vis-box result">delta_low<br>(1,620,1)</div>
+  <div class="vis-label">"想要的 − 当前的"<br>= 在 1 维子空间里的修正量</div>
+</div>
+
+<div class="vis-row">
+  <div class="vis-box result">delta_low<br>(1,620,<b>1</b>)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">F.linear(_, R.t())<br>= delta_low @ R</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">delta<br>(1,620,<b>4096</b>)</div>
+  <div class="vis-label">1 维修正量 × R 方向<br>→ 4096 维修正向量</div>
+</div>
+
+<div class="vis-row">
+  <div class="vis-box input">h<br>(1,620,4096)</div>
+  <div class="vis-eq">+</div>
+  <div class="vis-box result">delta<br>(1,620,4096)</div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box param">h'<br>(1,620,4096)</div>
+  <div class="vis-label">沿 R 方向 nudge 了一点<br>其他 4095 个方向不动</div>
+</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">F.linear(input, weight) vs self.W(input)</div>
+两者都做矩阵乘法 <code>input @ weight.T</code>，区别是谁存 weight：<br>
+• <code>F.linear(h, R)</code>: R 是我们自己的 nn.Parameter，不在 nn.Linear 里<br>
+• <code>self.W(h)</code>: W 是 nn.Linear 模块，weight 和 bias 在它内部<br>
+结果一样，只是代码组织方式不同。
+</div>
+
+<div class="note">
+<b>直觉：</b>4096 维是一个巨大的空间。R 选了 1 个方向（比如"视觉语义"方向）。MoReS 只沿这个方向 nudge hidden state，不动其他 4095 个方向。这就是为什么 rank=1 就够——不需要修正所有方向，只修正最重要的那一个。
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 4: forward 路径 B — 选 top 1% by norm (Line 107-135)</h2>
+
+<p><b>LLaVA-1.5 实际走这条路</b>（因为 vis_mask=None 但 steer_ratio=0.01 &lt; 1.0）。从 620 个位置里选 norm 最大的 6 个，只修正它们。</p>
+
+<pre class="code"><span class="cm"># Step 1: 复制 h (不改原件)</span>
+h_out = h.clone()
+
+<span class="cm"># Step 2: 逐 batch 处理 (每个样本的选中位置可能不同)</span>
+for b in range(h.size(0)):
+    vis_idx = torch.arange(h.size(1), device=h.device)  <span class="cm"># [0,1,...,619] 全部候选</span>
+
+    <span class="cm"># Step 3: 算每个位置的 norm, 选最大的 6 个</span>
+    norms = h[b, vis_idx].norm(dim=-1)       <span class="cm"># (620,) 每个 token 的长度</span>
+    k = max(1, int(620 * 0.01))              <span class="cm"># k = 6</span>
+    _, topk_local = norms.topk(k)            <span class="cm"># 选 norm 最大的 6 个的位置</span>
+    vis_idx = vis_idx[topk_local]            <span class="cm"># 最终 6 个绝对位置</span>
+
+    <span class="cm"># Step 4: 对这 6 个位置做干预 (和路径 A 数学完全一样)</span>
+    h_sel = h[b, vis_idx]                    <span class="cm"># (6, 4096)</span>
+    Rh = F.linear(h_sel, R)                  <span class="cm"># (6, 1)</span>
+    Wh = self.W(h_sel)                       <span class="cm"># (6, 1)</span>
+    delta = F.linear(self.dropout(Wh - Rh), R.t())  <span class="cm"># (6, 4096)</span>
+    h_out[b, vis_idx] = h_sel + delta        <span class="cm"># 写回 6 个位置</span>
+
+return h_out  <span class="cm"># 614 个位置不变, 6 个被修正</span></pre>
+
+<div class="vis">
+<div class="vis-title">Step 3: 怎么选 6 个位置</div>
+<div class="vis-row">
+  <div class="vis-box input">h (1, 620, 4096)<br>620 个 4096 维向量</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">.norm(dim=-1)<br>每个向量算长度<br>→ (620,) 标量</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">.topk(6)<br>选最大的 6 个<br>→ 6 个位置索引</div>
+</div>
+<div class="vis-label">
+  例: norms = [3.5, 3.2, 3.8, ..., <b style="color:#a00000">9.1</b>, ..., <b style="color:#a00000">8.7</b>, ..., 3.4]
+  → topk 选出 norm≈8~9 的 6 个位置 (通常是 visual tokens，因为 CLIP 输出 norm 更大)
+</div>
+</div>
+
+<div class="vis">
+<div class="vis-title">Step 4: 只改 6 个，其余不动</div>
+<div class="vis-row">
+  <div class="vis-box frozen" style="min-width:80px">位置 0<br>不变</div>
+  <div class="vis-box frozen" style="min-width:40px">...</div>
+  <div class="vis-box param" style="min-width:80px">位置 89<br><b>+ delta</b></div>
+  <div class="vis-box frozen" style="min-width:40px">...</div>
+  <div class="vis-box param" style="min-width:80px">位置 234<br><b>+ delta</b></div>
+  <div class="vis-box frozen" style="min-width:40px">...</div>
+  <div class="vis-box param" style="min-width:80px">位置 510<br><b>+ delta</b></div>
+  <div class="vis-box frozen" style="min-width:40px">...</div>
+  <div class="vis-box frozen" style="min-width:80px">位置 619<br>不变</div>
+</div>
+<div class="vis-label">红框 = 被修正的 6 个位置 (h + delta)。虚线框 = 614 个不变的位置 (clone 时复制的原值)。</div>
+</div>
+
+<h3>这里用到的 PyTorch API</h3>
+<table>
+<tr><th>API</th><th>做什么</th><th>例子</th></tr>
+<tr><td><code>.clone()</code></td><td>深拷贝。修改副本不影响原件</td><td>h_out 和 h 是独立的两块内存</td></tr>
+<tr><td><code>.size(0)</code></td><td>第 0 维的大小</td><td>h.size(0) = batch_size = 1</td></tr>
+<tr><td><code>torch.arange(620)</code></td><td>[0, 1, 2, ..., 619]</td><td>vis_mask=None 时: 所有位置都是候选</td></tr>
+<tr><td><code>.norm(dim=-1)</code></td><td>每行的 L2 范数 (向量长度)</td><td>(620, 4096) → (620,) 标量</td></tr>
+<tr><td><code>.topk(6)</code></td><td>最大的 6 个值+索引</td><td>返回 (values, indices)，用 _ 忽略 values</td></tr>
+<tr><td><code>.numel()</code></td><td>元素总数</td><td>vis_idx.numel() = 620</td></tr>
+<tr><td><code>h[b, idx] = val</code></td><td>高级索引赋值</td><td>只修改 idx 指定的 6 个位置</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>总结：OrthogonalIntervention 的 4 个核心操作</h2>
+
+<div class="vis">
+<div class="vis-title">一张图看完整个模块</div>
+<table>
+<tr><th style="width:8%">步骤</th><th style="width:25%">操作</th><th style="width:35%">shape 变化</th><th style="width:32%">直觉</th></tr>
+<tr>
+  <td><b>①</b></td>
+  <td>选位置<br><code>norm → topk(6)</code></td>
+  <td>(620, 4096) → (620,) → 6 个索引</td>
+  <td>从 620 个 token 里挑最重要的 6 个</td>
+</tr>
+<tr>
+  <td><b>②</b></td>
+  <td>投影到 1 维<br><code>F.linear(h, R)</code></td>
+  <td>(6, <b>4096</b>) → (6, <b>1</b>)</td>
+  <td>看 R 方向上的分量多大</td>
+</tr>
+<tr>
+  <td><b>③</b></td>
+  <td>算修正量<br><code>W(h) − R·h</code></td>
+  <td>(6, 1) − (6, 1) → (6, 1)</td>
+  <td>"应该的" 减 "现在的"</td>
+</tr>
+<tr>
+  <td><b>④</b></td>
+  <td>投回 + 加到 h<br><code>h + R^T · delta</code></td>
+  <td>(6, <b>1</b>) → (6, <b>4096</b>) → 加到 h</td>
+  <td>沿 R 方向 nudge 一小步</td>
+</tr>
+</table>
+</div>
+
+<div class="note">
+<b>Part 1 完成。</b>以上 90 行是 MoReS 的全部"算法"。下面 Part 2-4 是工程代码：找层、注册 hook、保存加载。
+</div>
+
+<!-- ============================================================ -->
+<!--  PART 2: Helper Functions (Line 138-222)                      -->
+<!-- ============================================================ -->
+<h2>Part 2: 辅助函数 (Line 138-222) — 找模型结构</h2>
+
+<h3>Block 5: _parse_positions — 解析 "f4+l5" (Line 138-162)</h3>
+
+<pre class="code"><span class="cm"># 输入: "f4+l5", num_layers=32</span>
+<span class="cm"># 输出: [0, 1, 2, 3, 27, 28, 29, 30, 31]</span>
+
+<span class="kw">def</span> <span class="fn">_parse_positions</span>(position_str, num_layers):
+    <span class="kw">if</span> position_str == <span class="str">"all"</span>: <span class="kw">return</span> list(range(num_layers))  <span class="cm"># [0,1,...,31]</span>
+
+    <span class="kw">for</span> part <span class="kw">in</span> position_str.split(<span class="str">"+"</span>):   <span class="cm"># "f4+l5" → ["f4", "l5"]</span>
+        match = re.match(r<span class="str">"^([fl])(\d+)$"</span>, part)
+        <span class="kw">if</span> prefix == <span class="str">"f"</span>:
+            layers.update(range(count))              <span class="cm"># f4 → [0,1,2,3]</span>
+        <span class="kw">else</span>:
+            layers.update(range(num_layers - count, num_layers))  <span class="cm"># l5 → [27,28,29,30,31]</span>
+    <span class="kw">return</span> sorted(layers)</pre>
+
+<div class="vis">
+<div class="vis-title">输入输出示例</div>
+<table>
+<tr><th>输入</th><th>num_layers=32 时的输出</th></tr>
+<tr><td><code>"f4+l5"</code></td><td>[0, 1, 2, 3, 27, 28, 29, 30, 31] — 前4+后5=9层</td></tr>
+<tr><td><code>"f4"</code></td><td>[0, 1, 2, 3] — 只前4层</td></tr>
+<tr><td><code>"l5"</code></td><td>[27, 28, 29, 30, 31] — 只后5层</td></tr>
+<tr><td><code>"all"</code></td><td>[0, 1, 2, ..., 31] — 全部32层</td></tr>
+<tr><td><code>"f8+l8"</code></td><td>[0,1,...,7, 24,25,...,31] — 前8+后8=16层</td></tr>
+</table>
+</div>
+
+<h3>Block 6: _find_llm_layers — 在 VLM 里找 decoder 层 (Line 165-198)</h3>
+
+<pre class="code"><span class="cm"># 按顺序尝试这些路径, 找到第一个 nn.ModuleList 就返回</span>
+search_paths = [
+    <span class="str">"language_model.model.layers"</span>,   <span class="cm"># LLaVA ✓</span>
+    <span class="str">"model.model.layers"</span>,            <span class="cm"># Qwen2.5-VL</span>
+    <span class="str">"model.layers"</span>,                  <span class="cm"># 通用</span>
+    <span class="str">"transformer.h"</span>,                 <span class="cm"># GPT 风格</span>
+]
+<span class="kw">for</span> path <span class="kw">in</span> search_paths:
+    obj = model
+    <span class="kw">for</span> attr <span class="kw">in</span> path.split(<span class="str">"."</span>):
+        obj = getattr(obj, attr)     <span class="cm"># 逐级: model → language_model → model → layers</span>
+    <span class="kw">if</span> isinstance(obj, nn.ModuleList):
+        <span class="kw">return</span> obj, len(obj)         <span class="cm"># → (ModuleList[32], 32)</span></pre>
+
+<div class="vis">
+<div class="vis-title">LLaVA-1.5-7B 的层级结构</div>
+<div class="vis-row">
+  <div class="vis-box input">model</div>
+  <div class="vis-arrow">.</div>
+  <div class="vis-box">language_model</div>
+  <div class="vis-arrow">.</div>
+  <div class="vis-box">model</div>
+  <div class="vis-arrow">.</div>
+  <div class="vis-box result">layers<br>ModuleList[32]<br>← 找到了!</div>
+</div>
+<div class="vis-label">
+getattr 逐级访问: model.language_model.model.layers → 返回 32 个 LlamaDecoderLayer 的列表。
+Fallback: 如果路径都找不到, 遍历所有 named_modules 找任意 ModuleList (跳过 visual/vision/vit)。
+</div>
+</div>
+
+<h3>Block 7: _get_hidden_dim + _detect_image_token_id (Line 201-222)</h3>
+
+<pre class="code"><span class="cm"># 从 model.config 读两个数字:</span>
+
+<span class="cm"># hidden_dim: 每个 token 的向量维度</span>
+text_config = model.config.text_config   <span class="cm"># LLaVA 的 LLM config 在 text_config 里</span>
+<span class="kw">return</span> text_config.hidden_size           <span class="cm"># → 4096</span>
+
+<span class="cm"># image_token_id: &lt;image&gt; 这个特殊 token 的数字 ID</span>
+<span class="kw">if</span> hasattr(config, <span class="str">"image_token_index"</span>):  <span class="cm"># LLaVA</span>
+    <span class="kw">return</span> config.image_token_index      <span class="cm"># → 32000</span>
+<span class="kw">if</span> hasattr(config, <span class="str">"image_token_id"</span>):    <span class="cm"># Qwen2-VL</span>
+    <span class="kw">return</span> config.image_token_id</pre>
+
+<div class="note">
+<b>这两个函数很简单：</b>从 model.config (HuggingFace 的模型配置) 里读数字。<br>
+不同模型把这些信息放在不同的字段名下, 所以代码 try 多种 field name。
+</div>
+
+<!-- ============================================================ -->
+<!--  PART 3: MoReSMethod._prepare_model_impl (Line 274-395)       -->
+<!-- ============================================================ -->
+<h2>Part 3: _prepare_model_impl (Line 274-395) — 准备模型</h2>
+
+<p>这是最长的函数 (~120 行)。它做 4 件事：冻结 → 创建干预 → 注册 hook → 统计参数。</p>
+
+<h3>Block 8: 冻结全部参数 (Line 286-288)</h3>
+
+<pre class="code"><span class="kw">for</span> p <span class="kw">in</span> model.parameters():
+    <span class="kw">if</span> p.dtype <span class="kw">in</span> (torch.float32, torch.float16, torch.bfloat16):
+        p.requires_grad = <span class="var">False</span></pre>
+
+<div class="vis">
+<div class="vis-title">冻结前 vs 冻结后</div>
+<div class="vis-row">
+  <div class="vis-box" style="min-width:200px">冻结前:<br>7B 参数全部 requires_grad=True<br>→ backward 要算 7B 个梯度<br>→ 占 ~28GB GPU 内存</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box frozen" style="min-width:200px">冻结后:<br>7B 参数全部 requires_grad=False<br>→ backward 跳过它们<br>→ 0 梯度内存</div>
+</div>
+<div class="vis-label">
+dtype 检查: 量化后的参数 (int8/int4) 不能设 requires_grad, 所以只冻结浮点参数。
+后面会把 OrthogonalIntervention 的 8,193 个参数设回 True (它们是新创建的, 默认 True)。
+</div>
+</div>
+
+<h3>Block 9: 创建干预模块 (Line 290-319)</h3>
+
+<pre class="code"><span class="cm"># 找层 + 算 hidden_dim</span>
+layer_list, num_layers = _find_llm_layers(model)   <span class="cm"># ModuleList[32], 32</span>
+hidden_dim = _get_hidden_dim(model)                 <span class="cm"># 4096</span>
+target_indices = _parse_positions(<span class="str">"f4+l5"</span>, <span class="num">32</span>)    <span class="cm"># [0,1,2,3,27,28,29,30,31]</span>
+
+<span class="cm"># 创建 1 个干预模块, 9 层共享</span>
+<span class="kw">if</span> share_weights:
+    self._intervention = OrthogonalIntervention(
+        <span class="num">4096</span>, rank=<span class="num">1</span>, dropout=<span class="num">0.05</span>
+    ).to(device=device, dtype=dtype)
+    interventions = [self._intervention] * <span class="num">9</span>  <span class="cm"># 9 个引用, 同 1 个对象</span></pre>
+
+<div class="vis">
+<div class="vis-title">共享权重 vs 独立权重</div>
+<table>
+<tr><th></th><th>share_weights=True (默认/论文)</th><th>share_weights=False</th></tr>
+<tr><td><b>创建几个</b></td><td>1 个 intervention, 9 层共用</td><td>9 个独立 intervention</td></tr>
+<tr><td><b>参数量</b></td><td>8,193</td><td>8,193 × 9 = 73,737</td></tr>
+<tr><td><b>梯度</b></td><td>9 层的梯度累加到同一个</td><td>每层各自的梯度</td></tr>
+<tr><td><b>效果</b></td><td>论文说够好</td><td>理论更灵活, 实际差不多</td></tr>
+</table>
+</div>
+
+<h3>Block 10: 注册 Hook — 最关键的工程代码 (Line 321-363)</h3>
+
+<pre class="code"><span class="cm"># 对每个目标层注册 forward hook</span>
+<span class="kw">for</span> idx, iv <span class="kw">in</span> zip(target_indices, interventions):
+    <span class="kw">def</span> <span class="fn">make_hook</span>(intervention):        <span class="cm"># 闭包工厂 (避免循环变量捕获 bug)</span>
+        <span class="kw">def</span> <span class="fn">hook</span>(module, input, output):
+            h = output[<span class="num">0</span>] <span class="kw">if</span> isinstance(output, tuple) <span class="kw">else</span> output
+
+            <span class="cm"># 尝试构建 vis_mask (在 LLaVA 上会失败 → vis_mask=None)</span>
+            vis_mask = <span class="var">None</span>
+            <span class="cm"># ... ids.shape[1] == h.shape[1] 检查 (45 ≠ 620 → 永远 False)</span>
+
+            h_new = intervention(h, vis_mask=vis_mask, steer_ratio=<span class="num">0.01</span>)
+            <span class="kw">return</span> (h_new,) + output[<span class="num">1</span>:] <span class="kw">if</span> isinstance(output, tuple) <span class="kw">else</span> h_new
+        <span class="kw">return</span> hook
+
+    layer_list[idx].<span class="fn">register_forward_hook</span>(make_hook(iv))
+
+<span class="cm"># 再注册一个 pre-hook 捕获 input_ids</span>
+<span class="kw">def</span> <span class="fn">_capture_input_ids</span>(module, args, kwargs):
+    module._mores_input_ids = kwargs.get(<span class="str">"input_ids"</span>)
+
+model.<span class="fn">register_forward_pre_hook</span>(_capture_input_ids, with_kwargs=<span class="var">True</span>)</pre>
+
+<div class="vis">
+<div class="vis-title">Hook 在 forward 中的位置</div>
+<div class="vis-row">
+  <div class="vis-box input">model.forward() 开始</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">pre_hook:<br>存 input_ids</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box">CLIP + projector</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box">合并 visual tokens</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box input">h: (1, 620, 4096)</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box">Layer 0 forward()</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">★ hook: intervention(h)</div>
+  <div class="vis-label">修正 6 个 token</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box">Layer 1 forward()</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">★ hook: intervention(h)</div>
+  <div class="vis-label">同一个 intervention</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box">Layer 2, 3</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">★ hook</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box frozen">Layer 4~26: 无 hook</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box">Layer 27~31</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">★ hook × 5</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box">lm_head → logits</div>
+</div>
+</div>
+
+<table>
+<tr><th>API</th><th>做什么</th></tr>
+<tr><td><code>register_forward_hook(fn)</code></td><td>layer.forward() <b>之后</b>自动调 fn。fn 返回非 None → 替代原输出</td></tr>
+<tr><td><code>register_forward_pre_hook(fn)</code></td><td>layer.forward() <b>之前</b>调 fn。用来偷看/存储 input_ids</td></tr>
+<tr><td><code>make_hook(iv)</code> 闭包</td><td>避免 for 循环的变量捕获 bug: 每次创建新函数作用域, 锁定当前的 iv</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<!--  PART 4: Loss + Save + Load (Line 397-497)                    -->
+<!-- ============================================================ -->
+<h2>Part 4: 训练 + 保存 + 加载 (Line 397-497)</h2>
+
+<h3>Block 11: compute_loss — CE + 正交约束 (Line 397-411)</h3>
+
+<pre class="code">text_loss = _standard_ce_loss(outputs, batch)    <span class="cm"># 标准 cross-entropy</span>
+ortho_loss = sum(iv.orthogonal_penalty() <span class="kw">for</span> iv <span class="kw">in</span> self._all_interventions)
+total_loss = text_loss + <span class="num">0.01</span> * ortho_loss       <span class="cm"># λ = 0.01</span></pre>
+
+<div class="vis">
+<div class="vis-title">Loss 组成</div>
+<div class="vis-row">
+  <div class="vis-box result">CE loss<br>~2.34<br>答案的预测误差</div>
+  <div class="vis-eq">+</div>
+  <div class="vis-box">0.01</div>
+  <div class="vis-eq">×</div>
+  <div class="vis-box result">ortho loss<br>~0.002<br>R 偏离正交多少</div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box param">total<br>~2.34002</div>
+</div>
+<div class="vis-label">正交 loss 远小于 CE loss, 只是一个温和的约束: "不要让 R 太偏离正交"。</div>
+</div>
+
+<h3>Block 12: get_trainable_params — 告诉 optimizer 训练什么 (Line 413-428)</h3>
+
+<pre class="code"><span class="cm"># 收集所有 intervention 的参数</span>
+intervention_params = [p <span class="kw">for</span> iv <span class="kw">in</span> self._all_interventions <span class="kw">for</span> p <span class="kw">in</span> iv.parameters()]
+groups = [{<span class="str">"params"</span>: intervention_params}]
+
+<span class="cm"># 如果 projector 被解冻, 加到单独的 param group (更低 lr)</span>
+<span class="kw">if</span> projector_params:
+    groups.append({<span class="str">"params"</span>: projector_params, <span class="str">"lr"</span>: <span class="num">2e-5</span>})</pre>
+
+<div class="vis">
+<div class="vis-title">返回给 optimizer 的参数组</div>
+<div class="vis-row">
+  <div class="vis-box param">Group 0: intervention<br>R + W.weight + W.bias<br>8,193 params<br>lr = stage.learning_rate (1e-3)</div>
+  <div class="vis-box frozen" style="border-style:solid;background:#f8f8f8">Group 1 (可选): projector<br>~25M params<br>lr = 2e-5 (更低)<br>默认不启用</div>
+</div>
+<div class="vis-label">optimizer = AdamW(groups) 会用不同 lr 更新不同 group。默认只训练 Group 0。</div>
+</div>
+
+<h3>Block 13: save_checkpoint — 保存到磁盘 (Line 431-452)</h3>
+
+<pre class="code"><span class="cm"># 保存 intervention 的 state_dict</span>
+intervention_states = {f<span class="str">"intervention_{i}"</span>: iv.state_dict() <span class="kw">for</span> i, iv <span class="kw">in</span> enumerate(...)}
+torch.save(intervention_states, <span class="str">"mores_interventions.pt"</span>)
+
+<span class="cm"># 保存 projector 权重 (如果训练了)</span>
+torch.save(projector_state, <span class="str">"projector_state.pt"</span>)
+
+<span class="cm"># 保存元数据</span>
+json.dump(metadata, <span class="str">"mmit_meta.json"</span>)</pre>
+
+<div class="vis">
+<div class="vis-title">checkpoint 目录结构</div>
+<div class="vis-row" style="flex-direction:column;align-items:flex-start;gap:3px;font-family:var(--mono);font-size:9pt">
+<div>output/final/</div>
+<div>&nbsp;&nbsp;├── <b>mores_interventions.pt</b> &nbsp; ← R + W 的权重 (32KB)</div>
+<div>&nbsp;&nbsp;├── projector_state.pt &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ← 可选 (只有 train_projector=True 时)</div>
+<div>&nbsp;&nbsp;├── tokenizer_config.json</div>
+<div>&nbsp;&nbsp;├── preprocessor_config.json</div>
+<div>&nbsp;&nbsp;└── <b>mmit_meta.json</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ← {"ft_method":"mores","base_model":"..."}</div>
+</div>
+<div class="vis-label">注意: MoReS 的 checkpoint 极小 (~32KB), 因为只有 8,193 个参数。LoRA 的 checkpoint 是 ~8MB。</div>
+</div>
+
+<table>
+<tr><th>API</th><th>做什么</th></tr>
+<tr><td><code>module.state_dict()</code></td><td>导出模块所有参数为 dict: {"R": tensor, "W.weight": tensor, "W.bias": tensor}</td></tr>
+<tr><td><code>torch.save(obj, path)</code></td><td>把 Python 对象序列化到磁盘 (pickle + tensor 二进制)</td></tr>
+</table>
+
+<h3>Block 14: load_for_inference — 从 checkpoint 加载 (Line 454-497)</h3>
+
+<pre class="code"><span class="cm"># 1. 加载基座模型 (和训练时一样)</span>
+model = AutoVLM.from_pretrained(base_model_id, torch_dtype=torch.bfloat16, ...)
+
+<span class="cm"># 2. 重新准备模型 (重新创建 intervention + 注册 hooks)</span>
+self.prepare_model(model, processor, config)
+
+<span class="cm"># 3. 加载训练好的 intervention 权重</span>
+states = torch.load(<span class="str">"mores_interventions.pt"</span>, map_location=<span class="str">"cpu"</span>)
+<span class="kw">for</span> i, iv <span class="kw">in</span> enumerate(self._all_interventions):
+    iv.load_state_dict(states[f<span class="str">"intervention_{i}"</span>])
+
+<span class="cm"># 4. 切到推理模式</span>
+model.eval()  <span class="cm"># 关闭 dropout</span></pre>
+
+<div class="vis">
+<div class="vis-title">加载流程</div>
+<div class="vis-row">
+  <div class="vis-box input">① 加载基座模型<br>7B 参数 (HF)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">② prepare_model<br>冻结 + 创建空 intervention<br>+ 注册 hooks</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">③ load_state_dict<br>把训练好的 R, W<br>填入 intervention</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box frozen">④ model.eval()<br>关 dropout<br>可以推理了</div>
+</div>
+<div class="vis-label">
+关键: 第 ② 步必须先 prepare_model 创建 intervention + hooks, 然后第 ③ 步才能 load 权重进去。
+顺序反了 (先 load 再 prepare) 会报错, 因为 intervention 还不存在。
+</div>
+</div>
+
+<table>
+<tr><th>API</th><th>做什么</th></tr>
+<tr><td><code>torch.load(path, map_location="cpu")</code></td><td>从磁盘加载。map_location="cpu" 先加到 CPU 再搬 GPU, 避免 GPU OOM</td></tr>
+<tr><td><code>module.load_state_dict(dict)</code></td><td>把 dict 里的值填入模块的参数 (按 key 名匹配)</td></tr>
+<tr><td><code>model.eval()</code></td><td>切到推理模式: Dropout 变 Identity, BatchNorm 用 running stats</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>全文总结: mores.py 的 498 行做了什么</h2>
+
+<div class="vis">
+<div class="vis-title">一张图看完整个文件</div>
+<table>
+<tr><th>部分</th><th>行数</th><th>做什么</th><th>关键 API</th></tr>
+<tr>
+  <td><b>OrthogonalIntervention</b></td><td>90 行</td>
+  <td>核心算法: h' = h + R^T(Wh - Rh)<br>选 top 1% by norm, 修正 6 个 token</td>
+  <td>nn.Parameter, F.linear, .topk, .norm</td>
+</tr>
+<tr>
+  <td><b>辅助函数</b></td><td>85 行</td>
+  <td>找模型的 decoder 层 + hidden_dim + image token id<br>解析 "f4+l5" 配置</td>
+  <td>getattr, nn.ModuleList, re.match</td>
+</tr>
+<tr>
+  <td><b>_prepare_model_impl</b></td><td>120 行</td>
+  <td>冻结 7B 参数 → 创建 8K 参数干预 → 在 9 层注册 hook</td>
+  <td>requires_grad, register_forward_hook, .to(device)</td>
+</tr>
+<tr>
+  <td><b>compute_loss</b></td><td>15 行</td>
+  <td>CE loss + 0.01 × 正交约束</td>
+  <td>orthogonal_penalty()</td>
+</tr>
+<tr>
+  <td><b>save/load</b></td><td>65 行</td>
+  <td>保存/加载 R + W 权重 (~32KB)</td>
+  <td>state_dict, torch.save/load</td>
+</tr>
+</table>
+</div>
+
+<div class="note">
+<b>整个 MoReS 方法：</b>冻结 7B 参数，在 9 个 transformer 层的输出上挂 hook，每层用同一个 8K 参数的小模块对 6 个最重要的 token 做 rank-1 正交修正。训练时只更新这 8K 参数。保存时只存 32KB。
+</div>
+
+</body>
+</html>

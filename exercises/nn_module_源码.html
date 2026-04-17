@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>nn.Module 源码拆解 — 它里面到底有什么</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:7.5pt;line-height:1.4;padding:8px 12px;max-width:none;margin:0 auto}
+@page{size:A4 portrait;margin:5mm 6mm}
+@media print{body{padding:0;font-size:7pt;line-height:1.3}}
+h1{font-size:11pt;font-weight:700;border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:4px}
+h2{font-size:9pt;font-weight:700;margin:10px 0 3px;padding:2px 6px;border:1.5px solid #000;border-radius:2px;page-break-after:avoid}
+h3{font-size:8pt;font-weight:700;margin:6px 0 2px;border-bottom:1px solid #999;padding-bottom:1px}
+p{margin:2px 0;font-size:7pt}
+pre.code{border:1px solid #000;border-radius:2px;padding:4px 8px;font-family:var(--mono);font-size:6.5pt;line-height:1.45;margin:3px 0;white-space:pre-wrap;word-break:break-word;page-break-inside:avoid}
+.kw{font-weight:700}.fn{font-weight:600;text-decoration:underline}.cm{color:#555;font-style:italic}
+.row{display:flex;gap:8px;margin:4px 0;page-break-inside:avoid}
+.col-src{flex:1;min-width:0}
+.col-explain{flex:1;min-width:0}
+.explain{border:1.5px solid #000;border-radius:2px;padding:4px 8px;font-size:6.5pt;line-height:1.35;margin:0}
+.example{border:1px solid #000;border-left:4px solid #000;border-radius:2px;padding:4px 8px;font-family:var(--mono);font-size:6.5pt;line-height:1.35;margin:3px 0}
+.warn{border:1.5px dashed #000;border-radius:2px;padding:4px 8px;font-size:6.5pt;margin:3px 0}
+.note{border-left:3px solid #000;padding:3px 8px;margin:4px 0;font-size:6.5pt}
+.graph{font-family:var(--mono);font-size:6pt;line-height:1.2;white-space:pre;border:1px solid #000;padding:4px 8px;margin:4px 0;border-radius:2px;page-break-inside:avoid}
+table{width:100%;border-collapse:collapse;font-size:6.5pt;margin:3px 0}
+th,td{padding:2px 5px;border:1px solid #000;text-align:left;vertical-align:top}
+th{font-weight:700;border-bottom:2px solid #000}
+hr{border:none;border-top:1px solid #000;margin:6px 0}
+.label{font-size:6pt;font-weight:700;margin-bottom:1px}
+</style>
+</head>
+<body>
+
+<h1>nn.Module 源码拆解 — 它里面到底有什么</h1>
+<p>这份文档展示 nn.Module 类的<b>完整简化源码</b>。每个方法左边是源码，右边是"什么时候被调用 + 做了什么"。</p>
+<p style="font-size:6pt">基于 PyTorch 2.x 源码 (torch/nn/modules/module.py)，约 2000 行简化为 ~200 行核心逻辑。黑白打印。</p>
+
+<hr>
+
+<!-- ═══════════════════════════════════════ -->
+<h2>Part 1: nn.Module 的全部属性（__init__ 创建的）</h2>
+<!-- ═══════════════════════════════════════ -->
+
+<div class="row">
+<div class="col-src">
+<div class="label">源码</div>
+<pre class="code"><span class="kw">class</span> <span class="fn">Module</span>:
+
+  <span class="kw">def</span> <span class="fn">__init__</span>(self):
+
+    <span class="cm"># ═══ 核心字典（一切魔法的基础）═══</span>
+
+    <span class="cm"># 存 nn.Parameter 对象</span>
+    self._parameters = OrderedDict()
+
+    <span class="cm"># 存子 Module 对象</span>
+    self._modules = OrderedDict()
+
+    <span class="cm"># 存 register_buffer 注册的 tensor</span>
+    self._buffers = OrderedDict()
+
+    <span class="cm"># ═══ Hook 字典 ═══</span>
+
+    <span class="cm"># forward 之后执行的 hook</span>
+    self._forward_hooks = OrderedDict()
+
+    <span class="cm"># forward 之前执行的 hook</span>
+    self._forward_pre_hooks = OrderedDict()
+
+    <span class="cm"># backward 时执行的 hook</span>
+    self._backward_hooks = OrderedDict()
+
+    <span class="cm"># ═══ 状态 ═══</span>
+
+    <span class="cm"># True=训练模式, False=推理模式</span>
+    self.training = True</pre>
+</div>
+<div class="col-explain">
+<div class="label">解释</div>
+<div class="explain">
+<b>7 个字典/属性 = nn.Module 的全部内部状态</b>
+
+<pre>
+<b>_parameters</b>
+  存什么: nn.Parameter 对象
+  怎么存: self.R = nn.Parameter(...)
+  谁遍历: parameters(), state_dict(), to()
+
+<b>_modules</b>
+  存什么: nn.Module 子类（Linear, Embedding等）
+  怎么存: self.linear = nn.Linear(...)
+  谁遍历: parameters()递归, state_dict()递归,
+         to()递归, train()/eval()递归
+
+<b>_buffers</b>
+  存什么: 不需要训练但需要保存的 tensor
+  怎么存: self.register_buffer("name", tensor)
+  谁遍历: state_dict(), to()
+  和 Parameter 的区别: 不出现在 parameters() 中
+                     → optimizer 不会更新它
+
+<b>_forward_hooks</b>
+  存什么: forward 后要执行的函数
+  怎么存: register_forward_hook(fn)
+  谁调用: __call__() 在 forward 之后
+
+<b>_forward_pre_hooks</b>
+  同上，但在 forward 之前执行
+
+<b>_backward_hooks</b>
+  反向传播时执行（mmit 不用，了解即可）
+
+<b>training</b>
+  布尔值。Dropout 和 BatchNorm 根据它
+  决定行为。train() 设为 True，eval() 设为 False。
+</pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════ -->
+<h2>Part 2: __setattr__ — 每次 self.xxx = yyy 都经过它</h2>
+<!-- ═══════════════════════════════════════ -->
+
+<div class="row">
+<div class="col-src">
+<div class="label">源码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">__setattr__</span>(self, name, value):
+
+  <span class="cm"># 如果右边是 Parameter</span>
+  <span class="kw">if</span> isinstance(value, Parameter):
+    <span class="cm"># 清除同名的其他类型</span>
+    self._buffers.pop(name, None)
+    self._modules.pop(name, None)
+    <span class="cm"># 存入 _parameters</span>
+    self._parameters[name] = value
+
+  <span class="cm"># 如果右边是 Module</span>
+  <span class="kw">elif</span> isinstance(value, Module):
+    self._buffers.pop(name, None)
+    self._parameters.pop(name, None)
+    self._modules[name] = value
+
+  <span class="cm"># 其他情况</span>
+  <span class="kw">else</span>:
+    <span class="cm"># 如果之前这个名字在某个字典里</span>
+    <span class="cm"># 先删掉（防止重复）</span>
+    <span class="kw">if</span> name <span class="kw">in</span> self._parameters:
+      self._parameters.pop(name)
+    <span class="kw">if</span> name <span class="kw">in</span> self._modules:
+      self._modules.pop(name)
+    <span class="kw">if</span> name <span class="kw">in</span> self._buffers:
+      self._buffers.pop(name)
+    <span class="cm"># 当作普通 Python 属性</span>
+    object.__setattr__(self, name, value)</pre>
+</div>
+<div class="col-explain">
+<div class="label">你写的代码 → 走哪个分支</div>
+<div class="example">
+<pre><b>self.linear = nn.Linear(4, 4)</b>
+  isinstance(Linear, Module) → True
+  → self._modules["linear"] = Linear对象
+  → 被 parameters() 递归找到 ✓
+
+<b>self.R = nn.Parameter(torch.randn(1,4))</b>
+  isinstance(Parameter) → True
+  → self._parameters["R"] = Parameter对象
+  → 被 parameters() 直接找到 ✓
+
+<b>self.scale = 2.0</b>
+  isinstance(float, Parameter) → False
+  isinstance(float, Module) → False
+  → object.__setattr__ → 普通属性
+  → 不被任何方法找到 ✗
+
+<b>self.mask = torch.ones(3, 3)</b>
+  Tensor 不是 Parameter！也不是 Module！
+  → object.__setattr__ → 普通属性
+  → 不被追踪 ✗
+  → .to("cuda") 不会移动它！
+
+<b>self.register_buffer("mask", torch.ones(3,3))</b>
+  这不走 __setattr__，而是直接操作:
+  → self._buffers["mask"] = tensor
+  → 被 state_dict() 保存 ✓
+  → 被 to() 移动 ✓
+  → 但不在 parameters() 里（不训练）</pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════ -->
+<h2>Part 3: __call__ — model(x) 的真正入口</h2>
+<!-- ═══════════════════════════════════════ -->
+
+<div class="row">
+<div class="col-src">
+<div class="label">源码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">__call__</span>(self, *args, **kwargs):
+
+  <span class="cm"># ① pre hooks</span>
+  <span class="kw">for</span> hook <span class="kw">in</span> self._forward_pre_hooks.values():
+    result = hook(self, args)
+    <span class="kw">if</span> result <span class="kw">is not None</span>:
+      <span class="kw">if not</span> isinstance(result, tuple):
+        result = (result,)
+      args = result
+
+  <span class="cm"># ② 你写的 forward</span>
+  result = self.<span class="fn">forward</span>(*args, **kwargs)
+
+  <span class="cm"># ③ post hooks</span>
+  <span class="kw">for</span> hook <span class="kw">in</span> self._forward_hooks.values():
+    hook_result = hook(self, args, result)
+    <span class="kw">if</span> hook_result <span class="kw">is not None</span>:
+      result = hook_result
+
+  <span class="kw">return</span> result</pre>
+</div>
+<div class="col-explain">
+<div class="label">执行流程</div>
+<div class="example">
+<pre><b>model(x)</b>  ← 你写的
+  ↓
+<b>Module.__call__(model, x)</b>  ← Python 实际调的
+  │
+  ├── ① self._forward_pre_hooks
+  │   空 → 跳过
+  │   MoReS: 存 input_ids 到 model 上
+  │
+  ├── ② self.forward(x)
+  │   ← 你定义的前向逻辑
+  │   内部每次 self.embed(x) 又触发
+  │   Embedding.__call__(x) → 同样的流程
+  │
+  └── ③ self._forward_hooks
+      空 → 跳过
+      MoReS: 拿到 output
+        做 h' = h + R^T(Wh-Rh)
+        return h' → 替换 output</pre>
+</div>
+<div class="warn">
+<b>model(x) ≠ model.forward(x)</b><br>
+直接调 forward → 跳过 ①③ → hook 失效<br>
+MoReS/ReFT 的干预完全不执行！<br>
+<b>永远写 model(x)，不写 model.forward(x)</b>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════ -->
+<h2>Part 4: parameters() / named_parameters()</h2>
+<!-- ═══════════════════════════════════════ -->
+
+<div class="row">
+<div class="col-src">
+<div class="label">源码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">_named_members</span>(self, get_members, prefix):
+  <span class="cm">"""通用递归遍历"""</span>
+  <span class="cm"># 已访问的模块（防重复）</span>
+  visited = set()
+
+  <span class="kw">for</span> mod_name, module <span class="kw">in</span> self.<span class="fn">named_modules</span>():
+    <span class="kw">if</span> module <span class="kw">in</span> visited:
+      <span class="kw">continue</span>
+    visited.add(module)
+    members = get_members(module)
+    <span class="kw">for</span> name, member <span class="kw">in</span> members:
+      full_name = mod_name + <span class="str">'.'</span> + name \
+                  <span class="kw">if</span> mod_name <span class="kw">else</span> name
+      <span class="kw">yield</span> full_name, member
+
+<span class="kw">def</span> <span class="fn">named_parameters</span>(self):
+  <span class="kw">return</span> self.<span class="fn">_named_members</span>(
+    <span class="kw">lambda</span> m: m._parameters.items(),
+    prefix=<span class="str">''</span>
+  )
+
+<span class="kw">def</span> <span class="fn">parameters</span>(self):
+  <span class="kw">for</span> _, p <span class="kw">in</span> self.<span class="fn">named_parameters</span>():
+    <span class="kw">yield</span> p
+
+<span class="kw">def</span> <span class="fn">named_modules</span>(self):
+  <span class="cm">"""递归返回自己和所有子模块"""</span>
+  <span class="kw">yield</span> <span class="str">''</span>, self
+  <span class="kw">for</span> name, mod <span class="kw">in</span> self._modules.items():
+    <span class="kw">for</span> sub_name, sub_mod <span class="kw">in</span> mod.<span class="fn">named_modules</span>():
+      full = name + <span class="str">'.'</span> + sub_name \
+             <span class="kw">if</span> sub_name <span class="kw">else</span> name
+      <span class="kw">yield</span> full, sub_mod</pre>
+</div>
+<div class="col-explain">
+<div class="label">遍历过程</div>
+<div class="example">
+<pre><b>named_modules() 遍历路径：</b>
+yield "", model              ← 自己
+yield "embed", Embedding     ← 子模块
+yield "linear", Linear       ← 子模块
+
+<b>named_parameters() 遍历路径：</b>
+对 model 自己:
+  model._parameters → "R"
+对 embed:
+  embed._parameters → "embed.weight"
+对 linear:
+  linear._parameters
+    → "linear.weight"
+    → "linear.bias"
+
+<b>结果：</b>
+R              Parameter(1, 4)
+embed.weight   Parameter(3, 4)
+linear.weight  Parameter(4, 4)
+linear.bias    Parameter(4,)
+
+<b>不含：</b>
+scale   ← 不在 _parameters 里
+mask    ← 不在 _parameters 里
+
+<b>named_buffers() 同理，</b>
+但遍历的是 _buffers 而不是 _parameters。</pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════ -->
+<h2>Part 5: state_dict() / load_state_dict()</h2>
+<!-- ═══════════════════════════════════════ -->
+
+<div class="row">
+<div class="col-src">
+<div class="label">源码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">state_dict</span>(self, prefix=<span class="str">''</span>):
+  result = OrderedDict()
+
+  <span class="cm"># 自己的参数</span>
+  <span class="kw">for</span> name, param <span class="kw">in</span> self._parameters.items():
+    <span class="kw">if</span> param <span class="kw">is not None</span>:
+      result[prefix + name] = param.data
+
+  <span class="cm"># 自己的 buffer</span>
+  <span class="kw">for</span> name, buf <span class="kw">in</span> self._buffers.items():
+    <span class="kw">if</span> buf <span class="kw">is not None</span>:
+      result[prefix + name] = buf
+
+  <span class="cm"># 递归子模块</span>
+  <span class="kw">for</span> name, mod <span class="kw">in</span> self._modules.items():
+    <span class="kw">if</span> mod <span class="kw">is not None</span>:
+      sub = mod.<span class="fn">state_dict</span>(prefix + name + <span class="str">'.'</span>)
+      result.update(sub)
+
+  <span class="kw">return</span> result
+
+<span class="kw">def</span> <span class="fn">load_state_dict</span>(self, sd, strict=True):
+  missing = []
+  unexpected = []
+
+  <span class="kw">for</span> key, value <span class="kw">in</span> sd.items():
+    <span class="cm"># 按 "." 分割 key 找到对应的子模块</span>
+    parts = key.split(<span class="str">'.'</span>)
+    mod = self
+    <span class="kw">for</span> part <span class="kw">in</span> parts[:-<span class="num">1</span>]:
+      mod = mod._modules[part]
+    param_name = parts[-<span class="num">1</span>]
+
+    <span class="kw">if</span> param_name <span class="kw">in</span> mod._parameters:
+      mod._parameters[param_name].data = value
+    <span class="kw">elif</span> param_name <span class="kw">in</span> mod._buffers:
+      mod._buffers[param_name] = value
+    <span class="kw">else</span>:
+      unexpected.append(key)
+
+  <span class="kw">if</span> strict <span class="kw">and</span> (missing <span class="kw">or</span> unexpected):
+    <span class="kw">raise</span> RuntimeError(...)</pre>
+</div>
+<div class="col-explain">
+<div class="label">实际效果</div>
+<div class="example">
+<pre><b>model.state_dict() 返回：</b>
+OrderedDict({
+  "R":             tensor([[0.52, -0.81, 0.30, 0.15]]),
+  "embed.weight":  tensor(3×4),
+  "linear.weight": tensor(4×4),
+  "linear.bias":   tensor(4,)
+})
+
+<b>包含：</b> _parameters 的 .data + _buffers
+<b>不含：</b> scale(普通float), mask(普通tensor)
+
+<b>load_state_dict(sd) 匹配过程：</b>
+"R" → split(".") = ["R"]
+  → mod = self
+  → self._parameters["R"].data = sd["R"]
+
+"embed.weight" → split(".") = ["embed", "weight"]
+  → mod = self._modules["embed"]
+  → mod._parameters["weight"].data = sd[...]
+
+"linear.weight" → 同理
+"linear.bias" → 同理
+
+<b>strict=True:</b>
+  sd 的 key 和 model 的 key 必须完全一致
+  多了或少了 → RuntimeError
+
+<b>strict=False:</b>
+  只填匹配的，不匹配的静默跳过
+  → Freeze Tuning 用这个
+    （只保存了部分参数）</pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════ -->
+<h2>Part 6: to() / train() / eval()</h2>
+<!-- ═══════════════════════════════════════ -->
+
+<div class="row">
+<div class="col-src">
+<div class="label">源码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">to</span>(self, *args, **kwargs):
+  <span class="cm"># 对自己的每个 parameter 和 buffer 做 .to()</span>
+  <span class="kw">def</span> <span class="fn">convert</span>(t):
+    <span class="kw">return</span> t.to(*args, **kwargs)
+
+  <span class="kw">return</span> self.<span class="fn">_apply</span>(convert)
+
+<span class="kw">def</span> <span class="fn">_apply</span>(self, fn):
+  <span class="cm"># 递归对所有子模块做</span>
+  <span class="kw">for</span> module <span class="kw">in</span> self._modules.values():
+    module.<span class="fn">_apply</span>(fn)
+
+  <span class="cm"># 对自己的 _parameters 做</span>
+  <span class="kw">for</span> key, param <span class="kw">in</span> self._parameters.items():
+    self._parameters[key] = Parameter(
+      fn(param.data), param.requires_grad
+    )
+
+  <span class="cm"># 对自己的 _buffers 做</span>
+  <span class="kw">for</span> key, buf <span class="kw">in</span> self._buffers.items():
+    self._buffers[key] = fn(buf)
+
+  <span class="kw">return</span> self
+
+<span class="kw">def</span> <span class="fn">train</span>(self, mode=True):
+  self.training = mode
+  <span class="kw">for</span> module <span class="kw">in</span> self._modules.values():
+    module.<span class="fn">train</span>(mode)
+  <span class="kw">return</span> self
+
+<span class="kw">def</span> <span class="fn">eval</span>(self):
+  <span class="kw">return</span> self.<span class="fn">train</span>(False)</pre>
+</div>
+<div class="col-explain">
+<div class="label">实际效果</div>
+<div class="example">
+<pre><b>model.to("cuda") 的递归路径：</b>
+
+_apply(lambda t: t.to("cuda"))
+  │
+  ├── self._modules["embed"]._apply(fn)
+  │     embed._parameters["weight"]
+  │       = fn(weight) → weight.to("cuda") ✓
+  │
+  ├── self._modules["linear"]._apply(fn)
+  │     linear._parameters["weight"] → cuda ✓
+  │     linear._parameters["bias"]   → cuda ✓
+  │
+  ├── self._parameters["R"]
+  │     = fn(R) → R.to("cuda")             ✓
+  │
+  └── self._buffers → 空，跳过
+
+<b>不移动的：</b>
+  self.scale = 2.0   → 不在任何字典
+  self.mask = tensor  → 不在任何字典
+  <b>→ mask 留在 CPU → device mismatch!</b>
+
+<b>model.eval() 的递归路径：</b>
+  self.training = False
+  → embed.training = False
+  → linear.training = False
+  所有子模块递归设为 False</pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════ -->
+<h2>Part 7: register_forward_hook / register_buffer</h2>
+<!-- ═══════════════════════════════════════ -->
+
+<div class="row">
+<div class="col-src">
+<div class="label">源码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">register_forward_hook</span>(self, hook):
+  <span class="cm"># hook(module, input, output) -> output 或 None</span>
+  handle = RemovableHandle(
+    self._forward_hooks
+  )
+  self._forward_hooks[handle.id] = hook
+  <span class="kw">return</span> handle
+  <span class="cm"># handle.remove() 从字典中删除</span>
+
+<span class="kw">def</span> <span class="fn">register_forward_pre_hook</span>(self, hook):
+  <span class="cm"># hook(module, args) -> args 或 None</span>
+  handle = RemovableHandle(
+    self._forward_pre_hooks
+  )
+  self._forward_pre_hooks[handle.id] = hook
+  <span class="kw">return</span> handle
+
+<span class="kw">def</span> <span class="fn">register_buffer</span>(self, name, tensor):
+  <span class="cm"># 不走 __setattr__，直接操作字典</span>
+  self._buffers[name] = tensor
+  <span class="cm"># buffer 会被 to() 移动</span>
+  <span class="cm"># 会被 state_dict() 保存</span>
+  <span class="cm"># 但不会被 parameters() 返回</span>
+  <span class="cm"># → optimizer 不会更新它</span>
+
+<span class="kw">class</span> <span class="fn">RemovableHandle</span>:
+  <span class="kw">def</span> <span class="fn">__init__</span>(self, hooks_dict):
+    self.hooks_dict = hooks_dict
+    self.id = id(self)  <span class="cm"># 唯一 ID</span>
+
+  <span class="kw">def</span> <span class="fn">remove</span>(self):
+    <span class="kw">del</span> self.hooks_dict[self.id]</pre>
+</div>
+<div class="col-explain">
+<div class="label">使用场景</div>
+<div class="example">
+<pre><b>register_forward_hook — MoReS 用法：</b>
+
+def intervention_hook(module, input, output):
+    h = output[0]
+    h_new = h + R_T @ (W(h) - R @ h)
+    return (h_new,) + output[1:]
+
+handle = model.layers[0] \
+  .register_forward_hook(intervention_hook)
+
+→ model.layers[0]._forward_hooks = {
+    140234567890: intervention_hook
+  }
+
+handle.remove()
+→ _forward_hooks = {}  ← 清空了
+
+<b>register_buffer — 存不训练但要保存的东西：</b>
+
+self.register_buffer("mask", torch.ones(3,3))
+
+→ self._buffers = {"mask": tensor(3,3)}
+
+对比:
+  nn.Parameter  → _parameters → 训练+保存+移动
+  register_buffer → _buffers → 不训练+保存+移动
+  普通赋值      → 无字典     → 不训练+不保存+不移动</pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════ -->
+<h2>总览表：nn.Module 的全部重要方法</h2>
+<!-- ═══════════════════════════════════════ -->
+
+<table>
+<tr><th>方法</th><th>你调用的方式</th><th>内部遍历什么</th><th>核心逻辑</th></tr>
+<tr><td><b>__init__</b></td><td>super().__init__()</td><td>—</td><td>创建 7 个字典/属性</td></tr>
+<tr><td><b>__setattr__</b></td><td>self.xxx = yyy</td><td>—</td><td>按类型分拣到 _parameters / _modules / 普通属性</td></tr>
+<tr><td><b>__call__</b></td><td>model(x)</td><td>_forward_pre_hooks → forward → _forward_hooks</td><td>在 forward 前后插 hook</td></tr>
+<tr><td><b>forward</b></td><td>你自己写的</td><td>—</td><td>定义数据流</td></tr>
+<tr><td><b>parameters()</b></td><td>model.parameters()</td><td>_parameters + 递归 _modules._parameters</td><td>返回所有可训练 Parameter</td></tr>
+<tr><td><b>named_modules()</b></td><td>model.named_modules()</td><td>递归 _modules</td><td>返回 (名字, 模块) 对</td></tr>
+<tr><td><b>state_dict()</b></td><td>model.state_dict()</td><td>_parameters + _buffers + 递归 _modules</td><td>导出参数值为字典</td></tr>
+<tr><td><b>load_state_dict()</b></td><td>model.load_state_dict(sd)</td><td>按 key 的 "." 分割找对应参数</td><td>把值填回对应的 Parameter.data</td></tr>
+<tr><td><b>to()</b></td><td>model.to("cuda")</td><td>_parameters + _buffers + 递归 _modules</td><td>递归移动到目标设备/dtype</td></tr>
+<tr><td><b>train()/eval()</b></td><td>model.eval()</td><td>递归 _modules</td><td>递归设置 self.training</td></tr>
+<tr><td><b>register_forward_hook</b></td><td>layer.register_forward_hook(fn)</td><td>存入 _forward_hooks</td><td>__call__ 在 forward 后执行</td></tr>
+<tr><td><b>register_buffer</b></td><td>self.register_buffer("name", t)</td><td>存入 _buffers</td><td>不训练但保存+移动</td></tr>
+</table>
+
+<hr>
+
+<h2>一张图：哪些东西存在哪里，谁能遍历到它</h2>
+
+<div class="graph">
+                  self.xxx = yyy  ← __setattr__ 自动分拣
+                        │
+           ┌────────────┼────────────┐
+           ▼            ▼            ▼
+     _parameters     _modules     普通属性
+     (Parameter)     (Module)    (其他一切)
+           │            │            │
+           │        各自也有        不在任何
+           │     _parameters      字典里
+           │     _modules         ↓
+           │     _buffers      parameters() ✗
+           │         │         state_dict() ✗
+           ▼         ▼         to()        ✗
+
+  .parameters()  递归遍历 ✓    register_buffer
+  .state_dict()  递归遍历 ✓    → _buffers
+  .to(device)    递归遍历 ✓       │
+  .train/eval    递归遍历 ✓    state_dict() ✓
+  .__call__      → hooks          to()        ✓
+                                parameters() ✗ ← 不训练</div>
+
+<div class="note"><b>一句话：</b>nn.Module = 几个 OrderedDict + 所有方法都递归遍历这些字典。赋值时 __setattr__ 自动分拣，调用时 __call__ 自动插 hook。不在字典里的东西，什么自动化功能都享受不到。</div>
+
+</body>
+</html>

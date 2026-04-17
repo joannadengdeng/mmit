@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>手算 Transformer Block — RMSNorm + Attention + SwiGLU</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:8pt;line-height:1.35;padding:8px 12px;max-width:none;margin:0 auto}
+@page{size:A4 portrait;margin:6mm 8mm}
+@media print{body{padding:0;font-size:7.5pt;line-height:1.3}}
+.two-col{column-count:2;column-gap:16px;column-rule:1px solid #ccc}
+.two-col h2,.two-col h3,.full-width{column-span:all}
+.no-break{break-inside:avoid;page-break-inside:avoid}
+h1{font-size:12pt;font-weight:700;border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:4px}
+h2{font-size:9.5pt;font-weight:700;margin:10px 0 3px;padding:2px 6px;background:#f0f0f0;color:#000;border:1px solid #000;border-radius:2px;page-break-after:avoid}
+h3{font-size:8pt;font-weight:700;margin:6px 0 2px;border-bottom:1px solid #999;padding-bottom:1px;page-break-after:avoid}
+p{margin:2px 0;font-size:7.5pt}
+table{width:100%;border-collapse:collapse;font-size:7pt;margin:3px 0}
+th,td{padding:2px 4px;border:1px solid #000;text-align:center;vertical-align:middle}
+th{background:#e8e8e8;color:#000;font-weight:700}
+.given{background:#f0f0ff;border:1px solid #0040a0;border-radius:2px;padding:4px 8px;margin:4px 0;font-family:var(--mono);font-size:7pt;line-height:1.4;break-inside:avoid}
+.given b{color:#0040a0}
+.hint{background:#f0fff0;border-left:2px solid #006400;padding:3px 6px;margin:3px 0;font-size:6.5pt}
+.hint b{color:#006400}
+.work{border:1px solid #000;border-radius:2px;padding:4px 6px;margin:4px 0;min-height:70px;background:repeating-linear-gradient(transparent,transparent 17px,#e8e8e8 17px,#e8e8e8 18px);break-inside:avoid}
+.work-tall{min-height:110px}
+.work-short{min-height:45px}
+.result-box{border:1.5px solid #a00000;border-radius:2px;padding:3px 8px;margin:3px 0;font-family:var(--mono);font-size:7.5pt;min-height:22px;break-inside:avoid}
+.pytorch-ref{background:#f0f0ff;border:1px solid #4040a0;border-radius:2px;padding:2px 6px;margin:2px 0;font-size:6pt;font-family:var(--mono)}
+.pytorch-ref b{color:#4040a0}
+.step{display:inline-block;width:16px;height:16px;background:#fff;color:#000;border:1px solid #000;text-align:center;line-height:15px;border-radius:50%;font-size:6.5pt;font-weight:700;margin-right:3px}
+pre{font-family:var(--mono);font-size:7pt;margin:2px 0;white-space:pre-wrap}
+hr{border:none;border-top:1px solid #000;margin:8px 0;column-span:all}
+.check{font-size:6.5pt;color:#666;margin:1px 0}
+</style>
+</head>
+<body>
+
+<h1>手算 Transformer Block -- RMSNorm + Attention + SwiGLU</h1>
+<p><b>用 seq_len=2, dim=4, n_heads=1, mlp_dim=6 手算 LLaMA 风格的一个 Transformer Block。</b></p>
+<p style="font-size:6.5pt;color:#888">双栏排版，打印 A4 纵向。Part 0 数据页可撕下放旁边，答案在最后一页。</p>
+
+<div class="given" style="margin:6px 0">
+<pre>整个 Block 的数据流：
+x --> RMSNorm --> Causal Attention --> + residual --> RMSNorm --> SwiGLU MLP --> + residual --> LM Head --> loss</pre>
+</div>
+
+
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>Part 0: 初始数据（撕下来放在旁边）</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>整份练习都用下面这些数据。建议把这页撕下来或复印一份放在旁边随时查看。</p>
+
+<h3>输入</h3>
+<div class="given">
+<b>x</b> (2x4) -- 两个位置，每个 4 维：
+<pre>x = [[0.2, -0.1, 0.4, 0.3],
+     [0.5,  0.3, -0.2, 0.1]]</pre>
+</div>
+
+<h3>RMSNorm 参数（两个 RMSNorm 共享相同结构）</h3>
+<div class="given">
+<b>gamma</b> (4,) = [1.0, 1.0, 1.0, 1.0]（简化为恒等缩放）
+<br><b>eps</b> = 1e-6
+</div>
+
+<h3>Attention 参数</h3>
+<div class="given">
+<b>W_q</b> (4x4):
+<pre>W_q = [[0.1, 0.0, 0.1, 0.0],
+       [0.0, 0.1, 0.0, 0.1],
+       [0.1, 0.0, 0.0, 0.1],
+       [0.0, 0.1, 0.1, 0.0]]</pre>
+<b>W_k</b> (4x4):
+<pre>W_k = [[0.1, 0.1, 0.0, 0.0],
+       [0.0, 0.0, 0.1, 0.1],
+       [0.1, 0.0, 0.1, 0.0],
+       [0.0, 0.1, 0.0, 0.1]]</pre>
+<b>W_v</b> (4x4):
+<pre>W_v = [[0.2, 0.0, 0.0, 0.0],
+       [0.0, 0.2, 0.0, 0.0],
+       [0.0, 0.0, 0.2, 0.0],
+       [0.0, 0.0, 0.0, 0.2]]</pre>
+<b>W_o</b> (4x4):
+<pre>W_o = [[0.1, 0.0, 0.1, 0.0],
+       [0.0, 0.1, 0.0, 0.1],
+       [0.1, 0.0, 0.1, 0.0],
+       [0.0, 0.1, 0.0, 0.1]]</pre>
+</div>
+
+<h3>SwiGLU MLP 参数</h3>
+<div class="given">
+<b>W_gate</b> (6x4):
+<pre>W_gate = [[0.1, 0.0, 0.1, 0.0],
+          [0.0, 0.1, 0.0, 0.1],
+          [0.1, 0.1, 0.0, 0.0],
+          [0.0, 0.0, 0.1, 0.1],
+          [0.1, 0.0, 0.0, 0.1],
+          [0.0, 0.1, 0.1, 0.0]]</pre>
+<b>W_up</b> (6x4):
+<pre>W_up = [[0.1, 0.1, 0.0, 0.0],
+        [0.0, 0.0, 0.1, 0.1],
+        [0.1, 0.0, 0.1, 0.0],
+        [0.0, 0.1, 0.0, 0.1],
+        [0.1, 0.0, 0.0, 0.1],
+        [0.0, 0.1, 0.1, 0.0]]</pre>
+<b>W_down</b> (4x6):
+<pre>W_down = [[0.1, 0.0, 0.1, 0.0, 0.1, 0.0],
+          [0.0, 0.1, 0.0, 0.1, 0.0, 0.1],
+          [0.1, 0.0, 0.1, 0.0, 0.0, 0.1],
+          [0.0, 0.1, 0.0, 0.1, 0.1, 0.0]]</pre>
+</div>
+
+<h3>LM Head</h3>
+<div class="given">
+<b>W_lm</b> (3x4) -- 词表大小=3：
+<pre>W_lm = [[ 0.3,  0.1, -0.2,  0.1],    token 0
+        [-0.1,  0.2,  0.3, -0.1],    token 1
+        [ 0.1, -0.1,  0.1,  0.2]]    token 2</pre>
+<b>目标：</b>位置 0 的 target = token 1，位置 1 的 target = token 2
+</div>
+
+<h3>你会用到的公式</h3>
+<table>
+<tr><th>操作</th><th>公式</th></tr>
+<tr><td>RMSNorm</td><td>RMS = sqrt(mean(x^2) + eps), x_norm = x / RMS * gamma</td></tr>
+<tr><td>nn.Linear</td><td>y = x @ W^T（注意转置）</td></tr>
+<tr><td>Attention</td><td>scores = Q @ K^T / sqrt(d_k), softmax, output = weights @ V</td></tr>
+<tr><td>Causal Mask</td><td>位置 i 只能看到 j <= i 的位置，其余设为 -inf</td></tr>
+<tr><td>SiLU</td><td>SiLU(x) = x * sigmoid(x) = x * (1/(1+exp(-x)))</td></tr>
+<tr><td>SwiGLU</td><td>hidden = SiLU(x @ W_gate^T) * (x @ W_up^T)</td></tr>
+<tr><td>残差连接</td><td>output = input + sublayer(input)</td></tr>
+<tr><td>Softmax</td><td>P(i) = exp(x_i) / sum_j exp(x_j)</td></tr>
+<tr><td>Cross-Entropy</td><td>loss = -log(P(correct))</td></tr>
+</table>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<div class="two-col">
+<h2 style="page-break-before:always">Part 1: RMSNorm（第一个）</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p><span class="step">1</span> 对输入 x 的每个位置做 RMSNorm：先算 RMS，再除以 RMS 并乘 gamma。</p>
+
+<div class="hint"><b>提示：</b>RMS = sqrt((x_0^2 + x_1^2 + x_2^2 + x_3^2) / 4 + 1e-6)。因为 gamma = [1,1,1,1]，所以 x_norm = x / RMS。</div>
+
+<h3>位置 0：x[0] = [0.2, -0.1, 0.4, 0.3]</h3>
+<p>先算各元素平方，再求均值，再开方：</p>
+<div class="work"></div>
+<div class="result-box">x^2 = [______, ______, ______, ______]，mean = ______，RMS = ______</div>
+<div class="result-box">x_norm[0] = [______, ______, ______, ______]</div>
+
+<h3>位置 1：x[1] = [0.5, 0.3, -0.2, 0.1]</h3>
+<div class="work"></div>
+<div class="result-box">x^2 = [______, ______, ______, ______]，mean = ______，RMS = ______</div>
+<div class="result-box">x_norm[1] = [______, ______, ______, ______]</div>
+
+<div class="pytorch-ref"><b>PyTorch:</b> x_norm = rms_norm(x, gamma, eps=1e-6)</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>Part 2: Causal Self-Attention（简化为单头）</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p><span class="step">2a</span> 计算 Q、K、V：Q = x_norm @ W_q^T，K = x_norm @ W_k^T，V = x_norm @ W_v^T。</p>
+
+<div class="hint"><b>提示：</b>每个都是 (2,4) @ (4,4)^T = (2,4)。W_v 是 0.2 倍的单位阵，所以 V = 0.2 * x_norm。</div>
+
+<h3>Q = x_norm @ W_q^T（写出两行）</h3>
+<div class="work work-tall"></div>
+<div class="result-box">Q = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+
+<h3>K = x_norm @ W_k^T（写出两行）</h3>
+<div class="work work-tall"></div>
+<div class="result-box">K = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+
+<h3>V = x_norm @ W_v^T</h3>
+<div class="work work-short"></div>
+<div class="result-box">V = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+
+<h3>Step 2b: Attention scores = Q @ K^T / sqrt(d_k)</h3>
+
+<p><span class="step">2b</span> scores 是 (2,4) @ (4,2) = (2,2)，再除以 sqrt(4) = 2。</p>
+
+<div class="work"></div>
+<div class="result-box">scores (before mask) = [[______, ______], [______, ______]]</div>
+
+<h3>Step 2c: Causal Mask + Softmax</h3>
+
+<p><span class="step">2c</span> 位置 0 不能看到位置 1，所以 scores[0][1] = -inf。位置 1 可以看到两个位置。</p>
+
+<div class="hint"><b>提示：</b>位置 0 的 softmax 只有一个有效值，所以 attn_weights[0] = [1.0, 0.0]。位置 1 对两个 score 做正常 softmax。</div>
+
+<div class="work"></div>
+<div class="result-box">attn_weights = [[______, ______], [______, ______]]</div>
+<p class="check">检查：每行加起来 = 1.0</p>
+
+<h3>Step 2d: attn_output = weights @ V</h3>
+<p><span class="step">2d</span> (2,2) @ (2,4) = (2,4)。位置 0 全看自己，所以 attn_output[0] = V[0]。</p>
+<div class="work"></div>
+<div class="result-box">attn_output = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+
+<h3>Step 2e: o_proj = attn_output @ W_o^T</h3>
+<div class="work"></div>
+<div class="result-box">o_proj = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+
+<div class="pytorch-ref"><b>PyTorch:</b> attn_out = self_attn(x_norm) &nbsp; # 内部做 Q,K,V 投影 + mask + softmax + V加权 + o_proj</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 3: 残差连接 1</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p><span class="step">3</span> attn_out = x + o_proj（把原始输入加回来）。</p>
+
+<div class="hint"><b>提示：</b>残差 = 把原始输入加回来。这保证梯度能直接流过，避免深层网络梯度消失。注意是加原始 x，不是加 x_norm。</div>
+
+<div class="work work-short"></div>
+<div class="result-box">attn_out = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>Part 4: RMSNorm（第二个，对 attn_out）</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p><span class="step">4</span> 和 Part 1 相同的计算，但输入换成 attn_out。</p>
+
+<h3>位置 0</h3>
+<div class="work"></div>
+<div class="result-box">RMS = ______，x_norm2[0] = [______, ______, ______, ______]</div>
+
+<h3>位置 1</h3>
+<div class="work"></div>
+<div class="result-box">RMS = ______，x_norm2[1] = [______, ______, ______, ______]</div>
+
+<div class="pytorch-ref"><b>PyTorch:</b> x_norm2 = rms_norm(attn_out, gamma, eps=1e-6)</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>Part 5: SwiGLU MLP</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>SwiGLU 有三个线性层：gate、up、down。</p>
+
+<h3>Step 5a: gate = x_norm2 @ W_gate^T (2,6)</h3>
+<p><span class="step">5a</span> 每行 4 维 @ (4,6) 转置后 = 6 维。</p>
+<div class="work work-tall"></div>
+<div class="result-box">gate[0] = [______, ______, ______, ______, ______, ______]</div>
+<div class="result-box">gate[1] = [______, ______, ______, ______, ______, ______]</div>
+
+<h3>Step 5b: up = x_norm2 @ W_up^T (2,6)</h3>
+<div class="work work-tall"></div>
+<div class="result-box">up[0] = [______, ______, ______, ______, ______, ______]</div>
+<div class="result-box">up[1] = [______, ______, ______, ______, ______, ______]</div>
+
+<h3>Step 5c: SiLU(gate) 然后乘以 up</h3>
+
+<p><span class="step">5c</span> SiLU(x) = x * sigmoid(x)。先对每个 gate 值算 sigmoid，再乘以 gate 本身，再逐元素乘以 up。</p>
+
+<div class="hint"><b>提示：</b>SiLU 三步走：(1) sigmoid(gate) = 1/(1+exp(-gate)) (2) SiLU = gate * sigmoid(gate) (3) hidden = SiLU * up。gate 值都接近 0，所以 sigmoid 接近 0.5。</div>
+
+<div class="work work-tall"></div>
+<div class="result-box">sigmoid(gate[0]) = [______, ______, ______, ______, ______, ______]</div>
+<div class="result-box">SiLU(gate[0]) = [______, ______, ______, ______, ______, ______]</div>
+<div class="result-box">hidden[0] = SiLU * up = [______, ______, ______, ______, ______, ______]</div>
+
+<div class="work work-tall"></div>
+<div class="result-box">sigmoid(gate[1]) = [______, ______, ______, ______, ______, ______]</div>
+<div class="result-box">SiLU(gate[1]) = [______, ______, ______, ______, ______, ______]</div>
+<div class="result-box">hidden[1] = SiLU * up = [______, ______, ______, ______, ______, ______]</div>
+
+<h3>Step 5d: mlp_output = hidden @ W_down^T (2,4)</h3>
+<div class="work"></div>
+<div class="result-box">mlp_output = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+
+<div class="pytorch-ref"><b>PyTorch:</b> mlp_out = down_proj(F.silu(gate_proj(x)) * up_proj(x))</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2 style="page-break-before:always">Part 6: 残差连接 2</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p><span class="step">6</span> block_output = attn_out + mlp_output。</p>
+
+<div class="hint"><b>提示：</b>这里加的是 attn_out（Part 3 的结果），不是原始 x，也不是 x_norm2。每个 Transformer Block 有两个残差连接。</div>
+
+<div class="work work-short"></div>
+<div class="result-box">block_output = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<h2>Part 7: LM Head + Loss</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<h3>Step 7a: logits = block_output @ W_lm^T (2,3)</h3>
+<p><span class="step">7a</span> 每个位置的 4 维向量映射到 3 个词表 token 的 logits。</p>
+<div class="work"></div>
+<div class="result-box">logits = [[______, ______, ______], [______, ______, ______]]</div>
+
+<h3>Step 7b: Softmax</h3>
+<p><span class="step">7b</span> 每行做 softmax 得到概率分布。</p>
+
+<div class="hint"><b>提示：</b>logits 都接近 0，所以 exp 值都接近 1，概率接近 1/3。这是未训练模型的正常表现。</div>
+
+<div class="work"></div>
+<div class="result-box">probs[0] = [P(t0):______, P(t1):______, P(t2):______]</div>
+<div class="result-box">probs[1] = [P(t0):______, P(t1):______, P(t2):______]</div>
+<p class="check">检查：每行概率之和 = 1.000</p>
+
+<h3>Step 7c: Cross-Entropy Loss</h3>
+<p><span class="step">7c</span> 目标：位置 0 -> token 1，位置 1 -> token 2。</p>
+
+<div class="hint"><b>提示：</b>CE loss = -log(P(target))。随机猜 3 类的 loss = log(3) = 1.099。</div>
+
+<div class="work work-short"></div>
+<div class="result-box">loss_0 = -log(P(t1)) = -log(______) = ______</div>
+<div class="result-box">loss_1 = -log(P(t2)) = -log(______) = ______</div>
+<div class="result-box"><b>total_loss = (loss_0 + loss_1) / 2 = ______</b></div>
+
+<div class="pytorch-ref"><b>PyTorch:</b> logits = lm_head(block_output); loss = F.cross_entropy(logits, targets)</div>
+
+</div><!-- end two-col -->
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<div class="two-col">
+<h2 style="page-break-before:always">Part 7b: 反向传播 + 参数更新</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<p>走完反向传播，至少算到 logits 的梯度。然后用 SGD 更新 W_lm（输出头）作为示例。</p>
+
+<h3>Step 1: logits 的梯度</h3>
+<div class="hint"><b>公式：</b>∂L/∂logits = (softmax - one_hot(target)) / batch_size<br>
+batch_size = 2。位置 0 目标=token1，one_hot=[0,1,0]。位置 1 目标=token2，one_hot=[0,0,1]。</div>
+
+<div class="work"></div>
+<div class="result-box">grad_logits[0] = [______, ______, ______]</div>
+<div class="result-box">grad_logits[1] = [______, ______, ______]</div>
+
+<h3>Step 2: W_lm 的梯度</h3>
+<div class="hint"><b>公式：</b>前向是 logits = block_output @ W_lm^T。<br>
+∂L/∂W_lm = grad_logits^T @ block_output<br>
+shape: (2×3)^T @ (2×4) → (3×2) @ (2×4) = (3×4)，和 W_lm 同 shape。</div>
+
+<div class="work work-tall"></div>
+<div class="result-box">∂L/∂W_lm (3×4) = </div>
+
+<h3>Step 3: 用 SGD 更新 W_lm (lr=0.1)</h3>
+<div class="hint"><b>公式：</b>W_lm_new = W_lm - 0.1 × ∂L/∂W_lm。逐元素减去 0.1 倍梯度。</div>
+
+<div class="work"></div>
+<div class="result-box">W_lm_new (3×4) = </div>
+
+<div class="hint"><b>完整的反向传播</b>还需要继续回传到 block_output → MLP → RMSNorm → Attention → Q/K/V。<br>
+每一步规则相同：矩阵乘法反向 = 转置后再乘。<br>
+<code>loss.backward()</code> 自动完成所有这些。关键理解：<b>从 loss 倒着走，逐层传梯度</b>。</div>
+
+<div class="pytorch-ref"><b>PyTorch:</b> loss.backward(); optimizer.step()</div>
+
+</div><!-- end two-col -->
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<div class="two-col">
+<h2 style="page-break-before:always">Part 8: 第 2 轮 -- 换一个输入</h2>
+<!-- ═══════════════════════════════════════════════ -->
+
+<div class="hint"><b>说明：</b>用新的输入重复整个流程。所有权重不变。目标仍是位置 0 -> token 1，位置 1 -> token 2。</div>
+
+<div class="given">
+<b>新输入 x</b> (2x4):
+<pre>x = [[0.3, 0.2, -0.1, 0.5],
+     [-0.2, 0.4, 0.3, 0.1]]</pre>
+</div>
+
+<h3>RMSNorm 1</h3>
+<div class="work"></div>
+<div class="result-box">RMS_0 = ______，RMS_1 = ______</div>
+<div class="result-box">x_norm = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+
+<h3>Attention: Q, K, V</h3>
+<div class="work work-tall"></div>
+<div class="result-box">Q = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+<div class="result-box">K = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+<div class="result-box">V = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+
+<h3>Attention scores + mask + softmax + output</h3>
+<div class="work work-tall"></div>
+<div class="result-box">scores (before mask) = [[______, ______], [______, ______]]</div>
+<div class="result-box">attn_weights = [[______, ______], [______, ______]]</div>
+<div class="result-box">o_proj = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+
+<h3>残差连接 1</h3>
+<div class="result-box">attn_out = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+
+<h3>RMSNorm 2</h3>
+<div class="work"></div>
+<div class="result-box">x_norm2 = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+
+<h3>SwiGLU MLP</h3>
+<div class="work work-tall"></div>
+<div class="result-box">gate = [[______, ______, ______, ______, ______, ______], [______, ______, ______, ______, ______, ______]]</div>
+<div class="result-box">up = [[______, ______, ______, ______, ______, ______], [______, ______, ______, ______, ______, ______]]</div>
+<div class="result-box">mlp_output = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+
+<h3>残差连接 2 + LM Head + Loss</h3>
+<div class="work"></div>
+<div class="result-box">block_output = [[______, ______, ______, ______], [______, ______, ______, ______]]</div>
+<div class="result-box">logits = [[______, ______, ______], [______, ______, ______]]</div>
+<div class="result-box">probs = [[______, ______, ______], [______, ______, ______]]</div>
+<div class="result-box"><b>total_loss = ______</b></div>
+
+</div><!-- end two-col for Part 8 -->
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════ -->
+<div class="two-col">
+<h2 style="page-break-before:always">参考答案</h2>
+<!-- ═══════════════════════════════════════════════ -->
+<p style="font-size:7pt;color:#888">建议做完所有部分再看答案。如果中间卡住了，只看卡住的那一步。</p>
+
+<div style="font-size:7pt;font-family:var(--mono);line-height:1.5;color:#555">
+
+<p><b>Part 1: RMSNorm</b><br>
+位置 0: x^2 = [0.04, 0.01, 0.16, 0.09], mean = 0.075, RMS = 0.2739<br>
+x_norm[0] = [0.7303, -0.3651, 1.4606, 1.0954]<br>
+位置 1: x^2 = [0.25, 0.09, 0.04, 0.01], mean = 0.0975, RMS = 0.3123<br>
+x_norm[1] = [1.6013, 0.9608, -0.6405, 0.3203]</p>
+
+<p><b>Part 2: Attention</b><br>
+Q = [[0.2191, 0.0730, 0.1826, 0.1095],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.0961, 0.1281, 0.1922, 0.0320]]<br>
+K = [[0.0365, 0.2556, 0.2191, 0.0730],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.2562, -0.0320, 0.0961, 0.1281]]<br>
+V = 0.2 * x_norm =<br>
+&nbsp;&nbsp;[[0.1461, -0.0730, 0.2921, 0.2191],<br>
+&nbsp;&nbsp;&nbsp;[0.3203, 0.1922, -0.1281, 0.0641]]<br><br>
+scores (before mask) = [[0.0373, 0.0427], [0.0403, 0.0215]]<br>
+scores (after mask): [0][1] = -inf<br>
+attn_weights = [[1.0, 0.0], [0.5047, 0.4953]]<br><br>
+attn_output[0] = V[0] = [0.1461, -0.0730, 0.2921, 0.2191]<br>
+attn_output[1] = 0.5047*V[0] + 0.4953*V[1]<br>
+= [0.2323, 0.0583, 0.0840, 0.1423]<br><br>
+o_proj = [[0.0438, 0.0146, 0.0438, 0.0146],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.0316, 0.0201, 0.0316, 0.0201]]</p>
+
+<p><b>Part 3: 残差连接 1</b><br>
+attn_out = x + o_proj =<br>
+[[0.2438, -0.0854, 0.4438, 0.3146],<br>
+&nbsp;[0.5316, 0.3201, -0.1684, 0.1201]]</p>
+
+<p><b>Part 4: RMSNorm 2</b><br>
+位置 0: RMS = 0.3011<br>
+x_norm2[0] = [0.8097, -0.2836, 1.4739, 1.0448]<br>
+位置 1: RMS = 0.3270<br>
+x_norm2[1] = [1.6256, 0.9786, -0.5148, 0.3671]</p>
+
+<p><b>Part 5: SwiGLU</b><br>
+gate[0] = [0.2284, 0.0761, 0.0526, 0.2519, 0.1854, 0.1190]<br>
+gate[1] = [0.1111, 0.1346, 0.2604, -0.0148, 0.1993, 0.0464]<br>
+up[0] = [0.0526, 0.2519, 0.2284, 0.0761, 0.1854, 0.1190]<br>
+up[1] = [0.2604, -0.0148, 0.1111, 0.1346, 0.1993, 0.0464]<br><br>
+sigmoid(gate[0]) = [0.5568, 0.5190, 0.5131, 0.5626, 0.5462, 0.5297]<br>
+SiLU(gate[0]) = [0.1272, 0.0395, 0.0270, 0.1417, 0.1013, 0.0631]<br>
+hidden[0] = [0.0067, 0.0100, 0.0062, 0.0108, 0.0188, 0.0075]<br><br>
+sigmoid(gate[1]) = [0.5277, 0.5336, 0.5647, 0.4963, 0.5497, 0.5116]<br>
+SiLU(gate[1]) = [0.0586, 0.0718, 0.1471, -0.0073, 0.1095, 0.0237]<br>
+hidden[1] = [0.0153, -0.0011, 0.0163, -0.0010, 0.0218, 0.0011]<br><br>
+mlp_output = [[0.0032, 0.0028, 0.0020, 0.0040],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.0053, -0.0001, 0.0033, 0.0020]]</p>
+
+<p><b>Part 6: 残差连接 2</b><br>
+block_output = [[0.2470, -0.0826, 0.4459, 0.3186],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.5370, 0.3200, -0.1651, 0.1220]]</p>
+
+<p><b>Part 7: LM Head + Loss</b><br>
+logits = [[0.0085, 0.0607, 0.1413],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.2383, -0.0514, 0.0296]]<br>
+probs[0] = [0.3129, 0.3297, 0.3574]<br>
+probs[1] = [0.3906, 0.2924, 0.3170]<br>
+loss_0 = -log(0.3297) = 1.110<br>
+loss_1 = -log(0.3170) = 1.149<br>
+<b>total_loss = (1.110 + 1.149) / 2 = 1.129</b></p>
+
+<hr>
+
+<p><b>Part 8: 第 2 轮答案</b><br>
+x = [[0.3, 0.2, -0.1, 0.5], [-0.2, 0.4, 0.3, 0.1]]<br><br>
+RMSNorm 1: RMS_0 = 0.3123, RMS_1 = 0.2739<br>
+x_norm = [[0.9608, 0.6405, -0.3203, 1.6013],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[-0.7303, 1.4606, 1.0954, 0.3651]]<br><br>
+Q = [[0.0641, 0.2242, 0.2562, 0.0320],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.0365, 0.1826, -0.0365, 0.2556]]<br>
+K = [[0.1601, 0.1281, 0.0641, 0.2242],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.0730, 0.1461, 0.0365, 0.1826]]<br>
+V = [[0.1922, 0.1281, -0.0641, 0.3203],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[-0.1461, 0.2921, 0.2191, 0.0730]]<br><br>
+scores (before mask) = [[0.0313, 0.0263], [0.0421, 0.0373]]<br>
+attn_weights = [[1.0, 0.0], [0.5012, 0.4988]]<br>
+o_proj = [[0.0128, 0.0448, 0.0128, 0.0448],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.0101, 0.0407, 0.0101, 0.0407]]<br><br>
+attn_out = [[0.3128, 0.2448, -0.0872, 0.5448],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[-0.1899, 0.4407, 0.3101, 0.1407]]<br><br>
+RMSNorm 2: RMS_0 = 0.3399, RMS_1 = 0.2942<br>
+x_norm2 = [[0.9202, 0.7202, -0.2565, 1.6027],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[-0.6456, 1.4979, 1.0539, 0.4782]]<br><br>
+gate = [[0.0664, 0.2323, 0.1640, 0.1346, 0.2523, 0.0464],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.0408, 0.1976, 0.0852, 0.1532, -0.0167, 0.2552]]<br>
+up = [[0.1640, 0.1346, 0.0664, 0.2323, 0.2523, 0.0464],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.0852, 0.1532, 0.0408, 0.1976, -0.0167, 0.2552]]<br>
+mlp_output = [[0.0047, 0.0035, 0.0013, 0.0070],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.0004, 0.0070, 0.0040, 0.0033]]<br><br>
+block_output = [[0.3175, 0.2484, -0.0859, 0.5518],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[-0.1896, 0.4476, 0.3141, 0.1440]]<br>
+logits = [[0.1925, -0.0630, 0.1087],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[-0.0605, 0.1883, -0.0035]]<br>
+probs = [[0.3712, 0.2875, 0.3413],<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.2993, 0.3839, 0.3169]]<br>
+loss_0 = -log(0.2875) = 1.247<br>
+loss_1 = -log(0.3169) = 1.149<br>
+<b>total_loss = (1.247 + 1.149) / 2 = 1.198</b></p>
+
+</div>
+</div><!-- end two-col for answers -->
+
+</body>
+</html>

@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PyTorch 手写代码练习 — 打印版 (40 题)</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:9pt;line-height:1.45;padding:10px 18px;max-width:780px;margin:0 auto}
+@page{size:A4 portrait;margin:8mm 10mm}
+@media print{body{padding:0;max-width:none;font-size:8.5pt}}
+h1{font-size:14pt;font-weight:700;border-bottom:2.5px solid #000;padding-bottom:3px;margin-bottom:6px}
+h2{font-size:10.5pt;font-weight:700;margin:14px 0 4px;padding:3px 8px;background:#000;color:#fff;border-radius:3px;page-break-after:avoid}
+h3{font-size:9pt;font-weight:700;margin:8px 0 3px;border-bottom:1px solid #999;padding-bottom:1px;page-break-after:avoid}
+p{margin:2px 0;font-size:8.5pt}
+pre{background:#f5f5f5;border:1px solid #000;border-radius:2px;padding:5px 8px;font-family:var(--mono);font-size:8pt;line-height:1.45;margin:3px 0;white-space:pre-wrap;page-break-inside:avoid}
+.kw{color:#a00050;font-weight:600}
+.fn{color:#0040a0;font-weight:600}
+.cm{color:#888;font-style:italic}
+.str{color:#006400}
+.num{color:#a04000}
+.note{background:#fff8e0;border-left:2px solid #806000;padding:3px 8px;margin:4px 0;font-size:7.5pt}
+.note b{color:#806000}
+.tip{font-size:7pt;color:#666;margin:2px 0}
+.score-box{border:2px solid #000;padding:8px;margin:10px 0;text-align:center;font-size:10pt;font-weight:700}
+.write-area{border:1px solid #ccc;min-height:120px;margin:4px 0;padding:4px;background:repeating-linear-gradient(transparent,transparent 23px,#e0e0e0 23px,#e0e0e0 24px);font-family:var(--mono);font-size:8pt;page-break-inside:avoid}
+.write-area-tall{min-height:200px}
+.write-area-short{min-height:80px}
+.example{background:#f0f8ff;border:1px solid #0040a0;border-radius:2px;padding:4px 8px;margin:3px 0;font-size:7.5pt;font-family:var(--mono);page-break-inside:avoid}
+.example b{color:#0040a0}
+.difficulty{display:inline-block;font-size:7pt;color:#a04000;margin-left:4px}
+.answers{font-size:7pt;line-height:1.35;margin-top:20px}
+.answers h2{font-size:9pt;margin:10px 0 3px}
+.answers h3{font-size:7.5pt;margin:5px 0 1px;border-bottom:none}
+.answers pre{font-size:6.5pt;line-height:1.3;padding:2px 5px;margin:1px 0}
+</style>
+</head>
+<body>
+
+<h1>PyTorch 手写代码练习 — 打印版 (40 题)</h1>
+<p>从零写出完整函数。先在纸上写，再到电脑上验证。</p>
+
+
+
+<div class="note"><b>说明：</b> 每题在横线区域手写完整代码。难度标记：★ 基础 / ★★ 中等 / ★★★ 挑战。完成后可在 <code>pytorch_drills.py</code> 中验证。</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>Group 1: Tensor 基础 (练习 1-8)</h2>
+<!-- ════════════════════════════════════════════════════════ -->
+
+<h3>练习 1: create_tensor <span class="difficulty">★</span></h3>
+<p>创建一个包含 [1, 2, 3, 4, 5] 的 float 类型 tensor 并返回。</p>
+<div class="example">
+<b>示例:</b>
+返回: shape (5,), dtype=torch.float32, 值 [1.0, 2.0, 3.0, 4.0, 5.0]
+</div>
+<p class="tip">提示: 使用 torch.tensor(..., dtype=torch.float32)</p>
+<div class="write-area write-area-short">
+def create_tensor():
+</div>
+
+<h3>练习 2: tensor_shape <span class="difficulty">★</span></h3>
+<p>给定一个 3 维 tensor x，返回它的 (batch, seq_len, dim) 三个值。</p>
+<div class="example">
+<b>示例:</b>
+输入: x = torch.randn(4, 16, 64)
+输出: batch=4, seq_len=16, dim=64
+</div>
+<p class="tip">提示: 可以用 x.shape 或 x.size()</p>
+<div class="write-area write-area-short">
+def tensor_shape(x):
+</div>
+
+<h3>练习 3: reshape_tensor <span class="difficulty">★</span></h3>
+<p>把 shape 为 (2, 12) 的 tensor 变形为 (2, 3, 4)。</p>
+<div class="example">
+<b>示例:</b>
+输入: x.shape = (2, 12)
+输出: y.shape = (2, 3, 4)，数据不变
+</div>
+<p class="tip">提示: 使用 x.reshape() 或 x.view()</p>
+<div class="write-area write-area-short">
+def reshape_tensor(x):
+</div>
+
+<h3>练习 4: transpose_last_two <span class="difficulty">★</span></h3>
+<p>把 (B, S, D) tensor 的最后两维转置成 (B, D, S)。</p>
+<div class="example">
+<b>示例:</b>
+输入: x.shape = (3, 5, 7)
+输出: y.shape = (3, 7, 5)
+</div>
+<p class="tip">提示: 使用 x.transpose(-1, -2) 或 x.permute(0, 2, 1)</p>
+<div class="write-area write-area-short">
+def transpose_last_two(x):
+</div>
+
+<h3>练习 5: matmul_exercise <span class="difficulty">★</span></h3>
+<p>计算两个矩阵的乘积。a 的 shape 为 (2, 3)，b 的 shape 为 (3, 4)。返回 a @ b。</p>
+<div class="example">
+<b>示例:</b>
+输入: a.shape=(2,3), b.shape=(3,4)
+输出: c.shape=(2,4), 即矩阵乘积
+</div>
+<p class="tip">提示: 使用 torch.matmul() 或 @ 运算符</p>
+<div class="write-area write-area-short">
+def matmul_exercise(a, b):
+</div>
+
+<h3>练习 6: split_heads <span class="difficulty">★★</span></h3>
+<p>把 (B, S, H*D) 的 tensor 拆成 (B, H, S, D)。用于多头注意力的 head 拆分。</p>
+<div class="example">
+<b>示例:</b>
+输入: x.shape=(2, 10, 32), num_heads=4
+输出: y.shape=(2, 4, 10, 8)  // D=32/4=8
+</div>
+<p class="tip">提示: 先 reshape 成 (B, S, H, D)，再 transpose/permute 到 (B, H, S, D)</p>
+<div class="write-area">
+def split_heads(x, num_heads):
+</div>
+
+<h3>练习 7: merge_heads <span class="difficulty">★★</span></h3>
+<p>把 (B, H, S, D) 的 tensor 合并成 (B, S, H*D)。这是 split_heads 的逆操作。</p>
+<div class="example">
+<b>示例:</b>
+输入: x.shape=(2, 4, 10, 8)
+输出: y.shape=(2, 10, 32)  // H*D=4*8=32
+</div>
+<p class="tip">提示: 先 permute 成 (B, S, H, D)，再 contiguous().view() 或 reshape</p>
+<div class="write-area">
+def merge_heads(x):
+</div>
+
+<h3>练习 8: move_to_device <span class="difficulty">★</span></h3>
+<p>把 tensor 移到指定的 device 和 dtype。</p>
+<div class="example">
+<b>示例:</b>
+输入: x=torch.randn(3,3), device='cpu', dtype=torch.float16
+输出: 同数据的 tensor，在 cpu 上，dtype 为 float16
+</div>
+<p class="tip">提示: 使用 x.to(device=..., dtype=...)</p>
+<div class="write-area write-area-short">
+def move_to_device(x, device, dtype):
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>Group 2: 激活函数 & 基础运算 (练习 9-14)</h2>
+<!-- ════════════════════════════════════════════════════════ -->
+
+<h3>练习 9: my_relu <span class="difficulty">★</span></h3>
+<p>手写 ReLU 激活函数：max(0, x)。不能直接调用 torch.relu 或 F.relu。</p>
+<div class="example">
+<b>示例:</b>
+输入: x = [-3, -1, 0, 1, 3]
+输出: [0, 0, 0, 1, 3]
+</div>
+<p class="tip">提示: 可以用 torch.clamp(x, min=0) 或 x * (x > 0)</p>
+<div class="write-area write-area-short">
+def my_relu(x):
+</div>
+
+<h3>练习 10: my_softmax <span class="difficulty">★</span></h3>
+<p>手写数值稳定的 softmax。步骤: 1) 减去 max 2) 取 exp 3) 除以 sum 归一化。不能调用 F.softmax。</p>
+<div class="example">
+<b>示例:</b>
+输入: x.shape=(2,5), dim=-1
+输出: 同 shape，每行之和为 1
+</div>
+<p class="tip">提示: x_stable = x - x.max(dim=dim, keepdim=True).values; exp / sum</p>
+<div class="write-area">
+def my_softmax(x, dim=-1):
+</div>
+
+<h3>练习 11: my_gelu <span class="difficulty">★★</span></h3>
+<p>手写 GELU 近似公式: GELU(x) = 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))</p>
+<div class="example">
+<b>示例:</b>
+输入: x = torch.randn(3, 4)
+输出: 与 F.gelu(x, approximate='tanh') 一致
+</div>
+<p class="tip">提示: sqrt(2/pi) = 0.7978845608</p>
+<div class="write-area">
+def my_gelu(x):
+</div>
+
+<h3>练习 12: my_silu <span class="difficulty">★</span></h3>
+<p>手写 SiLU (Swish) 激活函数: x * sigmoid(x)。</p>
+<div class="example">
+<b>示例:</b>
+输入: x = torch.randn(3, 4)
+输出: 与 F.silu(x) 一致
+</div>
+<p class="tip">提示: sigmoid(x) = torch.sigmoid(x) 或 1 / (1 + exp(-x))</p>
+<div class="write-area write-area-short">
+def my_silu(x):
+</div>
+
+<h3>练习 13: swiglu_forward <span class="difficulty">★★</span></h3>
+<p>计算 SwiGLU 激活: silu(gate_out) * up_out。这是现代 LLM (如 LLaMA) FFN 层的核心运算。</p>
+<div class="example">
+<b>示例:</b>
+输入: gate_out.shape=(2,5,8), up_out.shape=(2,5,8)
+输出: y.shape=(2,5,8), 值=silu(gate_out)*up_out
+</div>
+<p class="tip">提示: silu(x) = x * sigmoid(x)</p>
+<div class="write-area">
+def swiglu_forward(gate_out, up_out):
+</div>
+
+<h3>练习 14: top_k_by_norm <span class="difficulty">★★</span></h3>
+<p>给定 (seq, dim) 的 tensor，找出 L2 norm 最大的 k 个位置的索引，按 norm 从大到小排列。</p>
+<div class="example">
+<b>示例:</b>
+输入: x.shape=(10, 8), k=3
+输出: indices.shape=(3,)，LongTensor，norm 最大的 3 个行索引
+</div>
+<p class="tip">提示: 先 torch.norm(x, dim=-1) 计算每行 L2 norm，再 .topk(k)</p>
+<div class="write-area">
+def top_k_by_norm(x, k):
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>Group 3: Loss 函数 (练习 15-20)</h2>
+<!-- ════════════════════════════════════════════════════════ -->
+
+<h3>练习 15: my_cross_entropy <span class="difficulty">★</span></h3>
+<p>手写交叉熵 loss（数值稳定版本）。步骤: 1) 计算 log_softmax 2) 取出正确类别的 log_prob 3) 取负平均。</p>
+<div class="example">
+<b>示例:</b>
+输入: logits.shape=(4,10), targets=[3,7,1,0]
+输出: 标量 loss，与 F.cross_entropy(logits, targets) 一致
+</div>
+<p class="tip">提示: 用 torch.log_softmax 或手动实现 log-sum-exp</p>
+<div class="write-area">
+def my_cross_entropy(logits, targets):
+</div>
+
+<h3>练习 16: ce_with_ignore <span class="difficulty">★★</span></h3>
+<p>手写带 ignore_index 的交叉熵: target 等于 ignore_index 的位置不计算 loss，只对有效位置求平均。</p>
+<div class="example">
+<b>示例:</b>
+输入: logits.shape=(6,5), targets=[2,-100,1,4,-100,0], ignore_index=-100
+输出: 标量 loss，只在 4 个有效位置计算
+</div>
+<p class="tip">提示: mask = (targets != ignore_index)，然后只在有效位置计算</p>
+<div class="write-area">
+def ce_with_ignore(logits, targets, ignore_index=-100):
+</div>
+
+<h3>练习 17: focal_loss <span class="difficulty">★★</span></h3>
+<p>实现 Focal Loss: -(1-p_t)^gamma * log(p_t)。p_t 是正确类别的预测概率。让模型更关注难分类样本。</p>
+<div class="example">
+<b>示例:</b>
+输入: logits.shape=(4,5), targets=[0,2,1,4], gamma=2.0
+输出: 标量 loss
+</div>
+<p class="tip">提示: log_probs=log_softmax; p_t=exp(log_probs[targets]); weight=(1-p_t)^gamma</p>
+<div class="write-area">
+def focal_loss(logits, targets, gamma=2.0):
+</div>
+
+<h3>练习 18: label_smoothing_loss <span class="difficulty">★★</span></h3>
+<p>实现 Label Smoothing 交叉熵。正确类别概率=1-epsilon，其他类别平分 epsilon/C。
+等价公式: loss = (1-eps)*CE + eps*(-log_probs.mean(dim=-1)).mean()</p>
+<div class="example">
+<b>示例:</b>
+输入: logits.shape=(4,10), targets=[3,7,1,0], epsilon=0.1
+输出: 与 F.cross_entropy(logits, targets, label_smoothing=0.1) 一致
+</div>
+<p class="tip">提示: 分两项计算: 正确类别项 + 均匀分布项</p>
+<div class="write-area">
+def label_smoothing_loss(logits, targets, epsilon=0.1):
+</div>
+
+<h3>练习 19: contrastive_loss <span class="difficulty">★★</span></h3>
+<p>实现 InfoNCE 对比学习 loss。给定 queries/keys (B,D)，对角线是正样本对。步骤: 1) L2归一化 2) 相似度矩阵/temperature 3) labels=[0..B-1] 4) CE loss</p>
+<div class="example">
+<b>示例:</b>
+输入: queries.shape=(8,32), keys.shape=(8,32), temperature=0.07
+输出: 标量 loss
+</div>
+<p class="tip">提示: F.normalize(x, dim=-1) 做 L2 归一化; sim=q@k.T/temp; CE(sim, arange(B))</p>
+<div class="write-area">
+def contrastive_loss(queries, keys, temperature=0.07):
+</div>
+
+<h3>练习 20: moe_load_balance_loss <span class="difficulty">★★★</span></h3>
+<p>实现 MoE 负载均衡 loss。鼓励 token 均匀分配到各 expert。步骤: 1) probs=softmax(logits) 2) 选 top_k expert 3) 计算分配频率 f_i 4) 平均概率 p_i 5) loss=E*sum(f_i*p_i)</p>
+<div class="example">
+<b>示例:</b>
+输入: router_logits.shape=(32, 8), top_k=2  // 32个token, 8个expert
+输出: 标量 loss
+</div>
+<p class="tip">提示: 用 scatter_ 或 one_hot 统计每个 expert 被选中的次数</p>
+<div class="write-area write-area-tall">
+def moe_load_balance_loss(router_logits, top_k=2):
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>Group 4: nn.Module 构建 (练习 21-26)</h2>
+<!-- ════════════════════════════════════════════════════════ -->
+
+<h3>练习 21: SimpleLinear <span class="difficulty">★</span></h3>
+<p>手写线性层 nn.Module。forward: y = x @ W^T + b。用 nn.Parameter 存储 weight (out, in) 和 bias (out,)。</p>
+<div class="example">
+<b>示例:</b>
+layer = SimpleLinear(8, 4)
+x.shape=(2,8) -> y.shape=(2,4)
+</div>
+<p class="tip">提示: self.weight = nn.Parameter(torch.randn(out_features, in_features))</p>
+<div class="write-area">
+class SimpleLinear(nn.Module):
+    def __init__(self, in_features, out_features):
+        super().__init__()
+
+    def forward(self, x):
+</div>
+
+<h3>练习 22: MyLayerNorm <span class="difficulty">★★</span></h3>
+<p>手写 Layer Normalization。步骤: 1) 计算最后一维 mean 和 var 2) x_norm=(x-mean)/sqrt(var+eps) 3) y=gamma*x_norm+beta</p>
+<div class="example">
+<b>示例:</b>
+ln = MyLayerNorm(64)
+x.shape=(2,10,64) -> y.shape=(2,10,64)，与 nn.LayerNorm 一致
+</div>
+<p class="tip">提示: gamma=nn.Parameter(torch.ones(dim)), beta=nn.Parameter(torch.zeros(dim))</p>
+<div class="write-area write-area-tall">
+class MyLayerNorm(nn.Module):
+    def __init__(self, dim, eps=1e-5):
+        super().__init__()
+
+    def forward(self, x):
+</div>
+
+<h3>练习 23: MyRMSNorm <span class="difficulty">★★</span></h3>
+<p>手写 RMSNorm: y = x / sqrt(mean(x^2) + eps) * weight。与 LayerNorm 不同: 不减均值，只做尺度归一化。</p>
+<div class="example">
+<b>示例:</b>
+rms = MyRMSNorm(64)
+x.shape=(2,10,64) -> y.shape=(2,10,64)
+</div>
+<p class="tip">提示: rms = sqrt(mean(x^2, dim=-1, keepdim=True) + eps); weight 初始化为 1</p>
+<div class="write-area">
+class MyRMSNorm(nn.Module):
+    def __init__(self, dim, eps=1e-6):
+        super().__init__()
+
+    def forward(self, x):
+</div>
+
+<h3>练习 24: MyDropout <span class="difficulty">★★</span></h3>
+<p>手写 Dropout。训练模式: 以概率 p 置零，存活元素缩放 1/(1-p)。评估模式: 直接返回输入。</p>
+<div class="example">
+<b>示例:</b>
+drop = MyDropout(p=0.5); drop.train()
+输入: x = torch.ones(1000)
+输出: 约一半为 0，非零值为 2.0 (=1/(1-0.5))
+</div>
+<p class="tip">提示: mask = torch.bernoulli(torch.full_like(x, 1-p)); output = x * mask / (1-p)</p>
+<div class="write-area">
+class MyDropout(nn.Module):
+    def __init__(self, p=0.1):
+        super().__init__()
+
+    def forward(self, x):
+</div>
+
+<h3>练习 25: MyEmbedding <span class="difficulty">★★</span></h3>
+<p>手写 Embedding 层。用 nn.Parameter 存储 (vocab_size, embed_dim) 权重矩阵。forward 根据整数索引查表。</p>
+<div class="example">
+<b>示例:</b>
+emb = MyEmbedding(100, 32)
+输入: ids = [0, 5, 99, 42]
+输出: y.shape=(4, 32)，每行是对应词的 embedding
+</div>
+<p class="tip">提示: forward 就是 self.weight[input_ids]</p>
+<div class="write-area">
+class MyEmbedding(nn.Module):
+    def __init__(self, vocab_size, embed_dim):
+        super().__init__()
+
+    def forward(self, input_ids):
+</div>
+
+<h3>练习 26: LoRALinear <span class="difficulty">★★★</span></h3>
+<p>手写 LoRA 线性层。冻结原始权重 W，添加低秩分解 A, B。forward: y = W(x) + scale * x @ A^T @ B^T。B 初始化为零确保训练开始时不改变原始行为。</p>
+<div class="example">
+<b>示例:</b>
+base = nn.Linear(16, 8)
+lora = LoRALinear(base, rank=4, scale=1.0)
+A.shape=(4,16), B.shape=(8,4)
+B=0 时输出与 base 一致
+</div>
+<p class="tip">提示: 冻结 base 参数 requires_grad=False; A 正态初始化(std=0.01); B 零初始化</p>
+<div class="write-area write-area-tall">
+class LoRALinear(nn.Module):
+    def __init__(self, base_linear, rank, scale=1.0):
+        super().__init__()
+
+    def forward(self, x):
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>Group 5: Attention 机制 (练习 27-32)</h2>
+<!-- ════════════════════════════════════════════════════════ -->
+
+<h3>练习 27: scaled_dot_product_attention <span class="difficulty">★★</span></h3>
+<p>实现缩放点积注意力: Attention(Q,K,V) = softmax(Q@K^T / sqrt(d_k)) @ V。返回 output 和 weights。</p>
+<div class="example">
+<b>示例:</b>
+输入: Q,K,V 各 shape=(2,5,8)
+输出: output.shape=(2,5,8), weights.shape=(2,5,5)，weights 每行之和=1
+</div>
+<p class="tip">提示: d_k=Q.shape[-1]; scores=Q@K.T/sqrt(d_k); weights=softmax(scores); out=weights@V</p>
+<div class="write-area">
+def scaled_dot_product_attention(Q, K, V):
+</div>
+
+<h3>练习 28: causal_mask <span class="difficulty">★★</span></h3>
+<p>生成 (S,S) 因果掩码。上三角为 True（需屏蔽），对角线和下三角为 False。位置 i 只能看到 &le; i 的位置。</p>
+<div class="example">
+<b>示例:</b>
+输入: seq_len=4
+输出: [[F,T,T,T],[F,F,T,T],[F,F,F,T],[F,F,F,F]]  (bool tensor)
+</div>
+<p class="tip">提示: torch.triu(torch.ones(S, S), diagonal=1).bool()</p>
+<div class="write-area write-area-short">
+def causal_mask(seq_len):
+</div>
+
+<h3>练习 29: masked_attention <span class="difficulty">★★</span></h3>
+<p>在注意力中应用因果掩码。步骤: 1) scores=Q@K^T/sqrt(d_k) 2) mask 为 True 处填 -inf 3) softmax 4) 乘 V。</p>
+<div class="example">
+<b>示例:</b>
+输入: Q,K,V 各 (2,4,8), mask=(4,4) bool
+输出: output.shape=(2,4,8)，修改未来位置的 V 不影响当前位置输出
+</div>
+<p class="tip">提示: scores.masked_fill_(mask.unsqueeze(0), float('-inf'))</p>
+<div class="write-area">
+def masked_attention(Q, K, V, mask):
+</div>
+
+<h3>练习 30: MultiHeadAttention <span class="difficulty">★★★</span></h3>
+<p>完整多头注意力模块。步骤: 1) Q,K,V=W_q(x),W_k(x),W_v(x) 2) 拆分多头 3) 缩放点积注意力 4) 合并多头 5) W_o 输出投影。</p>
+<div class="example">
+<b>示例:</b>
+mha = MultiHeadAttention(dim=64, num_heads=8)
+x.shape=(2,10,64) -> y.shape=(2,10,64)
+4个 Linear(64,64)，共 4*(64*64+64) 个参数
+</div>
+<p class="tip">提示: 用 split_heads / merge_heads 拆分合并; head_dim = dim // num_heads</p>
+<div class="write-area write-area-tall">
+class MultiHeadAttention(nn.Module):
+    def __init__(self, dim, num_heads):
+        super().__init__()
+
+    def forward(self, x):
+</div>
+
+<h3>练习 31: rope_frequencies <span class="difficulty">★★</span></h3>
+<p>计算 RoPE 频率。freq_i = 1/(base^(2i/dim)); angles[pos, i] = pos * freq_i。</p>
+<div class="example">
+<b>示例:</b>
+输入: dim=8, seq_len=4, base=10000
+输出: freqs.shape=(4, 4)  // (seq_len, dim//2)
+freqs[0] 全为 0（位置 0 角度为 0）
+</div>
+<p class="tip">提示: inv_freq = 1/(base^(arange(0,dim,2)/dim)); freqs = positions * inv_freq</p>
+<div class="write-area">
+def rope_frequencies(dim, seq_len, base=10000.0):
+</div>
+
+<h3>练习 32: apply_rope <span class="difficulty">★★★</span></h3>
+<p>对 tensor 应用 RoPE 旋转。把相邻两个维度看作复数旋转: [x0,x1] -> [x0*cos-x1*sin, x0*sin+x1*cos]。</p>
+<div class="example">
+<b>示例:</b>
+输入: x.shape=(2,4,8), freqs.shape=(4,4)
+输出: y.shape=(2,4,8)
+位置 0 不变(角度=0); L2 范数保持不变(旋转是正交变换)
+</div>
+<p class="tip">提示: 拆成 (…,dim//2,2); x_even,x_odd; 旋转后 stack+flatten</p>
+<div class="write-area write-area-tall">
+def apply_rope(x, freqs):
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>Group 6: 训练循环 (练习 33-36)</h2>
+<!-- ════════════════════════════════════════════════════════ -->
+
+<h3>练习 33: training_step <span class="difficulty">★★</span></h3>
+<p>实现一步完整的训练过程。步骤: 1) 前向传播 2) 计算 CE loss 3) 反向传播 4) 梯度裁剪 5) 更新参数 6) 清零梯度。返回 loss 值(float)。</p>
+<div class="example">
+<b>示例:</b>
+输入: model=nn.Linear(8,4), optimizer=SGD, x.shape=(2,8), targets=[1,3]
+输出: float loss 值; 权重被更新; 梯度被清零
+</div>
+<p class="tip">提示: torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)</p>
+<div class="write-area">
+def training_step(model, optimizer, x, targets, max_grad_norm=1.0):
+</div>
+
+<h3>练习 34: gradient_accumulation_step <span class="difficulty">★★</span></h3>
+<p>实现梯度累积训练。把大 batch 拆成多个 micro batch，每个 loss 除以 accum_steps，累积梯度后一次性更新。</p>
+<div class="example">
+<b>示例:</b>
+输入: model, optimizer, 4 个 micro_batches, accum_steps=4
+输出: float total_loss (平均); 权重被更新一次
+</div>
+<p class="tip">提示: 关键是 loss / accum_steps，累积后的梯度等效于大 batch 的梯度</p>
+<div class="write-area write-area-tall">
+def gradient_accumulation_step(model, optimizer, micro_batches, targets_list, accum_steps):
+</div>
+
+<h3>练习 35: cosine_warmup_schedule <span class="difficulty">★★</span></h3>
+<p>实现 cosine warmup 学习率调度。Warmup 阶段: lr=step/warmup_steps 线性增长。Cosine decay 阶段: progress=(step-warmup)/(total-warmup); lr=min_ratio+0.5*(1-min_ratio)*(1+cos(pi*progress))</p>
+<div class="example">
+<b>示例:</b>
+cosine_warmup_schedule(0, 100, 1000) = 0.0
+cosine_warmup_schedule(50, 100, 1000) = 0.5
+cosine_warmup_schedule(100, 100, 1000) = 1.0
+cosine_warmup_schedule(1000, 100, 1000, 0.1) = 0.1
+</div>
+<p class="tip">提示: 用 math.cos 和 math.pi</p>
+<div class="write-area">
+def cosine_warmup_schedule(step, warmup_steps, total_steps, min_lr_ratio=0.1):
+</div>
+
+<h3>练习 36: freeze_and_count <span class="difficulty">★★</span></h3>
+<p>冻结模型所有参数，然后解冻名称包含 trainable_names 中任意字符串的参数，返回可训练参数总数。</p>
+<div class="example">
+<b>示例:</b>
+model = Sequential(Linear(8,16), ReLU(), Linear(16,4))
+freeze_and_count(model, ["2."]) = 68  // 只解冻第三层: 16*4+4=68
+</div>
+<p class="tip">提示: any(name in param_name for name in trainable_names) 做子字符串匹配</p>
+<div class="write-area">
+def freeze_and_count(model, trainable_names):
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>Group 7: 模型保存 & Hook (练习 37-40)</h2>
+<!-- ════════════════════════════════════════════════════════ -->
+
+<h3>练习 37: save_trainable_only <span class="difficulty">★★</span></h3>
+<p>只保存 requires_grad=True 的参数到字典。用于 LoRA/PEFT 场景，只保存可训练的低秩矩阵。</p>
+<div class="example">
+<b>示例:</b>
+model = Sequential(Linear(8,4), Linear(4,2))，冻结第一层
+输出: {'1.weight': ..., '1.bias': ...}  // 只有第二层
+</div>
+<p class="tip">提示: 遍历 model.named_parameters()，检查 p.requires_grad</p>
+<div class="write-area">
+def save_trainable_only(model):
+</div>
+
+<h3>练习 38: load_partial <span class="difficulty">★★</span></h3>
+<p>用 strict=False 加载部分参数到模型。返回 missing_keys 和 unexpected_keys。</p>
+<div class="example">
+<b>示例:</b>
+model = Sequential(Linear(8,4), Linear(4,2))
+partial_sd = {'1.weight': ..., '1.bias': ...}
+missing=['0.weight','0.bias'], unexpected=[]
+</div>
+<p class="tip">提示: result = model.load_state_dict(partial_sd, strict=False)</p>
+<div class="write-area">
+def load_partial(model, partial_state_dict):
+</div>
+
+<h3>练习 39: register_intervention_hook <span class="difficulty">★★★</span></h3>
+<p>注册 forward hook，在指定层的输出上加一个 delta 向量。模拟 Representation Engineering 中的干预操作。返回 hook handle（用于移除）。</p>
+<div class="example">
+<b>示例:</b>
+model = Sequential(Linear(8,4), ReLU(), Linear(4,2))
+delta = torch.ones(1,4) * 0.5
+handle = register_intervention_hook(model, "0", delta)
+// 第一个 Linear 输出自动加 0.5
+handle.remove()  // 移除后恢复正常
+</div>
+<p class="tip">提示: hook(module, input, output) -> output + delta; layer.register_forward_hook(hook)</p>
+<div class="write-area write-area-tall">
+def register_intervention_hook(model, layer_name, delta):
+</div>
+
+<h3>练习 40: orthogonal_intervention <span class="difficulty">★★★</span></h3>
+<p>实现 MoReS 正交干预: h' = h + R^T @ (W@h^T - R@h^T)。R 是旋转矩阵，W 是干预矩阵。同时返回正交惩罚: ||R^T@R - I||_F^2。</p>
+<div class="example">
+<b>示例:</b>
+输入: h.shape=(4,16), R.shape=(16,16), W.shape=(16,16)
+输出: h_prime.shape=(4,16), ortho_penalty (标量)
+R 正交时 penalty &approx; 0; R 随机时 penalty > 1
+</div>
+<p class="tip">提示: diff = W@h.T - R@h.T; h' = h + (R.T @ diff).T; penalty=((R.T@R - I)**2).sum()</p>
+<div class="write-area write-area-tall">
+def orthogonal_intervention(h, R, W):
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<div class="score-box">
+总分: _______ / 40 &nbsp;&nbsp;&nbsp;&nbsp; 日期: _____________
+</div>
+
+</body>
+</html>

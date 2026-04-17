@@ -1,0 +1,2880 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>mmit 训练方法代码图解 — 全集</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif;--sidebar-w:180px}
+
+/* ---- Layout ---- */
+body{background:#fff;color:#000;font-family:var(--sans);font-size:8.5pt;line-height:1.4;padding:12px 20px 12px calc(var(--sidebar-w) + 28px);max-width:1160px;margin:0 auto}
+
+/* ---- Sidebar ---- */
+#sidebar{
+  position:fixed;top:0;left:0;width:var(--sidebar-w);height:100vh;
+  overflow-y:auto;background:#fafafa;border-right:1.5px solid #ccc;
+  padding:12px 10px;z-index:100;font-size:7.5pt;
+}
+.sidebar-title{font-size:10pt;font-weight:700;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #000}
+.sidebar-cat{font-size:7pt;font-weight:700;color:#666;margin:10px 0 3px;text-transform:uppercase;letter-spacing:0.5px}
+.sidebar-link{display:block;padding:3px 8px;margin:1px 0;color:#333;text-decoration:none;border-radius:3px;transition:background 0.15s}
+.sidebar-link:hover{background:#e8e8e8}
+.sidebar-link.active{background:#000;color:#fff;font-weight:700}
+.sidebar-top{margin-top:16px;font-size:6.5pt;color:#666;border-top:1px solid #ddd;padding-top:6px}
+
+/* ---- Section dividers ---- */
+.method-section{margin-bottom:30px}
+.section-divider{page-break-before:always;margin:30px 0 10px;padding:10px 0 6px;border-top:3px solid #000}
+.method-section:first-child .section-divider{border-top:none;margin-top:0;page-break-before:auto}
+.section-heading{font-size:16pt;font-weight:800;color:#000;margin:0;padding:0;border-bottom:none}
+
+/* ---- Print ---- */
+@page{size:A4 portrait;margin:6mm}
+@media print{
+  #sidebar{display:none!important}
+  body{padding:0;max-width:none;font-size:8pt;line-height:1.35}
+  .print-hint{display:none!important}
+  .section-divider{page-break-before:always}
+  .method-section:first-child .section-divider{page-break-before:auto}
+  h2{page-break-after:avoid}
+  h3{page-break-after:avoid}
+  .vis,.pytorch,pre.code,table,.note{page-break-inside:avoid}
+}
+
+/* ---- Original styles ---- */
+.print-hint{background:#fffbe0;border:1.5px solid #806000;padding:4px 10px;margin-bottom:6px;font-size:8pt;color:#806000;border-radius:3px}
+.print-hint b{color:#000}
+h1{font-size:13pt;font-weight:700;border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:3px}
+.subtitle{font-size:8pt;color:#444;font-style:italic;margin-bottom:8px}
+h2{font-size:10.5pt;font-weight:700;margin:10px 0 5px;padding:4px 8px;background:#000;color:#fff;border-radius:3px}
+h3{font-size:9pt;font-weight:700;margin:6px 0 3px;border-bottom:1px solid #ccc;padding-bottom:1px}
+p{margin:3px 0;font-size:8pt}
+
+pre.code{background:#f8f8f8;border:1px solid #000;border-radius:2px;padding:5px 8px;font-family:var(--mono);font-size:7.5pt;line-height:1.4;margin:4px 0;white-space:pre-wrap;word-break:break-word}
+.code .kw{color:#a00050;font-weight:600}.code .fn{color:#0040a0;font-weight:600}.code .str{color:#006400}.code .cm{color:#666;font-style:italic}.code .num{color:#a04000}
+
+.vis{border:1.2px solid #000;border-radius:3px;padding:6px 10px;margin:4px 0;background:#fafafa}
+.vis .vis-title{font-weight:700;font-size:9pt;margin-bottom:4px;color:#a00000}
+.vis-row{display:flex;align-items:center;gap:5px;margin:2px 0;font-family:var(--mono);font-size:7.5pt;flex-wrap:wrap}
+.vis-box{border:1px solid #000;padding:3px 8px;border-radius:2px;background:#fff;text-align:center;min-width:45px;font-size:7pt}
+.vis-box.param{background:#fff0f0;border-color:#a00000;font-weight:700}
+.vis-box.result{background:#e8f0ff;border-color:#0040a0}
+.vis-box.input{background:#fff8e0;border-color:#806000}
+.vis-box.frozen{background:#f0f5f0;border-color:#006400;border-style:dashed}
+.vis-arrow{font-size:12pt;font-weight:700;color:#000}
+.vis-eq{font-size:11pt;font-weight:700;color:#a00000}
+.vis-label{font-size:6.5pt;color:#666;font-style:italic}
+
+.pytorch{margin:3px 0;padding:5px 8px;background:#f0f0ff;border:1px solid #0040a0;border-radius:2px;font-size:7.5pt}
+.pytorch .pt-title{font-weight:700;color:#0040a0;font-size:8pt;margin-bottom:2px;font-family:var(--mono)}
+
+.note{background:#fff8e0;border-left:2.5px solid #806000;padding:4px 8px;margin:3px 0;font-size:7.5pt}
+.note b{color:#806000}
+
+table{width:100%;border-collapse:collapse;font-size:7pt;margin:3px 0}
+th,td{padding:2px 5px;border:1px solid #000;text-align:left;vertical-align:top}
+th{background:#000;color:#fff}
+
+/* ---- Extra styles from L2T ---- */
+.tok-masked{background:#ffcccc;color:#999;text-decoration:line-through;border-color:#a00000}
+.tok-unmasked{background:#ccffcc;border-color:#006400;font-weight:700}
+.tok-always{background:#cce0ff;border-color:#0040a0}
+
+/* ---- Extra styles from MoLE ---- */
+.filemap{font-family:var(--mono);font-size:8pt;background:#f8f8f8;border:1px solid #000;border-radius:2px;padding:6px 10px;margin:6px 0;line-height:1.6}
+</style>
+</head>
+<body id="top">
+
+<nav id="sidebar">
+<div class="sidebar-title">目录</div>
+<div class="sidebar-cat">基线</div>
+<a class="sidebar-link" href="#full-ft" data-section="full-ft">Full FT</a>
+<a class="sidebar-link" href="#freeze" data-section="freeze">Freeze</a>
+<div class="sidebar-cat">LoRA 家族</div>
+<a class="sidebar-link" href="#lora" data-section="lora">LoRA/QLoRA/DoRA</a>
+<div class="sidebar-cat">专家混合</div>
+<a class="sidebar-link" href="#mole" data-section="mole">MoLE</a>
+<div class="sidebar-cat">表示干预</div>
+<a class="sidebar-link" href="#mores" data-section="mores">MoReS</a>
+<div class="sidebar-cat">持续学习</div>
+<a class="sidebar-link" href="#lora-in-lora" data-section="lora-in-lora">LoRA-in-LoRA</a>
+<div class="sidebar-cat">训练策略</div>
+<a class="sidebar-link" href="#l2t" data-section="l2t">L2T</a>
+<a class="sidebar-link sidebar-top" href="#top">回到顶部</a>
+</nav>
+
+
+<div id="main-content">
+
+<section id="full-ft" class="method-section">
+<div class="section-divider"><h1 class="section-heading">Full Fine-Tuning (全参数微调)</h1></div>
+<div class="print-hint"><b>📄</b> Cmd+P, A4 纵向, 最小边距, 勾选"背景图形"</div>
+
+<h1>full_ft.py 图解 — FullFTMethod (Line 1-80)</h1>
+<p class="subtitle">所有 PEFT 方法中最简单的一个，仅 ~80 行代码。全参数微调：直接训练模型所有权重。基于 LLaVA-1.5-7B (约 70 亿参数)。</p>
+
+<!-- ============================================================ -->
+<h2>Block 1: _prepare_model_impl — 设置全部参数可训练 (Line 42-48)</h2>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">_prepare_model_impl</span>(self, model, processor, config):
+    <span class="kw">for</span> p <span class="kw">in</span> model.<span class="fn">parameters</span>():
+        p.requires_grad = <span class="kw">True</span>                       <span class="cm"># 每个参数都设为可训练</span>
+
+    trainable = <span class="fn">sum</span>(p.<span class="fn">numel</span>() <span class="kw">for</span> p <span class="kw">in</span> model.<span class="fn">parameters</span>())
+    info = <span class="str">f"Full fine-tuning: all {trainable:,} parameters trainable"</span>
+    <span class="kw">return</span> model, info</pre>
+
+<div class="vis">
+<div class="vis-title">Full FT vs LoRA vs MoReS: 哪些参数被训练?</div>
+
+<div class="vis-row">
+  <div class="vis-box param" style="width:100%">Full FT: 全部 7B 参数可训练 (requires_grad=True)<br>Vision Encoder (300M) + LLM (6.7B) + Projector (~5M) = ~7,000,000,000 params</div>
+</div>
+
+<div class="vis-row" style="margin-top:4px">
+  <div class="vis-box frozen" style="width:70%">LoRA: 基础模型冻结 (~7B frozen)</div>
+  <div class="vis-box param" style="width:30%">LoRA adapters<br>~4M 可训练 (0.06%)</div>
+</div>
+
+<div class="vis-row" style="margin-top:4px">
+  <div class="vis-box frozen" style="width:85%">MoReS: 基础模型冻结 (~7B frozen)</div>
+  <div class="vis-box param" style="width:15%">Interventions<br>~8K 可训练 (0.0001%)</div>
+</div>
+</div>
+
+<h3>这里用到的 PyTorch API</h3>
+<table>
+<tr><th>API</th><th>做什么</th><th>为什么用它</th></tr>
+<tr><td><code>model.parameters()</code></td><td>返回模型所有参数的迭代器</td><td>遍历每一个 nn.Parameter，逐个设置 requires_grad</td></tr>
+<tr><td><code>p.requires_grad = True</code></td><td>标记该参数需要计算梯度</td><td>全参数微调 = 所有参数都参与反向传播和优化器更新</td></tr>
+<tr><td><code>p.numel()</code></td><td>返回 tensor 中元素的总数</td><td>统计可训练参数量，用于日志输出</td></tr>
+</table>
+
+<div class="note">
+<b>显存对比：</b>Full FT 训练 7B 模型需要 ~56GB+ 显存（模型 14GB + 梯度 14GB + 优化器状态 28GB）。LoRA 只训练 ~4M 参数，显存仅需 ~16GB。MoReS 只训练 ~8K 参数，显存更低。Full FT 推荐使用 >=24GB GPU 或分布式训练。
+</div>
+
+<div class="note">
+<b>freeze_patterns：</b>可以通过配置 <code>freeze_patterns: ["vision_tower"]</code> 选择性冻结某些模块（如视觉编码器），在基类 <code>_prepare_model</code> 中调用 <code>_freeze_by_patterns</code> 实现。这里的 <code>_prepare_model_impl</code> 先把所有参数设为可训练，然后基类再根据 freeze_patterns 冻结匹配的模块。
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 2: compute_loss + get_trainable_params (Line 50-54)</h2>
+
+<pre class="code"><span class="cm"># 模块级实例化: 全局共享的交叉熵损失</span>
+_ce_loss = <span class="fn">CrossEntropyLoss</span>()
+
+<span class="kw">def</span> <span class="fn">compute_loss</span>(self, model, batch, outputs):
+    <span class="kw">return</span> _ce_loss.<span class="fn">compute</span>(model, batch, outputs)   <span class="cm"># 标准交叉熵</span>
+
+<span class="kw">def</span> <span class="fn">get_trainable_params</span>(self, model):
+    <span class="kw">return</span> [{ <span class="str">"params"</span>: [p <span class="kw">for</span> p <span class="kw">in</span> model.<span class="fn">parameters</span>() <span class="kw">if</span> p.requires_grad] }]</pre>
+
+<div class="vis">
+<div class="vis-title">交叉熵损失 (CE Loss) 计算流程</div>
+
+<div class="vis-row">
+  <div class="vis-box input">输入 tokens<br>"&lt;image&gt; 描述这张图"</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">模型前向传播<br>outputs.logits<br>(B, seq_len, vocab_size)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">shift logits<br>logits[:, :-1]<br>预测下一个 token</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">CE Loss<br>-log P(正确token)<br>→ 标量 loss</div>
+</div>
+
+<div class="vis-label">CE Loss = 标准语言建模损失，对每个位置计算 -log(模型给正确 token 的概率)，越低越好。</div>
+</div>
+
+<div class="vis">
+<div class="vis-title">get_trainable_params: 单个参数组</div>
+<div class="vis-row">
+  <div class="vis-box param">param_group[0]<br>全部 ~7B 参数<br>lr, weight_decay 等统一设置</div>
+  <div class="vis-label" style="margin-left:10px">Full FT 只有 1 个参数组: 所有 requires_grad=True 的参数。<br>LoRA 通常有 2 个组 (base + adapter)，MoReS 也是 2 个组 (base + intervention)。</div>
+</div>
+</div>
+
+<h3>这里用到的 PyTorch API</h3>
+<table>
+<tr><th>API</th><th>做什么</th><th>为什么用它</th></tr>
+<tr><td><code>CrossEntropyLoss().compute()</code></td><td>计算交叉熵损失</td><td>标准的语言建模目标函数，预测下一个 token</td></tr>
+<tr><td><code>model.parameters()</code></td><td>返回所有参数</td><td>过滤出 requires_grad=True 的传给优化器</td></tr>
+<tr><td><code>p.requires_grad</code></td><td>检查参数是否需要梯度</td><td>如果用了 freeze_patterns，被冻结的参数 requires_grad=False，不应传给优化器</td></tr>
+</table>
+
+<div class="note">
+<b>对比其他方法的 loss：</b>Full FT 使用纯 CE Loss。MoReS 在 CE Loss 之上额外加了正交惩罚项 (orthogonal penalty)。LoRA 也使用纯 CE Loss。Full FT 的 loss 计算最简单直接。
+</div>
+
+<!-- ============================================================ -->
+<h2 style="page-break-before:always">Block 3: save_checkpoint — 保存完整模型 (Line 56-62)</h2>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">save_checkpoint</span>(self, model, processor, path, metadata):
+    os.<span class="fn">makedirs</span>(path, exist_ok=<span class="kw">True</span>)
+    model.<span class="fn">save_pretrained</span>(path)                 <span class="cm"># 保存全部权重 (~14GB)</span>
+    processor.<span class="fn">save_pretrained</span>(path)              <span class="cm"># 保存 tokenizer + image processor</span>
+    metadata[<span class="str">"ft_method"</span>] = self.name
+    <span class="kw">with</span> <span class="fn">open</span>(os.path.<span class="fn">join</span>(path, <span class="str">"mmit_meta.json"</span>), <span class="str">"w"</span>) <span class="kw">as</span> f:
+        json.<span class="fn">dump</span>(metadata, f, indent=<span class="num">2</span>, ensure_ascii=<span class="kw">False</span>)</pre>
+
+<div class="vis">
+<div class="vis-title">保存后的目录结构 (7B 模型 ≈ 14GB)</div>
+<div class="vis-row" style="flex-direction:column;align-items:flex-start;gap:1px">
+  <div class="vis-box result" style="width:100%">checkpoint_dir/</div>
+  <div class="vis-box param" style="width:95%;margin-left:20px">model-00001-of-00004.safetensors ──── ~3.5GB</div>
+  <div class="vis-box param" style="width:95%;margin-left:20px">model-00002-of-00004.safetensors ──── ~3.5GB</div>
+  <div class="vis-box param" style="width:95%;margin-left:20px">model-00003-of-00004.safetensors ──── ~3.5GB</div>
+  <div class="vis-box param" style="width:95%;margin-left:20px">model-00004-of-00004.safetensors ──── ~3.5GB</div>
+  <div class="vis-box" style="width:95%;margin-left:20px">config.json, generation_config.json</div>
+  <div class="vis-box" style="width:95%;margin-left:20px">tokenizer.json, tokenizer_config.json, ...</div>
+  <div class="vis-box input" style="width:95%;margin-left:20px">mmit_meta.json ──── 记录 ft_method="full_ft"</div>
+</div>
+</div>
+
+<div class="vis">
+<div class="vis-title">三种方法的存储对比</div>
+<div class="vis-row">
+  <div class="vis-box param" style="width:70%">Full FT: ~14 GB<br>保存整个模型所有权重<br>独立部署，不需要基础模型</div>
+  <div class="vis-box result" style="width:20%">LoRA: ~8 MB<br>只保存 adapter 权重<br>加载时需要基础模型</div>
+  <div class="vis-box frozen" style="width:10%">MoReS: ~32 KB<br>只保存 intervention<br>加载时需要基础模型</div>
+</div>
+<div class="vis-label">Full FT 存储是 LoRA 的 ~1,750 倍，是 MoReS 的 ~450,000 倍。但优点是完全独立，无需基础模型。</div>
+</div>
+
+<h3>这里用到的 PyTorch / HuggingFace API</h3>
+<table>
+<tr><th>API</th><th>做什么</th><th>为什么用它</th></tr>
+<tr><td><code>os.makedirs(path, exist_ok=True)</code></td><td>递归创建目录</td><td>确保保存路径存在，exist_ok=True 避免目录已存在时报错</td></tr>
+<tr><td><code>model.save_pretrained(path)</code></td><td>保存模型权重 + config</td><td>HuggingFace 标准方法，自动分片保存为 safetensors 格式</td></tr>
+<tr><td><code>processor.save_pretrained(path)</code></td><td>保存 tokenizer + image processor</td><td>推理时需要同样的分词器和图像预处理配置</td></tr>
+<tr><td><code>json.dump(metadata, f)</code></td><td>将 dict 写入 JSON 文件</td><td>记录微调方法等元信息，方便后续加载时识别</td></tr>
+</table>
+
+<div class="note">
+<b>关键区别：</b>Full FT 调用 <code>model.save_pretrained()</code> 保存整个模型。LoRA 只保存 adapter 权重 (<code>model.save_pretrained()</code> 自动只保存 LoRA 参数)。MoReS 手动用 <code>torch.save()</code> 只保存 intervention 的 state_dict。Full FT 的 checkpoint 最大但最独立。
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 4: load_for_inference — 加载推理 (Line 64-79)</h2>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">load_for_inference</span>(self, path, base_model_id, **kwargs):
+    <span class="kw">from</span> transformers <span class="kw">import</span> AutoProcessor
+    <span class="kw">try</span>:
+        <span class="kw">from</span> transformers <span class="kw">import</span> AutoModelForImageTextToText <span class="kw">as</span> AutoVLM
+    <span class="kw">except</span> <span class="fn">ImportError</span>:
+        <span class="kw">from</span> transformers <span class="kw">import</span> AutoModelForVision2Seq <span class="kw">as</span> AutoVLM
+
+    processor = AutoProcessor.<span class="fn">from_pretrained</span>(path, trust_remote_code=<span class="kw">True</span>)
+    model = AutoVLM.<span class="fn">from_pretrained</span>(
+        path, torch_dtype=torch.bfloat16,          <span class="cm"># 半精度节省显存</span>
+        device_map=<span class="str">"auto"</span>,                          <span class="cm"># 自动分配 GPU/CPU</span>
+        trust_remote_code=<span class="kw">True</span>,
+    )
+    model.<span class="fn">eval</span>()                                    <span class="cm"># 关闭 dropout, batchnorm 等</span>
+
+    info = {<span class="str">"model_id"</span>: <span class="str">f"Full FT model from {path}"</span>}
+    <span class="kw">return</span> model, processor, info</pre>
+
+<div class="vis">
+<div class="vis-title">Full FT vs LoRA/MoReS 加载流程对比</div>
+
+<div class="vis-row">
+  <div class="vis-box param" style="width:100%"><b>Full FT 加载 (最简单)</b></div>
+</div>
+<div class="vis-row">
+  <div class="vis-box input">checkpoint 路径<br>(~14GB 完整模型)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">AutoVLM.from_pretrained(path)<br>直接加载所有权重</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">model.eval()<br>可直接推理</div>
+</div>
+
+<div class="vis-row" style="margin-top:6px">
+  <div class="vis-box result" style="width:100%"><b>LoRA 加载 (需要两步)</b></div>
+</div>
+<div class="vis-row">
+  <div class="vis-box frozen">加载基础模型<br>base_model_id (~14GB)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box input">加载 adapter<br>PeftModel.from_pretrained<br>(~8MB)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">merge_and_unload()<br>合并到基础模型</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">可推理</div>
+</div>
+
+<div class="vis-row" style="margin-top:6px">
+  <div class="vis-box result" style="width:100%"><b>MoReS 加载 (需要三步)</b></div>
+</div>
+<div class="vis-row">
+  <div class="vis-box frozen">加载基础模型<br>base_model_id (~14GB)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box input">加载 intervention<br>torch.load (~32KB)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">注册 hooks<br>挂到指定层</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">可推理</div>
+</div>
+</div>
+
+<h3>这里用到的 HuggingFace API</h3>
+<table>
+<tr><th>API</th><th>做什么</th><th>为什么用它</th></tr>
+<tr><td><code>AutoProcessor.from_pretrained(path)</code></td><td>加载 tokenizer + image processor</td><td>从 checkpoint 目录读取保存的处理器配置</td></tr>
+<tr><td><code>AutoModelForImageTextToText</code></td><td>多模态 VLM 模型类</td><td>新版 transformers 的标准类名。旧版 fallback 到 AutoModelForVision2Seq</td></tr>
+<tr><td><code>from_pretrained(path, torch_dtype=bfloat16)</code></td><td>加载模型权重，指定精度</td><td>bfloat16 比 float32 省一半显存，精度损失极小</td></tr>
+<tr><td><code>device_map="auto"</code></td><td>自动分配模型到 GPU/CPU</td><td>模型太大时自动拆分到多卡或部分放 CPU</td></tr>
+<tr><td><code>model.eval()</code></td><td>切换到推理模式</td><td>关闭 Dropout 和 BatchNorm 的训练行为，确保输出确定性</td></tr>
+</table>
+
+<div class="note">
+<b>为什么 base_model_id 参数没有被使用?</b> Full FT 保存了完整的模型权重，所以加载时直接从 checkpoint 路径读取，完全不需要原始基础模型。这是 Full FT 的一个优势: 部署时不依赖外部模型。但代价是 checkpoint 体积巨大 (~14GB)。
+</div>
+
+<div class="note">
+<b>try/except 兼容性处理：</b><code>AutoModelForImageTextToText</code> 是 transformers 较新版本的类名。旧版本中该类叫 <code>AutoModelForVision2Seq</code>。这个 try/except 确保代码在新旧版本都能运行。
+</div>
+
+<!-- ============================================================ -->
+<h2 style="page-break-before:always">总结: Full FT 方法一览</h2>
+
+<table>
+<tr><th>Block</th><th>方法</th><th>行号</th><th>核心操作</th><th>关键点</th></tr>
+<tr><td>1</td><td><code>_prepare_model_impl</code></td><td>42-48</td><td>所有参数 requires_grad=True</td><td>~7B 参数全部可训练，显存需求最高 (~56GB+)</td></tr>
+<tr><td>2</td><td><code>compute_loss</code> + <code>get_trainable_params</code></td><td>50-54</td><td>标准 CE Loss + 单参数组</td><td>最简单的 loss，没有额外正则项</td></tr>
+<tr><td>3</td><td><code>save_checkpoint</code></td><td>56-62</td><td>save_pretrained 保存全部权重</td><td>~14GB checkpoint，完全独立</td></tr>
+<tr><td>4</td><td><code>load_for_inference</code></td><td>64-79</td><td>直接 from_pretrained 加载</td><td>不需要基础模型，加载最简单</td></tr>
+</table>
+
+<div class="vis">
+<div class="vis-title">三种方法全面对比</div>
+<table>
+<tr><th>维度</th><th>Full FT</th><th>LoRA</th><th>MoReS</th></tr>
+<tr><td>可训练参数量</td><td class="param" style="background:#fff0f0">~7,000,000,000 (100%)</td><td>~4,000,000 (0.06%)</td><td>~8,193 (0.0001%)</td></tr>
+<tr><td>训练显存 (7B)</td><td style="background:#fff0f0">~56GB+</td><td>~16GB</td><td>~15GB</td></tr>
+<tr><td>Checkpoint 大小</td><td style="background:#fff0f0">~14 GB</td><td>~8 MB</td><td>~32 KB</td></tr>
+<tr><td>需要基础模型加载?</td><td style="background:#e8f0ff">不需要</td><td>需要</td><td>需要</td></tr>
+<tr><td>加载复杂度</td><td style="background:#e8f0ff">最简单 (1 步)</td><td>中等 (2 步)</td><td>较复杂 (3 步)</td></tr>
+<tr><td>Loss 函数</td><td>CE Loss</td><td>CE Loss</td><td>CE Loss + 正交惩罚</td></tr>
+<tr><td>代码行数</td><td>~80 行</td><td>~120 行</td><td>~200 行</td></tr>
+<tr><td>适用场景</td><td>大 GPU / 分布式 / 最高精度需求</td><td>资源有限 / 多任务切换</td><td>极低资源 / 极快训练</td></tr>
+</table>
+</div>
+
+<div class="note">
+<b>总结：</b>Full FT 是最简单直接的微调方法——没有 adapter，没有 intervention，没有额外的正则化。所有参数都参与训练，理论上能达到最高精度。代价是显存需求和存储开销最大。当 GPU 资源充足且追求最佳性能时，Full FT 是首选；当资源有限时，考虑 LoRA 或 MoReS。
+</div>
+</section>
+
+<section id="freeze" class="method-section">
+<div class="section-divider"><h1 class="section-heading">Freeze Tuning (冻结微调)</h1></div>
+<div class="print-hint">
+  <b>打印提示：</b>Cmd+P / Ctrl+P, A4 纵向, 最小边距, 勾选"背景图形"
+</div>
+
+<h1>freeze.py 图解 — FreezeTuningMethod</h1>
+<p class="subtitle">150 行代码, 分成 6 个块讲解. 基于 LLaVA-1.5-7B (32 层 LLM).</p>
+
+<!-- ================================================================ -->
+<!-- Block 1 -->
+<!-- ================================================================ -->
+<h2>Block 1: _find_transformer_layers — 查找 decoder 层 (Line 23-33)</h2>
+
+<p>这个 helper 函数通过 <code>getattr</code> 链, 尝试三种常见的模型架构命名, 找到 transformer decoder 层列表。</p>
+
+<h3>源码</h3>
+<pre class="code"><span class="kw">def</span> <span class="fn">_find_transformer_layers</span>(model: nn.Module) -> list[nn.Module]:
+    <span class="str">"""Find the sequential list of transformer layers in a model."""</span>
+    <span class="kw">for</span> attr <span class="kw">in</span> (<span class="str">"model.layers"</span>, <span class="str">"transformer.h"</span>, <span class="str">"gpt_neox.layers"</span>):
+        obj = model
+        <span class="kw">try</span>:
+            <span class="kw">for</span> part <span class="kw">in</span> attr.split(<span class="str">"."</span>):   <span class="cm"># e.g. "model" → "layers"</span>
+                obj = <span class="fn">getattr</span>(obj, part)
+            <span class="kw">return</span> <span class="fn">list</span>(obj)              <span class="cm"># nn.ModuleList → list</span>
+        <span class="kw">except</span> AttributeError:
+            <span class="kw">continue</span>
+    <span class="kw">return</span> []</pre>
+
+<h3>getattr 链如何工作</h3>
+<div class="vis">
+<div class="vis-title">以 LLaVA-1.5-7B 为例: attr = "model.layers"</div>
+<div class="vis-row">
+  <div class="vis-box input">model<br><span class="vis-label">LlavaForConditionalGeneration</span></div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">getattr(model, "model")<br><span class="vis-label">LlamaModel</span></div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">getattr(_, "layers")<br><span class="vis-label">ModuleList[32]</span></div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">list(obj)<br><span class="vis-label">[layer_0, ..., layer_31]</span></div>
+</div>
+</div>
+
+<h3>LLaVA-1.5-7B 模型结构</h3>
+<div class="vis">
+<div class="vis-title">LlavaForConditionalGeneration 架构</div>
+<div class="vis-row">
+  <div class="vis-box" style="background:#e8f0ff;min-width:120px">vision_tower<br><span class="vis-label">CLIP ViT-L/14 (304M)</span></div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box" style="background:#fff8e0;min-width:120px">multi_modal_projector<br><span class="vis-label">Linear 2层 (~33M)</span></div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box" style="background:#fff0f0;min-width:200px">model.layers[0..31]<br><span class="vis-label">32 x LlamaDecoderLayer (~6.6B)</span></div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box" style="background:#f0f0ff;min-width:80px">lm_head<br><span class="vis-label">Linear (~130M)</span></div>
+</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch API</div>
+<table>
+<tr><th>API</th><th>说明</th><th>示例</th></tr>
+<tr><td><code>getattr(obj, name)</code></td><td>按字符串名称获取属性</td><td><code>getattr(model, "model") → LlamaModel</code></td></tr>
+<tr><td><code>str.split(".")</code></td><td>拆分属性路径为列表</td><td><code>"model.layers".split(".") → ["model","layers"]</code></td></tr>
+<tr><td><code>list(ModuleList)</code></td><td>将 ModuleList 转为 Python list</td><td><code>list(layers) → [layer_0, ..., layer_31]</code></td></tr>
+</table>
+</div>
+
+<div class="note">
+<b>设计意图：</b>不同 LLM 架构使用不同的属性名（LLaMA 用 <code>model.layers</code>, GPT-2 用 <code>transformer.h</code>, GPT-NeoX 用 <code>gpt_neox.layers</code>）。通过 try/except 循环, 一个函数兼容三种架构。
+</div>
+
+<!-- ================================================================ -->
+<!-- Block 2 -->
+<!-- ================================================================ -->
+<h2>Block 2: _prepare_model_impl Part A — 冻结所有参数 (Line 66-70)</h2>
+
+<p>第一步: 把模型的 <b>所有</b> 浮点参数的 <code>requires_grad</code> 设为 <code>False</code>, 即完全冻结。</p>
+
+<h3>源码</h3>
+<pre class="code"><span class="kw">def</span> <span class="fn">_prepare_model_impl</span>(self, model, processor, config):
+    <span class="kw">for</span> p <span class="kw">in</span> model.<span class="fn">parameters</span>():
+        <span class="kw">if</span> p.dtype <span class="kw">in</span> (torch.float32, torch.float16, torch.bfloat16):
+            p.requires_grad = <span class="kw">False</span>
+    <span class="cm"># ← 此时所有 7B 参数都被冻结</span></pre>
+
+<div class="vis">
+<div class="vis-title">冻结前 vs 冻结后</div>
+<div class="vis-row">
+  <div class="vis-box param" style="min-width:200px">冻结前: 所有 7B 参数<br>requires_grad = True</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box frozen" style="min-width:200px">冻结后: 所有 7B 参数<br>requires_grad = False</div>
+</div>
+<div class="vis-row" style="margin-top:4px">
+  <span class="vis-label">与 MoReS/LoRA 的冻结步骤完全相同: 先全冻, 后选择性解冻。</span>
+</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch API</div>
+<table>
+<tr><th>API</th><th>说明</th></tr>
+<tr><td><code>model.parameters()</code></td><td>递归遍历所有子模块的参数, 返回 Parameter 迭代器</td></tr>
+<tr><td><code>p.requires_grad = False</code></td><td>关闭该参数的梯度计算, 不参与反向传播, 不被优化器更新</td></tr>
+<tr><td><code>p.dtype</code></td><td>检查参数数据类型; 跳过 int/bool 类型参数 (如 position_ids)</td></tr>
+</table>
+</div>
+
+<div class="note">
+<b>为什么检查 dtype？</b>模型中有些参数是 int 类型 (例如 position_ids buffer), 它们本来就不可微分, 设置 requires_grad 会报错。只冻结浮点参数是安全的做法。
+</div>
+
+<!-- ================================================================ -->
+<!-- Block 3 -->
+<!-- ================================================================ -->
+<h2>Block 3: _prepare_model_impl Part B — 选择性解冻 (Line 72-107)</h2>
+
+<p>根据用户配置, 选择性地解冻三类模块: <b>LLM 最后 N 层</b>、<b>LM Head</b>、<b>Projector</b>。</p>
+
+<h3>源码 — 三种解冻逻辑</h3>
+<pre class="code"><span class="cm"># Case 1: 解冻 LLM 最后 N 层</span>
+<span class="kw">if</span> <span class="str">"LLM last N layers"</span> <span class="kw">in</span> train_modules:
+    layers = <span class="fn">_find_transformer_layers</span>(model)   <span class="cm"># [layer_0, ..., layer_31]</span>
+    <span class="kw">if</span> layers:
+        <span class="kw">for</span> layer <span class="kw">in</span> layers[-num_layers:]:       <span class="cm"># layers[-4:] = [28, 29, 30, 31]</span>
+            <span class="fn">_unfreeze</span>(layer)
+
+<span class="cm"># Case 2: 解冻 LM Head</span>
+<span class="kw">if</span> <span class="str">"LM Head"</span> <span class="kw">in</span> train_modules:
+    <span class="kw">for</span> name, module <span class="kw">in</span> model.<span class="fn">named_modules</span>():
+        <span class="kw">if</span> <span class="str">"lm_head"</span> <span class="kw">in</span> name:
+            <span class="fn">_unfreeze</span>(module)
+            <span class="kw">break</span>
+
+<span class="cm"># Case 3: 解冻 Projector</span>
+<span class="kw">if</span> <span class="str">"Projector"</span> <span class="kw">in</span> train_modules:
+    <span class="kw">for</span> name, module <span class="kw">in</span> model.<span class="fn">named_modules</span>():
+        <span class="kw">if</span> <span class="str">"multi_modal_projector"</span> <span class="kw">in</span> name <span class="kw">or</span> <span class="str">"mm_projector"</span> <span class="kw">in</span> name:
+            <span class="fn">_unfreeze</span>(module)
+            <span class="kw">break</span></pre>
+
+<h3>LLaVA-1.5-7B 冻结 vs 可训练示意图</h3>
+<div class="vis">
+<div class="vis-title">默认配置: train_modules=["LLM last N layers"], num_layers=4</div>
+<div class="vis-row">
+  <div class="vis-box frozen" style="min-width:80px">vision_tower<br><span class="vis-label">304M 冻结</span></div>
+  <div class="vis-box frozen" style="min-width:70px">projector<br><span class="vis-label">33M 冻结</span></div>
+  <div class="vis-box frozen" style="min-width:50px">layer 0<br><span class="vis-label">冻结</span></div>
+  <div class="vis-box frozen" style="min-width:30px">...<br><span class="vis-label"></span></div>
+  <div class="vis-box frozen" style="min-width:50px">layer 27<br><span class="vis-label">冻结</span></div>
+  <div class="vis-box param" style="min-width:50px">layer 28<br><span class="vis-label">可训练</span></div>
+  <div class="vis-box param" style="min-width:50px">layer 29<br><span class="vis-label">可训练</span></div>
+  <div class="vis-box param" style="min-width:50px">layer 30<br><span class="vis-label">可训练</span></div>
+  <div class="vis-box param" style="min-width:50px">layer 31<br><span class="vis-label">可训练</span></div>
+  <div class="vis-box frozen" style="min-width:60px">lm_head<br><span class="vis-label">130M 冻结</span></div>
+</div>
+<div class="vis-row" style="margin-top:3px">
+  <span class="vis-label">绿色虚线 = 冻结 (requires_grad=False)　　红色实线 = 可训练 (requires_grad=True)</span>
+</div>
+</div>
+
+<div class="vis">
+<div class="vis-title">如果同时选择三项: ["LLM last N layers", "LM Head", "Projector"]</div>
+<div class="vis-row">
+  <div class="vis-box frozen" style="min-width:80px">vision_tower<br><span class="vis-label">304M 冻结</span></div>
+  <div class="vis-box param" style="min-width:70px">projector<br><span class="vis-label">33M 可训练</span></div>
+  <div class="vis-box frozen" style="min-width:50px">layer 0<br><span class="vis-label">冻结</span></div>
+  <div class="vis-box frozen" style="min-width:30px">...<br><span class="vis-label"></span></div>
+  <div class="vis-box frozen" style="min-width:50px">layer 27<br><span class="vis-label">冻结</span></div>
+  <div class="vis-box param" style="min-width:50px">layer 28<br><span class="vis-label">可训练</span></div>
+  <div class="vis-box param" style="min-width:50px">layer 29<br><span class="vis-label">可训练</span></div>
+  <div class="vis-box param" style="min-width:50px">layer 30<br><span class="vis-label">可训练</span></div>
+  <div class="vis-box param" style="min-width:50px">layer 31<br><span class="vis-label">可训练</span></div>
+  <div class="vis-box param" style="min-width:60px">lm_head<br><span class="vis-label">130M 可训练</span></div>
+</div>
+</div>
+
+<h3>参数量估算 (LLaVA-1.5-7B)</h3>
+<table>
+<tr><th>模块</th><th>参数量</th><th>占总量比例</th><th>说明</th></tr>
+<tr><td>每层 LlamaDecoderLayer</td><td>~220M</td><td>~3.1%</td><td>self_attn (QKV + O) + MLP (gate + up + down)</td></tr>
+<tr><td>最后 4 层 (默认)</td><td><b>~880M</b></td><td><b>~12.5%</b></td><td>layers[-4:] = layers[28..31]</td></tr>
+<tr><td>lm_head</td><td>~130M</td><td>~1.9%</td><td>Linear(4096, 32000) 无 bias</td></tr>
+<tr><td>multi_modal_projector</td><td>~33M</td><td>~0.5%</td><td>2 层 MLP 将 CLIP 维度映射到 LLM 维度</td></tr>
+<tr><td>全部总计</td><td>~7.06B</td><td>100%</td><td>LlavaForConditionalGeneration</td></tr>
+</table>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch API</div>
+<table>
+<tr><th>API</th><th>说明</th></tr>
+<tr><td><code>layers[-num_layers:]</code></td><td>Python 切片: 取列表最后 N 个元素</td></tr>
+<tr><td><code>model.named_modules()</code></td><td>递归遍历所有子模块, 返回 (name, module) 对</td></tr>
+<tr><td><code>p.requires_grad = True</code></td><td>解冻参数, 重新参与梯度计算</td></tr>
+<tr><td><code>p.numel()</code></td><td>返回张量中元素总数, 用于统计参数量</td></tr>
+</table>
+</div>
+
+<div class="note">
+<b>核心设计：</b>Freeze Tuning 的本质是 "大部分不动, 微调最接近输出的那几层"。最后几层离 loss 最近, 梯度信号最强, 所以用最少的可训练参数就能快速适配新任务。这与 LoRA "每层都插低秩矩阵" 的策略形成互补。
+</div>
+
+<!-- ================================================================ -->
+<!-- Block 4 -->
+<!-- ================================================================ -->
+<h2>Block 4: save_checkpoint — 只保存可训练参数 (Line 116-126)</h2>
+
+<p>关键优化: 只保存 <code>requires_grad=True</code> 的参数, 而不是整个 7B 模型。</p>
+
+<h3>源码</h3>
+<pre class="code"><span class="kw">def</span> <span class="fn">save_checkpoint</span>(self, model, processor, path, metadata):
+    os.<span class="fn">makedirs</span>(path, exist_ok=<span class="kw">True</span>)
+    <span class="cm"># Step 1: 找出所有可训练参数的名字</span>
+    trained_names = {n <span class="kw">for</span> n, p <span class="kw">in</span> model.<span class="fn">named_parameters</span>() <span class="kw">if</span> p.requires_grad}
+    <span class="cm"># Step 2: 从 state_dict 中只取这些参数</span>
+    trainable_state = {k: v <span class="kw">for</span> k, v <span class="kw">in</span> model.<span class="fn">state_dict</span>().items() <span class="kw">if</span> k <span class="kw">in</span> trained_names}
+    <span class="cm"># Step 3: 保存 (~880M params → ~1.7GB 文件)</span>
+    torch.<span class="fn">save</span>(trainable_state, os.path.join(path, <span class="str">"freeze_tuned.pt"</span>))
+    processor.<span class="fn">save_pretrained</span>(path)
+    <span class="cm"># Step 4: 保存元数据</span>
+    metadata[<span class="str">"ft_method"</span>] = self.name
+    metadata[<span class="str">"trained_param_names"</span>] = <span class="fn">sorted</span>(trained_names)
+    <span class="kw">with</span> <span class="fn">open</span>(os.path.join(path, <span class="str">"mmit_meta.json"</span>), <span class="str">"w"</span>) <span class="kw">as</span> f:
+        json.<span class="fn">dump</span>(metadata, f, indent=<span class="num">2</span>, ensure_ascii=<span class="kw">False</span>)</pre>
+
+<h3>保存目录结构</h3>
+<div class="vis">
+<div class="vis-title">checkpoint 目录</div>
+<pre class="code" style="background:#fafafa;border:1.2px solid #000">checkpoints/freeze-llava-1.5-7b/
+  ├── freeze_tuned.pt       <span class="cm"># ~1.7 GB (只有 880M 参数, bfloat16)</span>
+  ├── mmit_meta.json        <span class="cm"># {"ft_method":"freeze", "trained_param_names":[...]}</span>
+  ├── preprocessor_config.json
+  ├── tokenizer.json
+  └── tokenizer_config.json</pre>
+</div>
+
+<div class="vis">
+<div class="vis-title">文件大小对比</div>
+<div class="vis-row">
+  <div class="vis-box" style="background:#ffe0e0;min-width:200px">Full FT checkpoint<br><span class="vis-label">~14 GB (全部 7B, bf16)</span></div>
+  <div class="vis-arrow">vs</div>
+  <div class="vis-box param" style="min-width:200px">Freeze checkpoint<br><span class="vis-label">~1.7 GB (只有 880M, bf16)</span></div>
+  <div class="vis-arrow">vs</div>
+  <div class="vis-box result" style="min-width:200px">LoRA checkpoint<br><span class="vis-label">~50 MB (rank=16, ~25M)</span></div>
+</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch API</div>
+<table>
+<tr><th>API</th><th>说明</th></tr>
+<tr><td><code>model.named_parameters()</code></td><td>返回 (name, param) 对, 可用于过滤可训练参数</td></tr>
+<tr><td><code>model.state_dict()</code></td><td>返回完整的参数字典 {name: tensor}, 包括 buffer</td></tr>
+<tr><td><code>torch.save(dict, path)</code></td><td>用 pickle 序列化保存到文件</td></tr>
+<tr><td><code>processor.save_pretrained()</code></td><td>保存 tokenizer + image_processor 配置</td></tr>
+</table>
+</div>
+
+<div class="note">
+<b>空间节省：</b>默认配置 (last 4 layers) 只保存 12.5% 的参数, checkpoint 从 14GB 缩小到 1.7GB。<code>trained_param_names</code> 记录在 meta 中, 加载时可以验证参数名是否对齐。
+</div>
+
+<!-- ================================================================ -->
+<!-- Block 5 -->
+<!-- ================================================================ -->
+<h2>Block 5: load_for_inference — 两步加载 (Line 128-149)</h2>
+
+<p>推理时分两步: 先加载完整的 base model, 再用 <code>load_state_dict(strict=False)</code> 覆盖可训练部分。</p>
+
+<h3>源码</h3>
+<pre class="code"><span class="kw">def</span> <span class="fn">load_for_inference</span>(self, path, base_model_id, **kwargs):
+    <span class="kw">from</span> transformers <span class="kw">import</span> AutoProcessor
+    <span class="kw">try</span>:
+        <span class="kw">from</span> transformers <span class="kw">import</span> AutoModelForImageTextToText <span class="kw">as</span> AutoVLM
+    <span class="kw">except</span> ImportError:
+        <span class="kw">from</span> transformers <span class="kw">import</span> AutoModelForVision2Seq <span class="kw">as</span> AutoVLM
+
+    <span class="cm"># Step 1: 加载原始 base model (7B 完整权重)</span>
+    processor = AutoProcessor.<span class="fn">from_pretrained</span>(base_model_id, trust_remote_code=<span class="kw">True</span>)
+    model = AutoVLM.<span class="fn">from_pretrained</span>(
+        base_model_id, torch_dtype=torch.bfloat16,
+        device_map=<span class="str">"auto"</span>, trust_remote_code=<span class="kw">True</span>,
+    )
+    <span class="cm"># Step 2: 加载微调过的参数, 覆盖 base model 中对应的权重</span>
+    state = torch.<span class="fn">load</span>(
+        os.path.join(path, <span class="str">"freeze_tuned.pt"</span>),
+        map_location=<span class="str">"cpu"</span>, weights_only=<span class="kw">True</span>,
+    )
+    model.<span class="fn">load_state_dict</span>(state, strict=<span class="kw">False</span>)   <span class="cm"># strict=False: 只覆盖有的 key</span>
+    model.<span class="fn">eval</span>()</pre>
+
+<h3>加载流程示意</h3>
+<div class="vis">
+<div class="vis-title">两步加载流程</div>
+<div class="vis-row">
+  <div class="vis-box input" style="min-width:130px">HuggingFace Hub<br><span class="vis-label">llava-hf/llava-1.5-7b</span></div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result" style="min-width:130px">Step 1: from_pretrained<br><span class="vis-label">加载完整 7B 模型</span></div>
+</div>
+<div class="vis-row" style="margin-top:2px">
+  <div class="vis-box input" style="min-width:130px">freeze_tuned.pt<br><span class="vis-label">1.7GB (880M params)</span></div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param" style="min-width:130px">Step 2: load_state_dict<br><span class="vis-label">覆盖 last 4 layers</span></div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box" style="background:#e8ffe8;border-color:#006400;min-width:130px">最终模型<br><span class="vis-label">base + fine-tuned layers</span></div>
+</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch API</div>
+<table>
+<tr><th>API</th><th>说明</th></tr>
+<tr><td><code>torch.load(path, weights_only=True)</code></td><td>安全加载: 只反序列化张量, 不执行任意 pickle 代码</td></tr>
+<tr><td><code>map_location="cpu"</code></td><td>先加载到 CPU, 避免 GPU 内存不足</td></tr>
+<tr><td><code>load_state_dict(state, strict=False)</code></td><td>strict=False 允许 state_dict 缺少 key; 只更新匹配的参数</td></tr>
+<tr><td><code>model.eval()</code></td><td>切换到推理模式: 禁用 Dropout, BatchNorm 使用 running stats</td></tr>
+</table>
+</div>
+
+<div class="note">
+<b>strict=False 是关键：</b><code>load_state_dict</code> 默认 <code>strict=True</code>, 要求 state_dict 和模型的 key 完全一致。这里只保存了 880M 参数, 缺少其他 6.2B 参数的 key, 所以必须用 <code>strict=False</code>。缺少的 key 保持 base model 的原始权重不变。
+</div>
+
+<!-- ================================================================ -->
+<!-- Block 6 -->
+<!-- ================================================================ -->
+<h2>Block 6: 方法对比总表 — Full FT vs Freeze vs LoRA vs MoReS</h2>
+
+<table>
+<tr>
+  <th style="width:14%">维度</th>
+  <th style="width:21.5%">Full Fine-Tuning</th>
+  <th style="width:21.5%">Freeze Tuning</th>
+  <th style="width:21.5%">LoRA</th>
+  <th style="width:21.5%">MoReS</th>
+</tr>
+<tr>
+  <td><b>核心思想</b></td>
+  <td>训练所有参数</td>
+  <td>只训练最后 N 层</td>
+  <td>每层插入低秩矩阵</td>
+  <td>正交干预 top-k 隐状态</td>
+</tr>
+<tr>
+  <td><b>可训练参数</b></td>
+  <td>7.06B (100%)</td>
+  <td>~880M (12.5%)</td>
+  <td>~25M (0.35%)</td>
+  <td>~6M (0.08%)</td>
+</tr>
+<tr>
+  <td><b>显存占用</b></td>
+  <td>最高 (~56GB)</td>
+  <td>中等 (~30GB)</td>
+  <td>较低 (~18GB)</td>
+  <td>最低 (~16GB)</td>
+</tr>
+<tr>
+  <td><b>checkpoint 大小</b></td>
+  <td>~14 GB</td>
+  <td>~1.7 GB</td>
+  <td>~50 MB</td>
+  <td>~12 MB</td>
+</tr>
+<tr>
+  <td><b>修改哪些层</b></td>
+  <td>所有层</td>
+  <td>最后 4 层 (可配置)</td>
+  <td>所有 attention 层</td>
+  <td>选定层的隐状态</td>
+</tr>
+<tr>
+  <td><b>推理开销</b></td>
+  <td>无额外开销</td>
+  <td>无额外开销</td>
+  <td>可合并, 无额外开销</td>
+  <td>每层多一次干预</td>
+</tr>
+<tr>
+  <td><b>多任务切换</b></td>
+  <td>需要完整模型副本</td>
+  <td>需要保存 N 层权重</td>
+  <td>只需切换 adapter</td>
+  <td>只需切换干预向量</td>
+</tr>
+<tr>
+  <td><b>实现复杂度</b></td>
+  <td>最简单</td>
+  <td>简单 (150 行)</td>
+  <td>中等 (需要 peft 库)</td>
+  <td>较高 (hook + 正交投影)</td>
+</tr>
+<tr>
+  <td><b>适用场景</b></td>
+  <td>数据多, 显存充足</td>
+  <td>快速 baseline, 中等资源</td>
+  <td>通用 PEFT, 工业首选</td>
+  <td>视觉对齐, 研究前沿</td>
+</tr>
+</table>
+
+<div class="note">
+<b>选择建议：</b>Freeze Tuning 是最容易理解和实现的微调方法 (仅 150 行, 无外部依赖), 适合作为快速 baseline。它的参数效率介于 Full FT 和 LoRA 之间: 训练量比 LoRA 大 (880M vs 25M), 但表达能力也更强, 因为它直接更新完整的权重矩阵而不是低秩近似。
+</div>
+</section>
+
+<section id="lora" class="method-section">
+<div class="section-divider"><h1 class="section-heading">LoRA / QLoRA / DoRA</h1></div>
+<div class="print-hint"><b>&#128196;</b> Cmd+P, A4 纵向, 最小边距, 勾选"背景图形"</div>
+
+<h1>lora.py + dora.py 图解 — LoRA / QLoRA / DoRA</h1>
+<p class="subtitle">3个方法共享同一套代码, 只在配置上有区别. 基于 LLaVA-1.5-7B.</p>
+
+<!-- ============================================================ -->
+<h2>Block 1: _auto_detect_targets — 自动发现 LoRA 注入点 (Line 24-37)</h2>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">_auto_detect_targets</span>(model, freeze_patterns=()):
+    targets = <span class="fn">set</span>()
+    <span class="kw">for</span> name, _ <span class="kw">in</span> model.<span class="fn">named_modules</span>():
+        <span class="kw">if</span> freeze_patterns <span class="kw">and</span> <span class="fn">any</span>(p <span class="kw">in</span> name <span class="kw">for</span> p <span class="kw">in</span> freeze_patterns):
+            <span class="kw">continue</span>                          <span class="cm"># 跳过被冻结的模块</span>
+        short = name.<span class="fn">split</span>(<span class="str">"."</span>)[-<span class="num">1</span>]
+        <span class="kw">if</span> short <span class="kw">in</span> (<span class="str">"q_proj"</span>, <span class="str">"v_proj"</span>, <span class="str">"k_proj"</span>, <span class="str">"o_proj"</span>,
+                    <span class="str">"gate_proj"</span>, <span class="str">"up_proj"</span>, <span class="str">"down_proj"</span>):
+            targets.<span class="fn">add</span>(short)
+    <span class="kw">return</span> <span class="fn">sorted</span>(targets) <span class="kw">if</span> targets <span class="kw">else</span> [<span class="str">"q_proj"</span>, <span class="str">"v_proj"</span>]</pre>
+
+<h3>LLaVA-1.5-7B Transformer 层结构 — 7 个注入点</h3>
+
+<div class="vis">
+<div class="vis-title">每个 Transformer 层 (共 32 层) 中的 Linear 模块</div>
+<div class="vis-row">
+  <div class="vis-box" style="background:#e0e0e0;min-width:100px;font-weight:700">Self-Attention</div>
+  <div class="vis-arrow">:</div>
+  <div class="vis-box param">q_proj<br>(4096, 4096)</div>
+  <div class="vis-box param">k_proj<br>(4096, 4096)</div>
+  <div class="vis-box param">v_proj<br>(4096, 4096)</div>
+  <div class="vis-box param">o_proj<br>(4096, 4096)</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box" style="background:#e0e0e0;min-width:100px;font-weight:700">MLP (FFN)</div>
+  <div class="vis-arrow">:</div>
+  <div class="vis-box param">gate_proj<br>(4096, 11008)</div>
+  <div class="vis-box param">up_proj<br>(4096, 11008)</div>
+  <div class="vis-box param">down_proj<br>(11008, 4096)</div>
+</div>
+<div class="vis-row" style="margin-top:4px">
+  <div class="vis-label">红色 = LoRA 注入目标 (共 7 个 module name)</div>
+</div>
+</div>
+
+<h3>freeze_patterns 过滤机制</h3>
+
+<div class="vis">
+<div class="vis-title">示例: freeze_patterns = ["vision_tower"]</div>
+<div class="vis-row">
+  <div class="vis-box frozen">vision_tower.encoder.layers.0.self_attn.q_proj<br><span class="vis-label">包含 "vision_tower" -> 跳过</span></div>
+  <div class="vis-arrow">&#10005;</div>
+  <div class="vis-box" style="background:#ffe0e0;font-size:6.5pt">被过滤</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box result">language_model.model.layers.0.self_attn.q_proj<br><span class="vis-label">不包含 "vision_tower" -> 保留</span></div>
+  <div class="vis-arrow">&#10003;</div>
+  <div class="vis-box param" style="font-size:6.5pt">加入 targets</div>
+</div>
+</div>
+
+<div class="note"><b>为什么自动检测?</b> 不同模型的 module 名称不同 (LLaMA 用 q_proj, GPT 可能用 c_attn). 自动检测让代码兼容多种架构, 用户不需要手动指定. 如果找不到匹配项, 回退到 ["q_proj", "v_proj"] 这个最安全的默认值.</div>
+
+<!-- ============================================================ -->
+<h2>Block 2: LoRA 数学原理 — W' = W + (alpha/r) * B @ A</h2>
+
+<h3>核心公式</h3>
+<p>LoRA 不修改原始权重 W, 而是添加一个低秩增量: <b>h = Wx + (alpha/r) * BAx</b></p>
+
+<div class="vis">
+<div class="vis-title">LoRA 矩阵分解 (以 q_proj 为例, r=8)</div>
+<div class="vis-row">
+  <div class="vis-box frozen" style="min-width:90px;min-height:80px">W<br>(4096 x 4096)<br>16.7M params<br><span class="vis-label">冻结 (不训练)</span></div>
+  <div class="vis-eq">+</div>
+  <div class="vis-box" style="background:#fff;font-size:8pt;font-weight:700">(alpha/r)</div>
+  <div class="vis-eq">*</div>
+  <div class="vis-box param" style="min-width:35px;min-height:80px">B<br>(4096 x 8)<br>32,768<br><span class="vis-label">零初始化</span></div>
+  <div class="vis-eq">@</div>
+  <div class="vis-box param" style="min-width:80px;min-height:35px">A<br>(8 x 4096)<br>32,768<br><span class="vis-label">随机初始化</span></div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box result" style="min-width:90px;min-height:80px">W'<br>(4096 x 4096)<br><span class="vis-label">有效权重</span></div>
+</div>
+</div>
+
+<h3>矩阵乘法过程可视化</h3>
+
+<div class="vis">
+<div class="vis-title">前向传播: x -> h</div>
+<div class="vis-row">
+  <div class="vis-box input">x<br>(batch, seq, 4096)</div>
+  <div class="vis-arrow">&#8594;</div>
+  <div class="vis-box frozen">W @ x<br>(batch, seq, 4096)<br><span class="vis-label">原始路径 (冻结)</span></div>
+</div>
+<div class="vis-row">
+  <div class="vis-box input">x<br>(batch, seq, 4096)</div>
+  <div class="vis-arrow">&#8594;</div>
+  <div class="vis-box param">A @ x<br>(batch, seq, 8)<br><span class="vis-label">降维</span></div>
+  <div class="vis-arrow">&#8594;</div>
+  <div class="vis-box param">B @ (Ax)<br>(batch, seq, 4096)<br><span class="vis-label">升维</span></div>
+  <div class="vis-arrow">&#8594;</div>
+  <div class="vis-box" style="background:#fff;font-weight:700">* (16/8)</div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box result">&#916;h<br><span class="vis-label">LoRA 增量</span></div>
+</div>
+<div class="vis-row" style="margin-top:4px">
+  <div class="vis-box result" style="min-width:200px">h = W @ x + &#916;h<br><span class="vis-label">最终输出 = 原始 + LoRA 增量</span></div>
+</div>
+</div>
+
+<h3>参数量计算 (LLaVA-1.5-7B, r=8)</h3>
+
+<div class="vis">
+<div class="vis-title">可训练参数统计</div>
+<table>
+<tr><th>模块类型</th><th>每层数量</th><th>权重维度</th><th>LoRA 参数 (A+B)</th><th>每层小计</th></tr>
+<tr><td>q/k/v/o_proj</td><td>4</td><td>(4096, 4096)</td><td>2 * 8 * 4096 = 65,536</td><td>4 * 65,536 = 262,144</td></tr>
+<tr><td>gate/up_proj</td><td>2</td><td>(4096, 11008)</td><td>8*4096 + 8*11008 = 120,832</td><td>2 * 120,832 = 241,664</td></tr>
+<tr><td>down_proj</td><td>1</td><td>(11008, 4096)</td><td>8*11008 + 8*4096 = 120,832</td><td>1 * 120,832 = 120,832</td></tr>
+<tr><td colspan="4" style="text-align:right;font-weight:700">每层合计</td><td style="font-weight:700">624,640</td></tr>
+<tr><td colspan="4" style="text-align:right;font-weight:700">32 层总计</td><td style="font-weight:700">~20.0M</td></tr>
+</table>
+<p style="font-size:7pt;color:#666;margin-top:2px">注: 如果只对 attention 的 4 个 proj 注入 (不含 MLP), 则每层 262,144, 32层 = ~8.4M. 简化计算: 7 targets * 32 layers * 2 * 8 * 4096 ≈ 14.7M (取平均维度). 实际值因维度不同而异.</p>
+</div>
+
+<div class="note"><b>alpha/r 缩放的意义:</b> alpha 是一个超参数, 控制 LoRA 增量的幅度. 当 alpha=16, r=8 时, 缩放因子 = 2.0. 这意味着你可以调整 r (改变表达能力) 而不需要重新调学习率 — alpha 起到了"归一化"的作用. 通常 alpha = 2r 是一个好的起始值.</div>
+
+<!-- ============================================================ -->
+<h2>Block 3: _prepare_model_impl — LoraConfig + get_peft_model (Line 78-108)</h2>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">_prepare_model_impl</span>(self, model, processor, config):
+    <span class="kw">from</span> peft <span class="kw">import</span> LoraConfig, get_peft_model, TaskType
+
+    r = <span class="fn">int</span>(config.<span class="fn">get</span>(<span class="str">"lora_r"</span>, <span class="num">8</span>))
+    alpha = <span class="fn">int</span>(config.<span class="fn">get</span>(<span class="str">"lora_alpha"</span>, <span class="num">16</span>))
+    dropout = <span class="fn">float</span>(config.<span class="fn">get</span>(<span class="str">"lora_dropout"</span>, <span class="num">0.05</span>))
+    freeze_patterns = config.<span class="fn">get</span>(<span class="str">"freeze_patterns"</span>, [])
+
+    targets = config.<span class="fn">get</span>(<span class="str">"target_modules"</span>) <span class="kw">or</span> <span class="fn">_auto_detect_targets</span>(model, freeze_patterns)
+    modules_to_save = config.<span class="fn">get</span>(<span class="str">"modules_to_save"</span>) <span class="kw">or</span> <span class="cm">None</span>
+
+    lora_config = <span class="fn">LoraConfig</span>(
+        r=r, lora_alpha=alpha, lora_dropout=dropout,
+        target_modules=targets,
+        modules_to_save=modules_to_save,
+        task_type=TaskType.CAUSAL_LM,
+        **self.<span class="fn">_lora_kwargs</span>(),       <span class="cm"># DoRA 在此注入 use_dora=True</span>
+    )
+    peft_model = <span class="fn">get_peft_model</span>(model, lora_config)  <span class="cm"># 注入 LoRA 层</span>
+    <span class="cm"># ... 打印训练参数统计 ...</span>
+    <span class="kw">return</span> peft_model, info</pre>
+
+<div class="vis">
+<div class="vis-title">LoraConfig 参数含义</div>
+<table>
+<tr><th>参数</th><th>默认值</th><th>含义</th></tr>
+<tr><td>r</td><td>8</td><td>低秩分解的秩, 越大表达能力越强, 参数也越多</td></tr>
+<tr><td>lora_alpha</td><td>16</td><td>缩放系数, 实际缩放 = alpha/r. 控制 LoRA 增量的幅度</td></tr>
+<tr><td>lora_dropout</td><td>0.05</td><td>LoRA 层的 dropout, 防止过拟合</td></tr>
+<tr><td>target_modules</td><td>auto</td><td>要注入 LoRA 的模块名称列表</td></tr>
+<tr><td>modules_to_save</td><td>None</td><td>需要完整训练 (非 LoRA) 的模块, 如分类头</td></tr>
+<tr><td>task_type</td><td>CAUSAL_LM</td><td>任务类型, 决定输出层处理方式</td></tr>
+</table>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">peft.get_peft_model(model, config)</div>
+<p><b>作用:</b> 遍历模型所有 nn.Linear, 将匹配 target_modules 的层替换为 LoraLinear 层. LoraLinear 内部包含原始冻结权重 W + 可训练的 A, B 矩阵.</p>
+<p><b>返回:</b> PeftModel 对象, 封装了原始模型 + LoRA 适配器.</p>
+</div>
+
+<div class="vis">
+<div class="vis-title">get_peft_model 注入过程</div>
+<div class="vis-row">
+  <div class="vis-box frozen">nn.Linear(4096, 4096)<br><span class="vis-label">原始 q_proj</span></div>
+  <div class="vis-arrow">&#8594;</div>
+  <div class="vis-box" style="background:#fff;border:2px solid #a00000;min-width:180px;padding:6px">
+    <div style="font-weight:700;color:#a00000;font-size:7.5pt">LoraLinear</div>
+    <div class="vis-row" style="justify-content:center;margin:3px 0">
+      <div class="vis-box frozen" style="min-width:60px">W<br><span class="vis-label">冻结</span></div>
+      <div class="vis-box param" style="min-width:30px">A</div>
+      <div class="vis-box param" style="min-width:30px">B</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="note"><b>_lora_kwargs() 是扩展点:</b> LoRAMethod 返回空字典 {}. DoRAMethod 覆盖此方法返回 {"use_dora": True}. QLoRAMethod 不需要覆盖 (量化在模型加载时处理, 不在 LoraConfig 中). 这种设计让三个方法共享 95% 的代码.</div>
+
+<!-- ============================================================ -->
+<h2>Block 4: DoRA 扩展 — 权重分解低秩适配 (dora.py)</h2>
+
+<pre class="code"><span class="cm"># dora.py — 仅 23 行!</span>
+<span class="kw">class</span> <span class="fn">DoRAMethod</span>(LoRAMethod):
+    name = <span class="str">"dora"</span>
+    display_name = <span class="str">"DoRA"</span>
+    paper_ref = <span class="str">"Liu et al., ICML 2024"</span>
+
+    <span class="kw">def</span> <span class="fn">_lora_kwargs</span>(self):
+        <span class="kw">return</span> {<span class="str">"use_dora"</span>: <span class="num">True</span>}    <span class="cm"># 唯一的区别!</span></pre>
+
+<h3>DoRA 的数学原理</h3>
+<p>DoRA 将预训练权重 W 分解为 <b>幅度 (magnitude)</b> 和 <b>方向 (direction)</b> 两个部分:</p>
+
+<div class="vis">
+<div class="vis-title">权重分解: W = m * (V / ||V||)</div>
+<div class="vis-row">
+  <div class="vis-box frozen" style="min-width:90px;min-height:70px">W<br>(4096 x 4096)<br><span class="vis-label">预训练权重</span></div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box param" style="min-width:60px;min-height:70px;background:#ffe0e0">m<br>(4096,)<br><span class="vis-label">幅度向量<br>可训练</span></div>
+  <div class="vis-eq">*</div>
+  <div class="vis-box result" style="min-width:90px;min-height:70px">V / ||V||<sub>c</sub><br>(4096 x 4096)<br><span class="vis-label">归一化方向矩阵</span></div>
+</div>
+<div class="vis-row" style="margin-top:6px">
+  <div class="vis-label">其中 V = W + &#916;V, &nbsp; &#916;V = (alpha/r) * B @ A &nbsp; (这就是 LoRA 增量!)</div>
+</div>
+</div>
+
+<div class="vis">
+<div class="vis-title">DoRA vs LoRA 对比</div>
+<div class="vis-row">
+  <div class="vis-box" style="background:#e8f0ff;min-width:200px;border-color:#0040a0">
+    <div style="font-weight:700;font-size:8pt">LoRA</div>
+    <div style="font-size:7pt;margin-top:2px">W' = W + (alpha/r) * B @ A</div>
+    <div style="font-size:6.5pt;color:#666">幅度和方向同时改变</div>
+  </div>
+  <div class="vis-arrow">vs</div>
+  <div class="vis-box" style="background:#fff0f0;min-width:200px;border-color:#a00000">
+    <div style="font-weight:700;font-size:8pt">DoRA</div>
+    <div style="font-size:7pt;margin-top:2px">W' = m * (W + BA) / ||W + BA||</div>
+    <div style="font-size:6.5pt;color:#666">LoRA 只改方向, m 单独学幅度</div>
+  </div>
+</div>
+</div>
+
+<div class="note"><b>DoRA 的优势:</b> 研究表明, 全量微调时权重变化主要体现在方向上. DoRA 通过解耦幅度和方向, 让 LoRA 更接近全量微调的效果. 论文报告在多个任务上 DoRA 比 LoRA 高 0.5-1.5%. 代码上只需要 <code>use_dora=True</code> 即可启用.</div>
+
+<!-- ============================================================ -->
+<h2>Block 5: QLoRA 扩展 — 4-bit 量化训练</h2>
+
+<pre class="code"><span class="kw">class</span> <span class="fn">QLoRAMethod</span>(LoRAMethod):
+    name = <span class="str">"qlora"</span>
+    display_name = <span class="str">"QLoRA"</span>
+    paper_ref = <span class="str">"Dettmers et al., NeurIPS 2023"</span>
+
+    <span class="kw">def</span> <span class="fn">requires_quantization</span>(self):
+        <span class="kw">return</span> <span class="num">True</span>    <span class="cm"># 告诉框架: 加载模型时使用 4-bit 量化</span></pre>
+
+<h3>NF4 量化原理</h3>
+<p>QLoRA 使用 NF4 (NormalFloat 4-bit) 数据类型, 针对正态分布权重优化的 4-bit 量化格式.</p>
+
+<div class="vis">
+<div class="vis-title">显存对比: 7B 参数模型</div>
+<div class="vis-row">
+  <div class="vis-box" style="background:#ffe0e0;min-width:160px;min-height:50px;border-color:#a00000">
+    <div style="font-weight:700;font-size:8pt">FP16 (全精度)</div>
+    <div style="font-size:9pt;font-weight:700">~14 GB</div>
+    <div style="font-size:6.5pt">7B * 2 bytes</div>
+  </div>
+  <div class="vis-arrow">&#8594;</div>
+  <div class="vis-box" style="background:#e0ffe0;min-width:160px;min-height:50px;border-color:#006400">
+    <div style="font-weight:700;font-size:8pt">NF4 (QLoRA)</div>
+    <div style="font-size:9pt;font-weight:700">~3.5 GB</div>
+    <div style="font-size:6.5pt">7B * 0.5 bytes</div>
+  </div>
+  <div class="vis-box result" style="min-width:100px;font-weight:700">节省 ~75%<br>显存</div>
+</div>
+</div>
+
+<div class="vis">
+<div class="vis-title">QLoRA 量化配置 (load_for_inference 中使用)</div>
+<table>
+<tr><th>参数</th><th>值</th><th>含义</th></tr>
+<tr><td>load_in_4bit</td><td>True</td><td>启用 4-bit 量化加载</td></tr>
+<tr><td>bnb_4bit_compute_dtype</td><td>float16</td><td>计算时反量化为 fp16 (精度/速度平衡)</td></tr>
+<tr><td>bnb_4bit_quant_type</td><td>"nf4"</td><td>使用 NormalFloat 4-bit (优于均匀量化)</td></tr>
+<tr><td>bnb_4bit_use_double_quant</td><td>True</td><td>对量化常数也进行量化, 再省 ~0.4 GB</td></tr>
+</table>
+</div>
+
+<div class="note"><b>QLoRA 的关键洞察:</b> 模型权重用 4-bit 存储 (节省显存), 但计算时临时反量化为 fp16 (保证精度). 梯度只经过 LoRA 的 A/B 矩阵 (fp16), 不需要更新 4-bit 权重. 这使得在单张 24GB GPU 上微调 7B 模型成为可能.</div>
+
+<!-- ============================================================ -->
+<h2>Block 6: save_checkpoint + load_for_inference (Line 117-167)</h2>
+
+<h3>保存: 只存 LoRA 适配器权重</h3>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">save_checkpoint</span>(self, model, processor, path, metadata):
+    os.<span class="fn">makedirs</span>(path, exist_ok=<span class="num">True</span>)
+    model.<span class="fn">save_pretrained</span>(path)         <span class="cm"># PEFT: 只保存 adapter 权重!</span>
+    processor.<span class="fn">save_pretrained</span>(path)
+    metadata[<span class="str">"ft_method"</span>] = self.name
+    <span class="kw">with</span> <span class="fn">open</span>(os.path.<span class="fn">join</span>(path, <span class="str">"mmit_meta.json"</span>), <span class="str">"w"</span>) <span class="kw">as</span> f:
+        json.<span class="fn">dump</span>(metadata, f, indent=<span class="num">2</span>)</pre>
+
+<div class="vis">
+<div class="vis-title">保存的文件大小对比</div>
+<div class="vis-row">
+  <div class="vis-box" style="background:#ffe0e0;min-width:160px;border-color:#a00000">
+    <div style="font-weight:700;font-size:8pt">全量微调保存</div>
+    <div style="font-size:9pt;font-weight:700">~14 GB</div>
+    <div style="font-size:6.5pt">所有参数</div>
+  </div>
+  <div class="vis-arrow">vs</div>
+  <div class="vis-box" style="background:#e0ffe0;min-width:160px;border-color:#006400">
+    <div style="font-weight:700;font-size:8pt">LoRA adapter 保存</div>
+    <div style="font-size:9pt;font-weight:700">~8-40 MB</div>
+    <div style="font-size:6.5pt">仅 A, B 矩阵 + config</div>
+  </div>
+</div>
+</div>
+
+<h3>推理加载流程</h3>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">load_for_inference</span>(self, path, base_model_id, **kwargs):
+    <span class="cm"># 1. 加载基座模型 (4-bit 量化)</span>
+    model = AutoVLM.<span class="fn">from_pretrained</span>(base_model_id, quantization_config=bnb_config, ...)
+    <span class="cm"># 2. 加载 LoRA 适配器</span>
+    model = PeftModel.<span class="fn">from_pretrained</span>(model, path)
+    model.<span class="fn">eval</span>()
+    <span class="cm"># 3. 合并权重 (可选, 提升推理速度)</span>
+    model = model.<span class="fn">merge_and_unload</span>()  <span class="cm"># W' = W + (alpha/r) * B @ A</span></pre>
+
+<div class="vis">
+<div class="vis-title">推理加载 3 步流程</div>
+<div class="vis-row">
+  <div class="vis-box frozen" style="min-width:120px">&#9312; 基座模型<br>(4-bit, ~3.5GB)<br><span class="vis-label">from_pretrained</span></div>
+  <div class="vis-arrow">&#8594;</div>
+  <div class="vis-box" style="background:#fff;border:2px solid #a00000;min-width:120px">&#9313; + LoRA adapter<br>(~8MB)<br><span class="vis-label">PeftModel.from_pretrained</span></div>
+  <div class="vis-arrow">&#8594;</div>
+  <div class="vis-box result" style="min-width:120px">&#9314; 合并后模型<br>W' = W + BA<br><span class="vis-label">merge_and_unload</span></div>
+</div>
+</div>
+
+<div class="note"><b>merge_and_unload 的意义:</b> 推理时将 LoRA 增量直接加到原始权重上 (W' = W + scaling * BA), 然后删除 A/B 矩阵. 好处: 推理速度与原始模型完全相同, 没有额外计算开销. 如果合并失败 (try/except), 退回到未合并的模式 (稍慢但功能不变).</div>
+
+<div class="pytorch">
+<div class="pt-title">PEFT API 速查</div>
+<table>
+<tr><th>API</th><th>作用</th></tr>
+<tr><td><code>LoraConfig(r, lora_alpha, ...)</code></td><td>配置 LoRA 超参数和目标模块</td></tr>
+<tr><td><code>get_peft_model(model, config)</code></td><td>将 LoRA 层注入模型, 冻结原始权重</td></tr>
+<tr><td><code>model.save_pretrained(path)</code></td><td>保存 adapter 权重 (仅 A/B 矩阵)</td></tr>
+<tr><td><code>PeftModel.from_pretrained(model, path)</code></td><td>加载 adapter 到基座模型</td></tr>
+<tr><td><code>model.merge_and_unload()</code></td><td>将 LoRA 增量合并进原始权重, 删除 adapter</td></tr>
+<tr><td><code>model.print_trainable_parameters()</code></td><td>打印可训练参数统计</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2>总结: LoRA vs QLoRA vs DoRA 对比</h2>
+
+<table>
+<tr><th>特性</th><th>LoRA</th><th>QLoRA</th><th>DoRA</th></tr>
+<tr><td><b>论文</b></td><td>Hu et al., ICLR 2022</td><td>Dettmers et al., NeurIPS 2023</td><td>Liu et al., ICML 2024</td></tr>
+<tr><td><b>核心思想</b></td><td>低秩分解 W' = W + BA</td><td>4-bit 量化 + LoRA</td><td>权重分解为幅度+方向, LoRA 只改方向</td></tr>
+<tr><td><b>代码差异</b></td><td>基类 LoRAMethod</td><td>requires_quantization() = True</td><td>_lora_kwargs() = {use_dora: True}</td></tr>
+<tr><td><b>基座权重精度</b></td><td>FP16 / BF16</td><td>NF4 (4-bit)</td><td>FP16 / BF16</td></tr>
+<tr><td><b>显存 (7B)</b></td><td>~14 GB + LoRA</td><td>~3.5 GB + LoRA</td><td>~14 GB + LoRA + m</td></tr>
+<tr><td><b>可训练参数</b></td><td>A, B 矩阵</td><td>A, B 矩阵 (同 LoRA)</td><td>A, B 矩阵 + 幅度向量 m</td></tr>
+<tr><td><b>适配器文件大小</b></td><td>~8-40 MB</td><td>~8-40 MB</td><td>~8-40 MB + m</td></tr>
+<tr><td><b>推理速度</b></td><td>合并后 = 原始</td><td>合并后 = 原始</td><td>合并后 = 原始</td></tr>
+<tr><td><b>效果</b></td><td>基线</td><td>略低于 LoRA</td><td>略高于 LoRA (+0.5-1.5%)</td></tr>
+<tr><td><b>最适合场景</b></td><td>通用微调</td><td>显存受限 (消费级 GPU)</td><td>追求最佳效果</td></tr>
+</table>
+
+<div class="vis">
+<div class="vis-title">三种方法的代码继承关系</div>
+<div class="vis-row">
+  <div class="vis-box" style="background:#e0e0e0;min-width:120px;font-weight:700">TrainingMethod<br><span class="vis-label">抽象基类</span></div>
+  <div class="vis-arrow">&#8592;</div>
+  <div class="vis-box param" style="min-width:120px">LoRAMethod<br><span class="vis-label">lora.py (179行)<br>完整实现</span></div>
+  <div class="vis-arrow">&#8592;</div>
+  <div class="vis-box result" style="min-width:100px">QLoRAMethod<br><span class="vis-label">lora.py (5行)<br>requires_quantization</span></div>
+</div>
+<div class="vis-row">
+  <div class="vis-box" style="background:#e0e0e0;min-width:120px;opacity:0;border:none"></div>
+  <div style="min-width:20px"></div>
+  <div class="vis-box param" style="min-width:120px;opacity:0;border:none"></div>
+  <div class="vis-arrow">&#8598;</div>
+  <div class="vis-box" style="background:#fff0f0;min-width:100px;border-color:#a00000;font-weight:700">DoRAMethod<br><span class="vis-label">dora.py (23行)<br>use_dora=True</span></div>
+</div>
+</div>
+
+<div class="note"><b>设计哲学:</b> 三种方法共享一个基类, 总代码量 ~200 行. QLoRA 只覆盖了 1 个方法 (requires_quantization), DoRA 只覆盖了 1 个方法 (_lora_kwargs). 这是教科书级的面向对象设计 — 用最小的代码差异表达最大的功能差异.</div>
+</section>
+
+<section id="mole" class="method-section">
+<div class="section-divider"><h1 class="section-heading">MoLE (混合 LoRA 专家)</h1></div>
+<div class="print-hint"><b>📄</b> Cmd+P, A4 纵向, 最小边距, 勾选"背景图形"</div>
+
+<h1>mole.py 图解 — LLaVA-MoLE 混合 LoRA 专家 (390 行)</h1>
+<p class="subtitle">分块讲解 + 图表为主。基于 LLaVA-1.5-7B (hidden=4096, 32层, MLP: gate/up=11008, down=4096)。</p>
+
+<div class="filemap">
+<b>文件结构:</b><br>
+Line 37-50: &nbsp;&nbsp; <b>LoRAExpert</b> — 单个 LoRA 专家 (A+B 两个矩阵)<br>
+Line 53-122: &nbsp; <b>MoLELayer</b> — frozen Linear + 4 experts + router + dispatch<br>
+Line 125-162: <b>_inject_mole_layers()</b> — 把 MLP 层替换成 MoLELayer<br>
+Line 166-198: <b>_inject_attn_lora()</b> — 给 attention 加标准 LoRA<br>
+Line 201-277: <b>MoLEMethod._prepare_model_impl()</b> — 冻结 + 注入<br>
+Line 279-303: <b>_load_balance_loss()</b> — 均匀使用专家的约束<br>
+Line 305-315: <b>compute_loss()</b> — CE + balance loss<br>
+Line 321-389: <b>save/load</b> — 保存 experts + routers + attn LoRA
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 1: LoRAExpert — 一个专家长什么样 (Line 37-50)</h2>
+
+<pre class="code"><span class="kw">class</span> <span class="fn">LoRAExpert</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, in_features, out_features, rank, dropout=<span class="num">0.0</span>):
+        self.lora_A = nn.Linear(in_features, rank, bias=<span class="num">False</span>)    <span class="cm"># 降维: 4096 → 8</span>
+        self.lora_B = nn.Linear(rank, out_features, bias=<span class="num">False</span>)   <span class="cm"># 升维: 8 → 11008</span>
+        nn.init.kaiming_uniform_(self.lora_A.weight, a=<span class="num">5</span>**<span class="num">0.5</span>)
+        nn.init.zeros_(self.lora_B.weight)                          <span class="cm"># B=0 → 初始 delta=0</span>
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        <span class="kw">return</span> self.lora_B(self.lora_A(self.dropout(x)))             <span class="cm"># x→A→B = delta</span></pre>
+
+<div class="vis">
+<div class="vis-title">一个 Expert 的数据流 (以 gate_proj 为例)</div>
+<div class="vis-row">
+  <div class="vis-box input">x<br>(N, 4096)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box">dropout</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">lora_A<br>(N, 4096)→(N, 8)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">lora_B<br>(N, 8)→(N, 11008)</div>
+  <div class="vis-arrow">=</div>
+  <div class="vis-box param">delta<br>(N, 11008)</div>
+</div>
+<div class="vis-label">和标准 LoRA 完全一样: delta = B·A·x。区别是 MoLE 有 4 个这样的 expert, 每个 token 只用 1 个。</div>
+</div>
+
+<table>
+<tr><th>参数</th><th>shape</th><th>参数量</th><th>初始化</th></tr>
+<tr><td>lora_A.weight</td><td>(8, 4096)</td><td>32,768</td><td>Kaiming (让梯度稳定)</td></tr>
+<tr><td>lora_B.weight</td><td>(11008, 8)</td><td>88,064</td><td>全零 (初始 delta=0)</td></tr>
+<tr><td colspan="2"><b>每个 expert 合计</b></td><td><b>120,832</b></td><td></td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>Block 2: MoLELayer — Router + 多专家 dispatch (Line 53-122)</h2>
+
+<h3>2.1 __init__: 冻结原 Linear + 创建 4 expert + router</h3>
+
+<pre class="code"><span class="kw">class</span> <span class="fn">MoLELayer</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, base_linear, num_experts, rank, alpha, dropout):
+        self.base_linear = base_linear              <span class="cm"># 原始 nn.Linear, 冻结</span>
+        self.scaling = alpha / rank                  <span class="cm"># 16/8 = 2.0</span>
+        <span class="kw">for</span> p <span class="kw">in</span> base_linear.parameters():
+            p.requires_grad = <span class="num">False</span>                  <span class="cm"># 冻结原始权重</span>
+
+        self.experts = nn.ModuleList([
+            LoRAExpert(in_f, out_f, rank, dropout) <span class="kw">for</span> _ <span class="kw">in</span> range(num_experts)])  <span class="cm"># 4 个</span>
+        self.router = nn.Linear(in_f, num_experts, bias=<span class="num">False</span>)  <span class="cm"># (4096 → 4)</span></pre>
+
+<div class="vis">
+<div class="vis-title">MoLELayer 内部结构</div>
+<div class="vis-row">
+  <div class="vis-box frozen">base_linear<br>Linear(4096→11008)<br>FROZEN<br>~45M params</div>
+  <div class="vis-box param">Expert 0<br>A(4096→8)+B(8→11008)<br>120K params</div>
+  <div class="vis-box param">Expert 1<br>同上<br>120K</div>
+  <div class="vis-box param">Expert 2<br>同上<br>120K</div>
+  <div class="vis-box param">Expert 3<br>同上<br>120K</div>
+  <div class="vis-box param">Router<br>Linear(4096→4)<br>16K params</div>
+</div>
+<div class="vis-label">每个 MoLELayer: 1 frozen + 4 experts + 1 router = 4×120K + 16K = 499,712 可训练参数</div>
+</div>
+
+<h3>2.2 forward: router 选专家 + dispatch</h3>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">forward</span>(self, x):                         <span class="cm"># x: (batch, seq, 4096)</span>
+    base_out = self.base_linear(x)              <span class="cm"># frozen 输出: (B, seq, 11008)</span>
+
+    router_logits = self.router(x.detach())     <span class="cm"># (B, seq, 4) ← detach!</span>
+    routing_probs = F.softmax(router_logits, dim=-<span class="num">1</span>)  <span class="cm"># 归一化成概率</span>
+    expert_idx = routing_probs.argmax(dim=-<span class="num">1</span>)   <span class="cm"># (B, seq) top-1 选择</span>
+
+    <span class="cm"># dispatch: 每个 expert 处理分配给它的 token</span>
+    x_flat = x.reshape(-<span class="num">1</span>, x.shape[-<span class="num">1</span>])        <span class="cm"># (620, 4096)</span>
+    idx_flat = expert_idx.reshape(-<span class="num">1</span>)            <span class="cm"># (620,)</span>
+    delta = torch.zeros(...)                     <span class="cm"># (620, 11008)</span>
+
+    <span class="kw">for</span> i, expert <span class="kw">in</span> enumerate(self.experts):
+        mask = (idx_flat == i)                   <span class="cm"># 哪些 token 给 expert i</span>
+        <span class="kw">if</span> mask.any():
+            delta[mask] = expert(x_flat[mask])   <span class="cm"># 只跑选中的 token</span>
+
+    <span class="kw">return</span> base_out + delta.reshape(...) * self.scaling  <span class="cm"># frozen + expert delta × 2.0</span></pre>
+
+<div class="vis">
+<div class="vis-title">forward 数据流 (以公交车样本的 gate_proj 为例)</div>
+<div class="vis-row">
+  <div class="vis-box input">x (1, 620, 4096)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box frozen">base_linear(x)<br>→ base_out<br>(1, 620, 11008)</div>
+  <div class="vis-label">frozen 原始输出</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box input">x.detach()</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">router (4096→4)<br>→ softmax</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">probs (620, 4)<br>例: [0.12, 0.65, 0.15, 0.08]</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">argmax<br>→ expert_idx=1</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box param">Expert 0<br>~200 tokens</div>
+  <div class="vis-box param" style="border-width:2px">Expert 1 ★<br>~300 tokens<br>(公交车 visual)</div>
+  <div class="vis-box param">Expert 2<br>~100 tokens<br>(文本)</div>
+  <div class="vis-box param">Expert 3<br>~20 tokens</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box frozen">base_out<br>(1, 620, 11008)</div>
+  <div class="vis-eq">+</div>
+  <div class="vis-box param">delta × 2.0<br>(1, 620, 11008)</div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box result">output<br>(1, 620, 11008)</div>
+</div>
+</div>
+
+<table>
+<tr><th>API</th><th>做什么</th><th>为什么</th></tr>
+<tr><td><code>x.detach()</code></td><td>切断梯度</td><td>不让 loss 的梯度通过 router 回传到 x，稳定训练</td></tr>
+<tr><td><code>F.softmax(_, dim=-1)</code></td><td>概率归一化</td><td>[2.1, 0.5, -0.3, 0.8] → [0.55, 0.11, 0.05, 0.15, ...]</td></tr>
+<tr><td><code>.argmax(dim=-1)</code></td><td>选最大的索引</td><td>概率 [0.12, 0.65, 0.15, 0.08] → 选 expert 1</td></tr>
+<tr><td><code>F.one_hot(idx, N)</code></td><td>整数→one-hot</td><td>expert_idx=1 → [0,1,0,0]，用于 balance loss</td></tr>
+</table>
+
+<div class="note">
+<b>x.detach() 为什么重要：</b>如果不 detach, loss 的梯度会通过 router → x → 回传到整个模型, 让 frozen 参数也收到梯度（违反冻结设计）。detach 让 router 只根据 x 的"值"做决定, 但不把梯度传回 x。
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 3: _inject_mole_layers — 替换 MLP 的 Linear (Line 125-162)</h2>
+
+<pre class="code"><span class="cm"># 遍历模型所有 module, 找 gate_proj / up_proj / down_proj</span>
+mlp_targets = {<span class="str">"gate_proj"</span>, <span class="str">"up_proj"</span>, <span class="str">"down_proj"</span>}
+
+<span class="kw">for</span> name, module <span class="kw">in</span> model.named_modules():
+    <span class="kw">if</span> freeze_patterns <span class="kw">and</span> any(p <span class="kw">in</span> name <span class="kw">for</span> p <span class="kw">in</span> freeze_patterns):
+        <span class="kw">continue</span>                                <span class="cm"># 跳过 visual/vision</span>
+    short = name.split(<span class="str">"."</span>)[-<span class="num">1</span>]
+    <span class="kw">if</span> short <span class="kw">in</span> mlp_targets <span class="kw">and</span> isinstance(module, nn.Linear):
+        mole = MoLELayer(module, num_experts, rank, alpha, dropout)
+        setattr(parent, short, mole)            <span class="cm"># 替换: parent.gate_proj = mole</span></pre>
+
+<div class="vis">
+<div class="vis-title">替换前 vs 替换后 (一个 LlamaDecoderLayer 的 MLP 部分)</div>
+<div class="vis-row">
+  <div class="vis-box" style="min-width:200px"><b>替换前</b><br>gate_proj: Linear(4096→11008)<br>up_proj: Linear(4096→11008)<br>down_proj: Linear(11008→4096)<br><span style="color:#666">3 个普通 Linear</span></div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param" style="min-width:280px"><b>替换后</b><br>gate_proj: MoLELayer(frozen + 4 expert + router)<br>up_proj: MoLELayer(frozen + 4 expert + router)<br>down_proj: MoLELayer(frozen + 4 expert + router)<br><span style="color:#a00000">3 个 MoLELayer, 每个 ~500K 可训练参数</span></div>
+</div>
+<div class="vis-label">32 层 × 3 个 MoLELayer = 96 个 MoLELayer 被注入。注意: Attention 的 q/k/v/o 不用 MoLE, 用标准单 LoRA (下面 Block 4)。</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">setattr(parent, short, mole)</div>
+动态替换模块。等价于 <code>parent.gate_proj = mole</code>。<br>
+PyTorch 的 nn.Module 在 <code>__setattr__</code> 时自动注册子模块, 所以替换后新 MoLELayer 的参数自动被 <code>model.parameters()</code> 找到。
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 4: _inject_attn_lora — Attention 用标准 LoRA (Line 166-198)</h2>
+
+<pre class="code"><span class="cm"># 和 LoRAMethod 完全一样, 用 PEFT 库注入</span>
+lora_config = LoraConfig(
+    r=rank, lora_alpha=alpha, lora_dropout=dropout,
+    target_modules=[<span class="str">"q_proj"</span>, <span class="str">"v_proj"</span>, <span class="str">"k_proj"</span>, <span class="str">"o_proj"</span>],
+    task_type=TaskType.CAUSAL_LM)
+get_peft_model(model, lora_config)</pre>
+
+<div class="note">
+<b>为什么 MLP 用 MoE 而 Attention 不用？</b>论文的 insight: 数据冲突主要在 MLP 层（负责"记忆"知识），Attention 层主要做"关注"不太受数据类型影响。所以 MLP 用多专家分流, Attention 用单 LoRA 就够。
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 5: _prepare_model_impl — 完整注入流程 (Line 240-277)</h2>
+
+<pre class="code"><span class="cm"># Step 1: 冻结 7B 参数</span>
+<span class="kw">for</span> p <span class="kw">in</span> model.parameters():
+    p.requires_grad = <span class="num">False</span>
+
+<span class="cm"># Step 2: MLP 注入 MoLE (96 个 MoLELayer)</span>
+self._mole_layers, info = _inject_mole_layers(model, <span class="num">4</span>, <span class="num">8</span>, <span class="num">16</span>, <span class="num">0.05</span>, [<span class="str">"visual"</span>])
+
+<span class="cm"># Step 3: Attention 注入标准 LoRA (128 个 adapter)</span>
+attn_count = _inject_attn_lora(model, <span class="num">8</span>, <span class="num">16</span>, <span class="num">0.05</span>, [<span class="str">"visual"</span>])</pre>
+
+<div class="vis">
+<div class="vis-title">注入后的完整模型参数</div>
+<table>
+<tr><th>部分</th><th>组件</th><th>参数量</th><th>状态</th></tr>
+<tr><td rowspan="3">CLIP + projector</td><td>vision_tower</td><td>~300M</td><td>FROZEN</td></tr>
+<tr><td>projector</td><td>~25M</td><td>FROZEN</td></tr>
+<tr><td>embed_tokens + lm_head</td><td>~262M</td><td>FROZEN</td></tr>
+<tr><td rowspan="2">每层 Attention (×32)</td><td>原始 q/k/v/o proj</td><td>~67M/层</td><td>FROZEN</td></tr>
+<tr><td style="background:#fff0f0">LoRA adapters (r=8)</td><td style="background:#fff0f0">~262K/层</td><td style="background:#fff0f0"><b>TRAINABLE</b></td></tr>
+<tr><td rowspan="2">每层 MLP (×32)</td><td>原始 gate/up/down proj</td><td>~134M/层</td><td>FROZEN</td></tr>
+<tr><td style="background:#fff0f0">3 MoLELayer (4 expert + router 每个)</td><td style="background:#fff0f0">~1.5M/层</td><td style="background:#fff0f0"><b>TRAINABLE</b></td></tr>
+<tr style="font-weight:700"><td colspan="2">总可训练</td><td colspan="2">MoLE MLP: ~48M + Attn LoRA: ~8M = <b>~56M</b> (0.79%)</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 6: _load_balance_loss — 均匀使用专家 (Line 279-303)</h2>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">_load_balance_loss</span>(self):
+    <span class="kw">for</span> layer <span class="kw">in</span> self._mole_layers:              <span class="cm"># 96 个 MoLELayer</span>
+        probs = layer._routing_probs.reshape(-<span class="num">1</span>, <span class="num">4</span>)  <span class="cm"># (620, 4) softmax 概率</span>
+        mask = layer._expert_mask.reshape(-<span class="num">1</span>, <span class="num">4</span>)    <span class="cm"># (620, 4) one-hot 选择</span>
+        f = mask.mean(dim=<span class="num">0</span>)                       <span class="cm"># (4,) 每个 expert 分到的比例</span>
+        P = probs.mean(dim=<span class="num">0</span>)                      <span class="cm"># (4,) 每个 expert 的平均概率</span>
+        total_loss += (f * P).sum() * num_experts   <span class="cm"># N × Σ(fᵢ × Pᵢ)</span>
+    <span class="kw">return</span> total_loss / count</pre>
+
+<div class="vis">
+<div class="vis-title">数值例子: balance loss 怎么算</div>
+<table>
+<tr><th></th><th>Expert 0</th><th>Expert 1</th><th>Expert 2</th><th>Expert 3</th></tr>
+<tr><td><b>f (分到的比例)</b></td><td>0.32</td><td>0.48</td><td>0.16</td><td>0.04</td></tr>
+<tr><td><b>P (平均概率)</b></td><td>0.30</td><td>0.45</td><td>0.15</td><td>0.10</td></tr>
+<tr><td><b>f × P</b></td><td>0.096</td><td>0.216</td><td>0.024</td><td>0.004</td></tr>
+</table>
+<p style="font-size:7.5pt">
+L_balance = 4 × (0.096 + 0.216 + 0.024 + 0.004) = 4 × 0.34 = <b>1.36</b><br>
+完美均匀时 (f=P=[0.25,0.25,0.25,0.25]): L = 4 × (0.0625×4) = <b>1.0</b> ← 最小值<br>
+不均匀 → L > 1 → 惩罚 → 迫使 router 均匀分流
+</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 7: compute_loss — CE + balance (Line 305-315)</h2>
+
+<pre class="code">text_loss, metrics = _ce_loss.compute(model, batch, outputs)
+balance_loss = self._load_balance_loss()
+total_loss = text_loss + <span class="num">0.01</span> * balance_loss</pre>
+
+<div class="vis">
+<div class="vis-title">Loss 组成</div>
+<div class="vis-row">
+  <div class="vis-box result">CE loss<br>~2.34</div>
+  <div class="vis-eq">+</div>
+  <div class="vis-box">0.01</div>
+  <div class="vis-eq">×</div>
+  <div class="vis-box result">balance loss<br>~1.36</div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box param">total<br>~2.354</div>
+</div>
+<div class="vis-label">balance loss 远小于 CE, 只是温和地推 router 均匀分流。</div>
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 8: save / load (Line 321-389)</h2>
+
+<pre class="code"><span class="cm"># save: 两部分分别保存</span>
+torch.save(mole_state, <span class="str">"mole_experts.pt"</span>)   <span class="cm"># 96 个 MoLELayer 的 experts + routers</span>
+model.save_pretrained(path)                  <span class="cm"># Attention LoRA (PEFT 格式)</span>
+
+<span class="cm"># load: 重建结构 + 填入权重</span>
+self.prepare_model(model, processor, config) <span class="cm"># 重新注入 MoLE + LoRA</span>
+mole_state = torch.load(<span class="str">"mole_experts.pt"</span>)  <span class="cm"># 加载 expert 权重</span>
+<span class="kw">for</span> i, layer <span class="kw">in</span> enumerate(self._mole_layers):
+    layer.experts.load_state_dict(mole_state[f<span class="str">"mole_layer_{i}"</span>][<span class="str">"experts"</span>])
+    layer.router.load_state_dict(mole_state[f<span class="str">"mole_layer_{i}"</span>][<span class="str">"router"</span>])
+model = PeftModel.from_pretrained(model, path)  <span class="cm"># 加载 attn LoRA</span>
+model = model.merge_and_unload()                 <span class="cm"># merge → 零额外开销</span></pre>
+
+<div class="vis">
+<div class="vis-title">checkpoint 结构</div>
+<div class="vis-row" style="flex-direction:column;align-items:flex-start;gap:2px;font-family:var(--mono);font-size:7.5pt">
+<div>output/final/</div>
+<div>&nbsp;&nbsp;├── <b>mole_experts.pt</b> &nbsp;&nbsp;&nbsp;&nbsp; ← 96 个 MoLELayer 的 experts + routers (~190MB)</div>
+<div>&nbsp;&nbsp;├── adapter_model.bin &nbsp;&nbsp; ← Attention LoRA 权重 (PEFT 格式, ~32MB)</div>
+<div>&nbsp;&nbsp;├── adapter_config.json</div>
+<div>&nbsp;&nbsp;├── tokenizer_config.json</div>
+<div>&nbsp;&nbsp;└── mmit_meta.json</div>
+</div>
+<div class="vis-label">MoLE 的 checkpoint ~220MB (vs LoRA ~8MB, vs MoReS ~32KB)。因为有 4×96=384 个 expert。</div>
+</div>
+
+<!-- ============================================================ -->
+<h2>总结: mole.py vs mores.py</h2>
+
+<table>
+<tr><th></th><th>MoLE (mole.py)</th><th>MoReS (mores.py)</th></tr>
+<tr><td><b>改什么</b></td><td>MLP 层的 weight (通过 expert delta)</td><td>hidden state (通过 hook)</td></tr>
+<tr><td><b>怎么改</b></td><td>替换 Linear 为 MoLELayer<br>setattr(parent, name, mole)</td><td>register_forward_hook<br>在 layer 输出后拦截</td></tr>
+<tr><td><b>选择机制</b></td><td>Router (Linear→softmax→argmax)<br>每 token 选 1 个 expert</td><td>norm.topk(6)<br>选 6 个最重要的 token</td></tr>
+<tr><td><b>参数量</b></td><td>~56M (4 expert × 3 proj × 32 层)</td><td>~8K (1 个共享 intervention)</td></tr>
+<tr><td><b>辅助 loss</b></td><td>balance loss (均匀分流)</td><td>ortho loss (保持正交)</td></tr>
+<tr><td><b>checkpoint</b></td><td>~220MB</td><td>~32KB</td></tr>
+<tr><td><b>适合场景</b></td><td>多数据集混合 (VQA+OCR+Science)</td><td>极致参数效率</td></tr>
+</table>
+</section>
+
+<section id="mores" class="method-section">
+<div class="section-divider"><h1 class="section-heading">MoReS (正交表示干预)</h1></div>
+<div class="print-hint"><b>📄</b> Cmd+P, A4 纵向, 最小边距, 勾选"背景图形"</div>
+
+<h1>mores.py 图解 — Part 1: OrthogonalIntervention (Line 43-135)</h1>
+<p class="subtitle">90 行代码分成 4 个块讲解。图表为主，代码为辅。基于 LLaVA-1.5-7B (hidden_dim=4096, rank=1)。</p>
+
+<!-- ============================================================ -->
+<h2>Block 1: __init__ — 创建 8,193 个参数 (Line 52-70)</h2>
+
+<pre class="code"><span class="cm"># 创建两个可训练参数: R (正交投影方向) 和 W (学习的引导)</span>
+self.R = nn.Parameter(torch.empty(rank, hidden_dim))   <span class="cm"># (1, 4096)</span>
+nn.init.orthogonal_(self.R)                             <span class="cm"># 变成单位向量</span>
+
+self.W = nn.Linear(hidden_dim, rank, bias=True)         <span class="cm"># Linear(4096 → 1)</span>
+nn.init.zeros_(self.W.weight)                           <span class="cm"># 全零 → 初始干预=0</span>
+nn.init.zeros_(self.W.bias)
+
+self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()</pre>
+
+<div class="vis">
+<div class="vis-title">创建后的参数状态</div>
+<div class="vis-row">
+  <div class="vis-box param">R<br>nn.Parameter (1, 4096)<br>4,096 params<br>正交初始化: ||R|| = 1</div>
+  <div class="vis-box param">W.weight<br>nn.Linear 内部 (1, 4096)<br>4,096 params<br>全零: 初始干预 = 0</div>
+  <div class="vis-box param">W.bias<br>(1,)<br>1 param<br>全零</div>
+  <div style="font-size:14pt;font-weight:700">→ 8,193 total</div>
+</div>
+</div>
+
+<h3>这里用到的 PyTorch API</h3>
+<table>
+<tr><th>API</th><th>做什么</th><th>为什么用它</th></tr>
+<tr><td><code>nn.Parameter(tensor)</code></td><td>把 tensor 注册为可训练参数</td><td>这样 optimizer 能找到它并更新它。普通 tensor 不会被训练</td></tr>
+<tr><td><code>torch.empty(1, 4096)</code></td><td>创建未初始化的 tensor</td><td>下一行会用正交初始化覆盖，所以初始值无所谓</td></tr>
+<tr><td><code>nn.init.orthogonal_(R)</code></td><td>用正交矩阵填充 R</td><td>rank=1 时 R 变成单位向量。正交保证"投影→投回"不丢信息</td></tr>
+<tr><td><code>nn.Linear(4096, 1)</code></td><td>全连接层: y = Wx + b</td><td>自动创建 weight (1,4096) 和 bias (1,) 两个 Parameter</td></tr>
+<tr><td><code>nn.init.zeros_(tensor)</code></td><td>全部填 0</td><td>W=0 → 训练初期干预效果=0，模型行为不变，慢慢学</td></tr>
+<tr><td><code>nn.Dropout(0.05)</code></td><td>训练时随机 5% 值变 0</td><td>防过拟合。推理时自动关闭</td></tr>
+<tr><td><code>nn.Identity()</code></td><td>什么都不做 (y = x)</td><td>dropout=0 时的占位符，避免 if/else</td></tr>
+</table>
+
+<div class="note">
+<b>关键设计：</b>W 初始化为零 → 训练第一步时 <code>Wh = 0</code>，干预 delta ≈ 0，模型输出和原模型一样。然后 W 逐步学出非零值，模型被慢慢引导。这比一开始就大幅修改更安全。
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 2: orthogonal_penalty — 正交约束 (Line 72-76)</h2>
+
+<pre class="code">RRt = self.R @ self.R.t()                             <span class="cm"># (1,4096) × (4096,1) → (1,1)</span>
+I = torch.eye(self.rank, device=self.R.device, ...)    <span class="cm"># [[1.0]]</span>
+return (RRt - I).pow(2).sum()                          <span class="cm"># ||R·R^T - I||²</span></pre>
+
+<div class="vis">
+<div class="vis-title">正交约束怎么工作</div>
+<div class="vis-row">
+  <div class="vis-box param">R<br>(1, 4096)</div>
+  <div class="vis-arrow">×</div>
+  <div class="vis-box param">R^T<br>(4096, 1)</div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box result">RR^T<br>(1, 1)<br>= [[s]]</div>
+  <div class="vis-eq">−</div>
+  <div class="vis-box">I<br>[[1.0]]</div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box result">[[s−1]]</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">(s−1)²</div>
+</div>
+<div class="vis-label">如果 R 是单位向量 (||R||=1) → s=1.0 → penalty=0。训练时 R 偏离 → s≠1 → penalty>0 → loss 把它拉回来。</div>
+</div>
+
+<table>
+<tr><th>API</th><th>做什么</th></tr>
+<tr><td><code>A @ B</code></td><td>矩阵乘法 (等于 torch.matmul)</td></tr>
+<tr><td><code>.t()</code></td><td>2D tensor 转置: (m,n) → (n,m)</td></tr>
+<tr><td><code>torch.eye(n, device, dtype)</code></td><td>n×n 单位矩阵。device/dtype 必须和 R 一致</td></tr>
+<tr><td><code>.pow(2).sum()</code></td><td>每元素平方 → 全部求和 = Frobenius 范数²</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 style="page-break-before:always">Block 3: forward 路径 A — steer 所有 token (Line 99-105)</h2>
+
+<p>当 <code>vis_mask=None</code> 且 <code>steer_ratio≥1.0</code> 时走这条路。一次矩阵运算搞定全部 620 个位置。</p>
+
+<pre class="code">Rh = F.linear(h, R)               <span class="cm"># 投影到 1 维</span>
+Wh = self.W(h)                     <span class="cm"># Linear 算"该修正多少"</span>
+delta_low = self.dropout(Wh - Rh)  <span class="cm"># 差值 (在 1 维子空间)</span>
+delta = F.linear(delta_low, R.t()) <span class="cm"># 投回 4096 维</span>
+return h + delta                   <span class="cm"># 加到原 h 上</span></pre>
+
+<div class="vis">
+<div class="vis-title">5 步数据流 + shape</div>
+
+<div class="vis-row">
+  <div class="vis-box input">h<br>(1, 620, <b>4096</b>)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">F.linear(h, R)<br>= h @ R^T</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">Rh<br>(1, 620, <b>1</b>)</div>
+  <div class="vis-label">4096 维 → 1 个标量<br>每个 token 和 R 的点积</div>
+</div>
+
+<div class="vis-row">
+  <div class="vis-box input">h<br>(1, 620, <b>4096</b>)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">self.W(h)<br>= h @ W^T + b</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">Wh<br>(1, 620, <b>1</b>)</div>
+  <div class="vis-label">学到的"应该修正到什么"<br>训练初期 W=0 → Wh=0</div>
+</div>
+
+<div class="vis-row">
+  <div class="vis-box result">Wh<br>(1,620,1)</div>
+  <div class="vis-eq">−</div>
+  <div class="vis-box result">Rh<br>(1,620,1)</div>
+  <div class="vis-arrow">→ dropout →</div>
+  <div class="vis-box result">delta_low<br>(1,620,1)</div>
+  <div class="vis-label">"想要的 − 当前的"<br>= 在 1 维子空间里的修正量</div>
+</div>
+
+<div class="vis-row">
+  <div class="vis-box result">delta_low<br>(1,620,<b>1</b>)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">F.linear(_, R.t())<br>= delta_low @ R</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">delta<br>(1,620,<b>4096</b>)</div>
+  <div class="vis-label">1 维修正量 × R 方向<br>→ 4096 维修正向量</div>
+</div>
+
+<div class="vis-row">
+  <div class="vis-box input">h<br>(1,620,4096)</div>
+  <div class="vis-eq">+</div>
+  <div class="vis-box result">delta<br>(1,620,4096)</div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box param">h'<br>(1,620,4096)</div>
+  <div class="vis-label">沿 R 方向 nudge 了一点<br>其他 4095 个方向不动</div>
+</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">F.linear(input, weight) vs self.W(input)</div>
+两者都做矩阵乘法 <code>input @ weight.T</code>，区别是谁存 weight：<br>
+• <code>F.linear(h, R)</code>: R 是我们自己的 nn.Parameter，不在 nn.Linear 里<br>
+• <code>self.W(h)</code>: W 是 nn.Linear 模块，weight 和 bias 在它内部<br>
+结果一样，只是代码组织方式不同。
+</div>
+
+<div class="note">
+<b>直觉：</b>4096 维是一个巨大的空间。R 选了 1 个方向（比如"视觉语义"方向）。MoReS 只沿这个方向 nudge hidden state，不动其他 4095 个方向。这就是为什么 rank=1 就够——不需要修正所有方向，只修正最重要的那一个。
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 4: forward 路径 B — 选 top 1% by norm (Line 107-135)</h2>
+
+<p><b>LLaVA-1.5 实际走这条路</b>（因为 vis_mask=None 但 steer_ratio=0.01 &lt; 1.0）。从 620 个位置里选 norm 最大的 6 个，只修正它们。</p>
+
+<pre class="code"><span class="cm"># Step 1: 复制 h (不改原件)</span>
+h_out = h.clone()
+
+<span class="cm"># Step 2: 逐 batch 处理 (每个样本的选中位置可能不同)</span>
+for b in range(h.size(0)):
+    vis_idx = torch.arange(h.size(1), device=h.device)  <span class="cm"># [0,1,...,619] 全部候选</span>
+
+    <span class="cm"># Step 3: 算每个位置的 norm, 选最大的 6 个</span>
+    norms = h[b, vis_idx].norm(dim=-1)       <span class="cm"># (620,) 每个 token 的长度</span>
+    k = max(1, int(620 * 0.01))              <span class="cm"># k = 6</span>
+    _, topk_local = norms.topk(k)            <span class="cm"># 选 norm 最大的 6 个的位置</span>
+    vis_idx = vis_idx[topk_local]            <span class="cm"># 最终 6 个绝对位置</span>
+
+    <span class="cm"># Step 4: 对这 6 个位置做干预 (和路径 A 数学完全一样)</span>
+    h_sel = h[b, vis_idx]                    <span class="cm"># (6, 4096)</span>
+    Rh = F.linear(h_sel, R)                  <span class="cm"># (6, 1)</span>
+    Wh = self.W(h_sel)                       <span class="cm"># (6, 1)</span>
+    delta = F.linear(self.dropout(Wh - Rh), R.t())  <span class="cm"># (6, 4096)</span>
+    h_out[b, vis_idx] = h_sel + delta        <span class="cm"># 写回 6 个位置</span>
+
+return h_out  <span class="cm"># 614 个位置不变, 6 个被修正</span></pre>
+
+<div class="vis">
+<div class="vis-title">Step 3: 怎么选 6 个位置</div>
+<div class="vis-row">
+  <div class="vis-box input">h (1, 620, 4096)<br>620 个 4096 维向量</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">.norm(dim=-1)<br>每个向量算长度<br>→ (620,) 标量</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">.topk(6)<br>选最大的 6 个<br>→ 6 个位置索引</div>
+</div>
+<div class="vis-label">
+  例: norms = [3.5, 3.2, 3.8, ..., <b style="color:#a00000">9.1</b>, ..., <b style="color:#a00000">8.7</b>, ..., 3.4]
+  → topk 选出 norm≈8~9 的 6 个位置 (通常是 visual tokens，因为 CLIP 输出 norm 更大)
+</div>
+</div>
+
+<div class="vis">
+<div class="vis-title">Step 4: 只改 6 个，其余不动</div>
+<div class="vis-row">
+  <div class="vis-box frozen" style="min-width:80px">位置 0<br>不变</div>
+  <div class="vis-box frozen" style="min-width:40px">...</div>
+  <div class="vis-box param" style="min-width:80px">位置 89<br><b>+ delta</b></div>
+  <div class="vis-box frozen" style="min-width:40px">...</div>
+  <div class="vis-box param" style="min-width:80px">位置 234<br><b>+ delta</b></div>
+  <div class="vis-box frozen" style="min-width:40px">...</div>
+  <div class="vis-box param" style="min-width:80px">位置 510<br><b>+ delta</b></div>
+  <div class="vis-box frozen" style="min-width:40px">...</div>
+  <div class="vis-box frozen" style="min-width:80px">位置 619<br>不变</div>
+</div>
+<div class="vis-label">红框 = 被修正的 6 个位置 (h + delta)。虚线框 = 614 个不变的位置 (clone 时复制的原值)。</div>
+</div>
+
+<h3>这里用到的 PyTorch API</h3>
+<table>
+<tr><th>API</th><th>做什么</th><th>例子</th></tr>
+<tr><td><code>.clone()</code></td><td>深拷贝。修改副本不影响原件</td><td>h_out 和 h 是独立的两块内存</td></tr>
+<tr><td><code>.size(0)</code></td><td>第 0 维的大小</td><td>h.size(0) = batch_size = 1</td></tr>
+<tr><td><code>torch.arange(620)</code></td><td>[0, 1, 2, ..., 619]</td><td>vis_mask=None 时: 所有位置都是候选</td></tr>
+<tr><td><code>.norm(dim=-1)</code></td><td>每行的 L2 范数 (向量长度)</td><td>(620, 4096) → (620,) 标量</td></tr>
+<tr><td><code>.topk(6)</code></td><td>最大的 6 个值+索引</td><td>返回 (values, indices)，用 _ 忽略 values</td></tr>
+<tr><td><code>.numel()</code></td><td>元素总数</td><td>vis_idx.numel() = 620</td></tr>
+<tr><td><code>h[b, idx] = val</code></td><td>高级索引赋值</td><td>只修改 idx 指定的 6 个位置</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>总结：OrthogonalIntervention 的 4 个核心操作</h2>
+
+<div class="vis">
+<div class="vis-title">一张图看完整个模块</div>
+<table>
+<tr><th style="width:8%">步骤</th><th style="width:25%">操作</th><th style="width:35%">shape 变化</th><th style="width:32%">直觉</th></tr>
+<tr>
+  <td><b>①</b></td>
+  <td>选位置<br><code>norm → topk(6)</code></td>
+  <td>(620, 4096) → (620,) → 6 个索引</td>
+  <td>从 620 个 token 里挑最重要的 6 个</td>
+</tr>
+<tr>
+  <td><b>②</b></td>
+  <td>投影到 1 维<br><code>F.linear(h, R)</code></td>
+  <td>(6, <b>4096</b>) → (6, <b>1</b>)</td>
+  <td>看 R 方向上的分量多大</td>
+</tr>
+<tr>
+  <td><b>③</b></td>
+  <td>算修正量<br><code>W(h) − R·h</code></td>
+  <td>(6, 1) − (6, 1) → (6, 1)</td>
+  <td>"应该的" 减 "现在的"</td>
+</tr>
+<tr>
+  <td><b>④</b></td>
+  <td>投回 + 加到 h<br><code>h + R^T · delta</code></td>
+  <td>(6, <b>1</b>) → (6, <b>4096</b>) → 加到 h</td>
+  <td>沿 R 方向 nudge 一小步</td>
+</tr>
+</table>
+</div>
+
+<div class="note">
+<b>Part 1 完成。</b>以上 90 行是 MoReS 的全部"算法"。下面 Part 2-4 是工程代码：找层、注册 hook、保存加载。
+</div>
+
+<!-- ============================================================ -->
+<!--  PART 2: Helper Functions (Line 138-222)                      -->
+<!-- ============================================================ -->
+<h2>Part 2: 辅助函数 (Line 138-222) — 找模型结构</h2>
+
+<h3>Block 5: _parse_positions — 解析 "f4+l5" (Line 138-162)</h3>
+
+<pre class="code"><span class="cm"># 输入: "f4+l5", num_layers=32</span>
+<span class="cm"># 输出: [0, 1, 2, 3, 27, 28, 29, 30, 31]</span>
+
+<span class="kw">def</span> <span class="fn">_parse_positions</span>(position_str, num_layers):
+    <span class="kw">if</span> position_str == <span class="str">"all"</span>: <span class="kw">return</span> list(range(num_layers))  <span class="cm"># [0,1,...,31]</span>
+
+    <span class="kw">for</span> part <span class="kw">in</span> position_str.split(<span class="str">"+"</span>):   <span class="cm"># "f4+l5" → ["f4", "l5"]</span>
+        match = re.match(r<span class="str">"^([fl])(\d+)$"</span>, part)
+        <span class="kw">if</span> prefix == <span class="str">"f"</span>:
+            layers.update(range(count))              <span class="cm"># f4 → [0,1,2,3]</span>
+        <span class="kw">else</span>:
+            layers.update(range(num_layers - count, num_layers))  <span class="cm"># l5 → [27,28,29,30,31]</span>
+    <span class="kw">return</span> sorted(layers)</pre>
+
+<div class="vis">
+<div class="vis-title">输入输出示例</div>
+<table>
+<tr><th>输入</th><th>num_layers=32 时的输出</th></tr>
+<tr><td><code>"f4+l5"</code></td><td>[0, 1, 2, 3, 27, 28, 29, 30, 31] — 前4+后5=9层</td></tr>
+<tr><td><code>"f4"</code></td><td>[0, 1, 2, 3] — 只前4层</td></tr>
+<tr><td><code>"l5"</code></td><td>[27, 28, 29, 30, 31] — 只后5层</td></tr>
+<tr><td><code>"all"</code></td><td>[0, 1, 2, ..., 31] — 全部32层</td></tr>
+<tr><td><code>"f8+l8"</code></td><td>[0,1,...,7, 24,25,...,31] — 前8+后8=16层</td></tr>
+</table>
+</div>
+
+<h3>Block 6: _find_llm_layers — 在 VLM 里找 decoder 层 (Line 165-198)</h3>
+
+<pre class="code"><span class="cm"># 按顺序尝试这些路径, 找到第一个 nn.ModuleList 就返回</span>
+search_paths = [
+    <span class="str">"language_model.model.layers"</span>,   <span class="cm"># LLaVA ✓</span>
+    <span class="str">"model.model.layers"</span>,            <span class="cm"># Qwen2.5-VL</span>
+    <span class="str">"model.layers"</span>,                  <span class="cm"># 通用</span>
+    <span class="str">"transformer.h"</span>,                 <span class="cm"># GPT 风格</span>
+]
+<span class="kw">for</span> path <span class="kw">in</span> search_paths:
+    obj = model
+    <span class="kw">for</span> attr <span class="kw">in</span> path.split(<span class="str">"."</span>):
+        obj = getattr(obj, attr)     <span class="cm"># 逐级: model → language_model → model → layers</span>
+    <span class="kw">if</span> isinstance(obj, nn.ModuleList):
+        <span class="kw">return</span> obj, len(obj)         <span class="cm"># → (ModuleList[32], 32)</span></pre>
+
+<div class="vis">
+<div class="vis-title">LLaVA-1.5-7B 的层级结构</div>
+<div class="vis-row">
+  <div class="vis-box input">model</div>
+  <div class="vis-arrow">.</div>
+  <div class="vis-box">language_model</div>
+  <div class="vis-arrow">.</div>
+  <div class="vis-box">model</div>
+  <div class="vis-arrow">.</div>
+  <div class="vis-box result">layers<br>ModuleList[32]<br>← 找到了!</div>
+</div>
+<div class="vis-label">
+getattr 逐级访问: model.language_model.model.layers → 返回 32 个 LlamaDecoderLayer 的列表。
+Fallback: 如果路径都找不到, 遍历所有 named_modules 找任意 ModuleList (跳过 visual/vision/vit)。
+</div>
+</div>
+
+<h3>Block 7: _get_hidden_dim + _detect_image_token_id (Line 201-222)</h3>
+
+<pre class="code"><span class="cm"># 从 model.config 读两个数字:</span>
+
+<span class="cm"># hidden_dim: 每个 token 的向量维度</span>
+text_config = model.config.text_config   <span class="cm"># LLaVA 的 LLM config 在 text_config 里</span>
+<span class="kw">return</span> text_config.hidden_size           <span class="cm"># → 4096</span>
+
+<span class="cm"># image_token_id: &lt;image&gt; 这个特殊 token 的数字 ID</span>
+<span class="kw">if</span> hasattr(config, <span class="str">"image_token_index"</span>):  <span class="cm"># LLaVA</span>
+    <span class="kw">return</span> config.image_token_index      <span class="cm"># → 32000</span>
+<span class="kw">if</span> hasattr(config, <span class="str">"image_token_id"</span>):    <span class="cm"># Qwen2-VL</span>
+    <span class="kw">return</span> config.image_token_id</pre>
+
+<div class="note">
+<b>这两个函数很简单：</b>从 model.config (HuggingFace 的模型配置) 里读数字。<br>
+不同模型把这些信息放在不同的字段名下, 所以代码 try 多种 field name。
+</div>
+
+<!-- ============================================================ -->
+<!--  PART 3: MoReSMethod._prepare_model_impl (Line 274-395)       -->
+<!-- ============================================================ -->
+<h2>Part 3: _prepare_model_impl (Line 274-395) — 准备模型</h2>
+
+<p>这是最长的函数 (~120 行)。它做 4 件事：冻结 → 创建干预 → 注册 hook → 统计参数。</p>
+
+<h3>Block 8: 冻结全部参数 (Line 286-288)</h3>
+
+<pre class="code"><span class="kw">for</span> p <span class="kw">in</span> model.parameters():
+    <span class="kw">if</span> p.dtype <span class="kw">in</span> (torch.float32, torch.float16, torch.bfloat16):
+        p.requires_grad = <span class="var">False</span></pre>
+
+<div class="vis">
+<div class="vis-title">冻结前 vs 冻结后</div>
+<div class="vis-row">
+  <div class="vis-box" style="min-width:200px">冻结前:<br>7B 参数全部 requires_grad=True<br>→ backward 要算 7B 个梯度<br>→ 占 ~28GB GPU 内存</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box frozen" style="min-width:200px">冻结后:<br>7B 参数全部 requires_grad=False<br>→ backward 跳过它们<br>→ 0 梯度内存</div>
+</div>
+<div class="vis-label">
+dtype 检查: 量化后的参数 (int8/int4) 不能设 requires_grad, 所以只冻结浮点参数。
+后面会把 OrthogonalIntervention 的 8,193 个参数设回 True (它们是新创建的, 默认 True)。
+</div>
+</div>
+
+<h3>Block 9: 创建干预模块 (Line 290-319)</h3>
+
+<pre class="code"><span class="cm"># 找层 + 算 hidden_dim</span>
+layer_list, num_layers = _find_llm_layers(model)   <span class="cm"># ModuleList[32], 32</span>
+hidden_dim = _get_hidden_dim(model)                 <span class="cm"># 4096</span>
+target_indices = _parse_positions(<span class="str">"f4+l5"</span>, <span class="num">32</span>)    <span class="cm"># [0,1,2,3,27,28,29,30,31]</span>
+
+<span class="cm"># 创建 1 个干预模块, 9 层共享</span>
+<span class="kw">if</span> share_weights:
+    self._intervention = OrthogonalIntervention(
+        <span class="num">4096</span>, rank=<span class="num">1</span>, dropout=<span class="num">0.05</span>
+    ).to(device=device, dtype=dtype)
+    interventions = [self._intervention] * <span class="num">9</span>  <span class="cm"># 9 个引用, 同 1 个对象</span></pre>
+
+<div class="vis">
+<div class="vis-title">共享权重 vs 独立权重</div>
+<table>
+<tr><th></th><th>share_weights=True (默认/论文)</th><th>share_weights=False</th></tr>
+<tr><td><b>创建几个</b></td><td>1 个 intervention, 9 层共用</td><td>9 个独立 intervention</td></tr>
+<tr><td><b>参数量</b></td><td>8,193</td><td>8,193 × 9 = 73,737</td></tr>
+<tr><td><b>梯度</b></td><td>9 层的梯度累加到同一个</td><td>每层各自的梯度</td></tr>
+<tr><td><b>效果</b></td><td>论文说够好</td><td>理论更灵活, 实际差不多</td></tr>
+</table>
+</div>
+
+<h3>Block 10: 注册 Hook — 最关键的工程代码 (Line 321-363)</h3>
+
+<pre class="code"><span class="cm"># 对每个目标层注册 forward hook</span>
+<span class="kw">for</span> idx, iv <span class="kw">in</span> zip(target_indices, interventions):
+    <span class="kw">def</span> <span class="fn">make_hook</span>(intervention):        <span class="cm"># 闭包工厂 (避免循环变量捕获 bug)</span>
+        <span class="kw">def</span> <span class="fn">hook</span>(module, input, output):
+            h = output[<span class="num">0</span>] <span class="kw">if</span> isinstance(output, tuple) <span class="kw">else</span> output
+
+            <span class="cm"># 尝试构建 vis_mask (在 LLaVA 上会失败 → vis_mask=None)</span>
+            vis_mask = <span class="var">None</span>
+            <span class="cm"># ... ids.shape[1] == h.shape[1] 检查 (45 ≠ 620 → 永远 False)</span>
+
+            h_new = intervention(h, vis_mask=vis_mask, steer_ratio=<span class="num">0.01</span>)
+            <span class="kw">return</span> (h_new,) + output[<span class="num">1</span>:] <span class="kw">if</span> isinstance(output, tuple) <span class="kw">else</span> h_new
+        <span class="kw">return</span> hook
+
+    layer_list[idx].<span class="fn">register_forward_hook</span>(make_hook(iv))
+
+<span class="cm"># 再注册一个 pre-hook 捕获 input_ids</span>
+<span class="kw">def</span> <span class="fn">_capture_input_ids</span>(module, args, kwargs):
+    module._mores_input_ids = kwargs.get(<span class="str">"input_ids"</span>)
+
+model.<span class="fn">register_forward_pre_hook</span>(_capture_input_ids, with_kwargs=<span class="var">True</span>)</pre>
+
+<div class="vis">
+<div class="vis-title">Hook 在 forward 中的位置</div>
+<div class="vis-row">
+  <div class="vis-box input">model.forward() 开始</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">pre_hook:<br>存 input_ids</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box">CLIP + projector</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box">合并 visual tokens</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box input">h: (1, 620, 4096)</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box">Layer 0 forward()</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">★ hook: intervention(h)</div>
+  <div class="vis-label">修正 6 个 token</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box">Layer 1 forward()</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">★ hook: intervention(h)</div>
+  <div class="vis-label">同一个 intervention</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box">Layer 2, 3</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">★ hook</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box frozen">Layer 4~26: 无 hook</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box">Layer 27~31</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">★ hook × 5</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box">lm_head → logits</div>
+</div>
+</div>
+
+<table>
+<tr><th>API</th><th>做什么</th></tr>
+<tr><td><code>register_forward_hook(fn)</code></td><td>layer.forward() <b>之后</b>自动调 fn。fn 返回非 None → 替代原输出</td></tr>
+<tr><td><code>register_forward_pre_hook(fn)</code></td><td>layer.forward() <b>之前</b>调 fn。用来偷看/存储 input_ids</td></tr>
+<tr><td><code>make_hook(iv)</code> 闭包</td><td>避免 for 循环的变量捕获 bug: 每次创建新函数作用域, 锁定当前的 iv</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<!--  PART 4: Loss + Save + Load (Line 397-497)                    -->
+<!-- ============================================================ -->
+<h2>Part 4: 训练 + 保存 + 加载 (Line 397-497)</h2>
+
+<h3>Block 11: compute_loss — CE + 正交约束 (Line 397-411)</h3>
+
+<pre class="code">text_loss = _standard_ce_loss(outputs, batch)    <span class="cm"># 标准 cross-entropy</span>
+ortho_loss = sum(iv.orthogonal_penalty() <span class="kw">for</span> iv <span class="kw">in</span> self._all_interventions)
+total_loss = text_loss + <span class="num">0.01</span> * ortho_loss       <span class="cm"># λ = 0.01</span></pre>
+
+<div class="vis">
+<div class="vis-title">Loss 组成</div>
+<div class="vis-row">
+  <div class="vis-box result">CE loss<br>~2.34<br>答案的预测误差</div>
+  <div class="vis-eq">+</div>
+  <div class="vis-box">0.01</div>
+  <div class="vis-eq">×</div>
+  <div class="vis-box result">ortho loss<br>~0.002<br>R 偏离正交多少</div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box param">total<br>~2.34002</div>
+</div>
+<div class="vis-label">正交 loss 远小于 CE loss, 只是一个温和的约束: "不要让 R 太偏离正交"。</div>
+</div>
+
+<h3>Block 12: get_trainable_params — 告诉 optimizer 训练什么 (Line 413-428)</h3>
+
+<pre class="code"><span class="cm"># 收集所有 intervention 的参数</span>
+intervention_params = [p <span class="kw">for</span> iv <span class="kw">in</span> self._all_interventions <span class="kw">for</span> p <span class="kw">in</span> iv.parameters()]
+groups = [{<span class="str">"params"</span>: intervention_params}]
+
+<span class="cm"># 如果 projector 被解冻, 加到单独的 param group (更低 lr)</span>
+<span class="kw">if</span> projector_params:
+    groups.append({<span class="str">"params"</span>: projector_params, <span class="str">"lr"</span>: <span class="num">2e-5</span>})</pre>
+
+<div class="vis">
+<div class="vis-title">返回给 optimizer 的参数组</div>
+<div class="vis-row">
+  <div class="vis-box param">Group 0: intervention<br>R + W.weight + W.bias<br>8,193 params<br>lr = stage.learning_rate (1e-3)</div>
+  <div class="vis-box frozen" style="border-style:solid;background:#f8f8f8">Group 1 (可选): projector<br>~25M params<br>lr = 2e-5 (更低)<br>默认不启用</div>
+</div>
+<div class="vis-label">optimizer = AdamW(groups) 会用不同 lr 更新不同 group。默认只训练 Group 0。</div>
+</div>
+
+<h3>Block 13: save_checkpoint — 保存到磁盘 (Line 431-452)</h3>
+
+<pre class="code"><span class="cm"># 保存 intervention 的 state_dict</span>
+intervention_states = {f<span class="str">"intervention_{i}"</span>: iv.state_dict() <span class="kw">for</span> i, iv <span class="kw">in</span> enumerate(...)}
+torch.save(intervention_states, <span class="str">"mores_interventions.pt"</span>)
+
+<span class="cm"># 保存 projector 权重 (如果训练了)</span>
+torch.save(projector_state, <span class="str">"projector_state.pt"</span>)
+
+<span class="cm"># 保存元数据</span>
+json.dump(metadata, <span class="str">"mmit_meta.json"</span>)</pre>
+
+<div class="vis">
+<div class="vis-title">checkpoint 目录结构</div>
+<div class="vis-row" style="flex-direction:column;align-items:flex-start;gap:3px;font-family:var(--mono);font-size:9pt">
+<div>output/final/</div>
+<div>&nbsp;&nbsp;├── <b>mores_interventions.pt</b> &nbsp; ← R + W 的权重 (32KB)</div>
+<div>&nbsp;&nbsp;├── projector_state.pt &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ← 可选 (只有 train_projector=True 时)</div>
+<div>&nbsp;&nbsp;├── tokenizer_config.json</div>
+<div>&nbsp;&nbsp;├── preprocessor_config.json</div>
+<div>&nbsp;&nbsp;└── <b>mmit_meta.json</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ← {"ft_method":"mores","base_model":"..."}</div>
+</div>
+<div class="vis-label">注意: MoReS 的 checkpoint 极小 (~32KB), 因为只有 8,193 个参数。LoRA 的 checkpoint 是 ~8MB。</div>
+</div>
+
+<table>
+<tr><th>API</th><th>做什么</th></tr>
+<tr><td><code>module.state_dict()</code></td><td>导出模块所有参数为 dict: {"R": tensor, "W.weight": tensor, "W.bias": tensor}</td></tr>
+<tr><td><code>torch.save(obj, path)</code></td><td>把 Python 对象序列化到磁盘 (pickle + tensor 二进制)</td></tr>
+</table>
+
+<h3>Block 14: load_for_inference — 从 checkpoint 加载 (Line 454-497)</h3>
+
+<pre class="code"><span class="cm"># 1. 加载基座模型 (和训练时一样)</span>
+model = AutoVLM.from_pretrained(base_model_id, torch_dtype=torch.bfloat16, ...)
+
+<span class="cm"># 2. 重新准备模型 (重新创建 intervention + 注册 hooks)</span>
+self.prepare_model(model, processor, config)
+
+<span class="cm"># 3. 加载训练好的 intervention 权重</span>
+states = torch.load(<span class="str">"mores_interventions.pt"</span>, map_location=<span class="str">"cpu"</span>)
+<span class="kw">for</span> i, iv <span class="kw">in</span> enumerate(self._all_interventions):
+    iv.load_state_dict(states[f<span class="str">"intervention_{i}"</span>])
+
+<span class="cm"># 4. 切到推理模式</span>
+model.eval()  <span class="cm"># 关闭 dropout</span></pre>
+
+<div class="vis">
+<div class="vis-title">加载流程</div>
+<div class="vis-row">
+  <div class="vis-box input">① 加载基座模型<br>7B 参数 (HF)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">② prepare_model<br>冻结 + 创建空 intervention<br>+ 注册 hooks</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">③ load_state_dict<br>把训练好的 R, W<br>填入 intervention</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box frozen">④ model.eval()<br>关 dropout<br>可以推理了</div>
+</div>
+<div class="vis-label">
+关键: 第 ② 步必须先 prepare_model 创建 intervention + hooks, 然后第 ③ 步才能 load 权重进去。
+顺序反了 (先 load 再 prepare) 会报错, 因为 intervention 还不存在。
+</div>
+</div>
+
+<table>
+<tr><th>API</th><th>做什么</th></tr>
+<tr><td><code>torch.load(path, map_location="cpu")</code></td><td>从磁盘加载。map_location="cpu" 先加到 CPU 再搬 GPU, 避免 GPU OOM</td></tr>
+<tr><td><code>module.load_state_dict(dict)</code></td><td>把 dict 里的值填入模块的参数 (按 key 名匹配)</td></tr>
+<tr><td><code>model.eval()</code></td><td>切到推理模式: Dropout 变 Identity, BatchNorm 用 running stats</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>全文总结: mores.py 的 498 行做了什么</h2>
+
+<div class="vis">
+<div class="vis-title">一张图看完整个文件</div>
+<table>
+<tr><th>部分</th><th>行数</th><th>做什么</th><th>关键 API</th></tr>
+<tr>
+  <td><b>OrthogonalIntervention</b></td><td>90 行</td>
+  <td>核心算法: h' = h + R^T(Wh - Rh)<br>选 top 1% by norm, 修正 6 个 token</td>
+  <td>nn.Parameter, F.linear, .topk, .norm</td>
+</tr>
+<tr>
+  <td><b>辅助函数</b></td><td>85 行</td>
+  <td>找模型的 decoder 层 + hidden_dim + image token id<br>解析 "f4+l5" 配置</td>
+  <td>getattr, nn.ModuleList, re.match</td>
+</tr>
+<tr>
+  <td><b>_prepare_model_impl</b></td><td>120 行</td>
+  <td>冻结 7B 参数 → 创建 8K 参数干预 → 在 9 层注册 hook</td>
+  <td>requires_grad, register_forward_hook, .to(device)</td>
+</tr>
+<tr>
+  <td><b>compute_loss</b></td><td>15 行</td>
+  <td>CE loss + 0.01 × 正交约束</td>
+  <td>orthogonal_penalty()</td>
+</tr>
+<tr>
+  <td><b>save/load</b></td><td>65 行</td>
+  <td>保存/加载 R + W 权重 (~32KB)</td>
+  <td>state_dict, torch.save/load</td>
+</tr>
+</table>
+</div>
+
+<div class="note">
+<b>整个 MoReS 方法：</b>冻结 7B 参数，在 9 个 transformer 层的输出上挂 hook，每层用同一个 8K 参数的小模块对 6 个最重要的 token 做 rank-1 正交修正。训练时只更新这 8K 参数。保存时只存 32KB。
+</div>
+</section>
+
+<section id="lora-in-lora" class="method-section">
+<div class="section-divider"><h1 class="section-heading">LoRA-in-LoRA (嵌套持续学习)</h1></div>
+<div class="print-hint"><b>&#128196;</b> Cmd+P, A4 纵向, 最小边距, 勾选"背景图形"</div>
+
+<h1>lora_in_lora.py 图解 — LoRAInLoRAMethod</h1>
+<p class="subtitle">155 行代码, 分成 5 个块讲解. 用于跨任务持续学习 (Continual Learning). 基于 LLaVA-1.5-7B (hidden_dim=4096).</p>
+
+<!-- ============================================================ -->
+<h2>Block 1: 核心概念 — "嵌套"思路 (LoRA-in-LoRA)</h2>
+
+<p>论文: Che et al., 2025. 核心问题: 模型依次学 Task 1、Task 2、Task 3 时，学新任务会覆盖旧任务的知识 (<b>灾难性遗忘</b>)。</p>
+<p>解决方案: 每次学完一个任务，把该任务的 LoRA 合并进基础权重，然后在合并后的新权重上再装一个更小的 LoRA 学下个任务。</p>
+
+<div class="vis">
+<div class="vis-title">三阶段训练流程 — 嵌套链</div>
+
+<div class="vis-row">
+  <div style="font-size:7pt;font-weight:700;min-width:55px;color:#a00000">Stage 1<br>(Task 1)</div>
+  <div class="vis-box frozen" style="min-width:120px">Base Model W<br>(7B params, frozen)</div>
+  <div class="vis-eq">+</div>
+  <div class="vis-box param" style="min-width:120px">LoRA_1<br>A_1 (4096, 8), B_1 (8, 4096)<br>r=8, 标准 LoRA</div>
+  <div class="vis-arrow">=</div>
+  <div class="vis-box result" style="min-width:100px">Task 1 模型<br>保存 checkpoint_1</div>
+</div>
+
+<div class="vis-row" style="margin-top:6px">
+  <div style="font-size:7pt;font-weight:700;min-width:55px;color:#a00000">Stage 2<br>(Task 2)</div>
+  <div class="vis-box result" style="min-width:120px">W_new = W + B_1 A_1<br>(merge_and_unload)<br>旧知识已"吸收"</div>
+  <div class="vis-eq">+</div>
+  <div class="vis-box param" style="min-width:120px">LoRA_2 (inner)<br>A_2 (4096, 4), B_2 (4, 4096)<br>r=4, 更小!</div>
+  <div class="vis-arrow">=</div>
+  <div class="vis-box result" style="min-width:100px">Task 2 模型<br>保存 checkpoint_2</div>
+</div>
+
+<div class="vis-row" style="margin-top:6px">
+  <div style="font-size:7pt;font-weight:700;min-width:55px;color:#a00000">Stage 3<br>(Task 3)</div>
+  <div class="vis-box result" style="min-width:120px">W_new2 = W_new + B_2 A_2<br>(再次 merge)<br>Task 1+2 都在里面</div>
+  <div class="vis-eq">+</div>
+  <div class="vis-box param" style="min-width:120px">LoRA_3 (inner)<br>A_3 (4096, 4), B_3 (4, 4096)<br>r=4</div>
+  <div class="vis-arrow">=</div>
+  <div class="vis-box result" style="min-width:100px">Task 3 模型<br>保存 checkpoint_3</div>
+</div>
+<div class="vis-label">每个 Stage: 先把上一轮的 LoRA merge 进 base weights (绿虚线 → 蓝框), 再装一个新的小 LoRA (红框). 旧知识不会被覆盖因为已经 "固化" 到权重里了.</div>
+</div>
+
+<div class="note">
+<b>为什么能防遗忘?</b> 标准做法 (直接换 LoRA) 会完全丢弃 Task 1 学到的低秩更新. LoRA-in-LoRA 把旧 LoRA merge 进 base weights, 旧知识变成了模型 "本能" 的一部分, 和预训练知识同等地位. 新 LoRA 只在此基础上做微小调整, 不会破坏已有能力.
+</div>
+
+<div class="note">
+<b>为什么 inner rank 更小?</b> 每一阶段的增量任务通常比第一个任务简单 (因为基础能力已经有了). r=4 (vs r=8) 参数量减半, 够用且不容易过拟合.
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 2: _prepare_model_impl Step 1 — 加载并合并 outer LoRA (Line 73-79)</h2>
+
+<p>这是 "嵌套" 的关键一步: 把上一轮训练的 LoRA 权重合并到基础模型里, 形成新的基础权重.</p>
+
+<pre class="code"><span class="cm"># Step 1: Load and merge outer LoRA (becomes new base weights)</span>
+<span class="kw">if</span> outer_checkpoint <span class="kw">and</span> os.path.isdir(outer_checkpoint):
+    self._outer_checkpoint = outer_checkpoint
+    model = PeftModel.from_pretrained(model, outer_checkpoint)  <span class="cm"># 加载旧 LoRA</span>
+    model = model.merge_and_unload()                            <span class="cm"># 合并 → 纯 nn.Module</span>
+    info_parts.append(<span class="str">f"Outer LoRA merged from: {outer_checkpoint}"</span>)
+<span class="kw">else</span>:
+    info_parts.append(<span class="str">"No outer LoRA (first task)"</span>)</pre>
+
+<div class="vis">
+<div class="vis-title">merge_and_unload 做了什么</div>
+<div class="vis-row">
+  <div class="vis-box frozen" style="min-width:110px">W (base)<br>(4096, 4096)<br>frozen, 预训练权重</div>
+  <div class="vis-eq">+</div>
+  <div class="vis-box param" style="min-width:60px">B_outer<br>(4096, 8)</div>
+  <div class="vis-arrow">@</div>
+  <div class="vis-box param" style="min-width:60px">A_outer<br>(8, 4096)</div>
+  <div class="vis-arrow">x</div>
+  <div class="vis-box" style="min-width:40px">alpha/r<br>= 16/8</div>
+</div>
+<div class="vis-row" style="margin-top:4px">
+  <div style="min-width:50px"></div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box result" style="min-width:200px">W_new = W + (alpha/r) * B @ A<br>(4096, 4096)<br>LoRA 已 "吸收" 到权重中</div>
+  <div class="vis-label" style="margin-left:8px">merge 后 LoRA 层被删除, 模型回到纯 nn.Module<br>没有任何 adapter, 可以再装新的</div>
+</div>
+</div>
+
+<div class="vis">
+<div class="vis-title">两步操作的效果</div>
+<div class="vis-row">
+  <div class="vis-box input" style="min-width:130px">PeftModel.from_pretrained<br>加载 outer checkpoint<br>→ model 有 LoRA 层</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result" style="min-width:130px">merge_and_unload()<br>W := W + BA<br>→ 删掉 LoRA 层</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box frozen" style="min-width:130px">纯 base model<br>W_new 包含旧知识<br>可以装新 LoRA</div>
+</div>
+</div>
+
+<h3>这里用到的 PEFT API</h3>
+<table>
+<tr><th>API</th><th>做什么</th><th>为什么用它</th></tr>
+<tr><td><code>PeftModel.from_pretrained(model, path)</code></td><td>在 base model 上加载已保存的 LoRA adapter</td><td>把上一轮训练的 LoRA 权重恢复到模型里</td></tr>
+<tr><td><code>model.merge_and_unload()</code></td><td>W = W + (alpha/r) * B @ A, 然后删除 LoRA 层</td><td>让模型回到纯 nn.Module, 可以再次使用 get_peft_model 装新 adapter</td></tr>
+<tr><td><code>os.path.isdir(path)</code></td><td>检查路径是否存在且是目录</td><td>Stage 1 没有 outer checkpoint, 需要跳过</td></tr>
+</table>
+
+<div class="note">
+<b>Stage 1 (第一个任务):</b> <code>outer_checkpoint</code> 为空字符串, 跳过 merge 步骤, 直接走 Step 2 装新 LoRA. 此时等价于标准 LoRA 训练.
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 3: _prepare_model_impl Step 2 — 装上 inner LoRA (Line 82-98)</h2>
+
+<p>在合并后的模型上装一个新的、更小 rank 的 LoRA.</p>
+
+<pre class="code"><span class="cm"># Step 2: Apply inner LoRA on the merged model</span>
+targets = config.get(<span class="str">"target_modules"</span>) <span class="kw">or</span> _auto_detect_targets(model, freeze_patterns)
+inner_config = LoraConfig(
+    r=inner_r,                     <span class="cm"># 默认 4 (比标准 8 小)</span>
+    lora_alpha=inner_alpha,        <span class="cm"># 默认 8</span>
+    lora_dropout=dropout,          <span class="cm"># 默认 0.05</span>
+    target_modules=targets,        <span class="cm"># 自动检测: q_proj, v_proj, ...</span>
+    task_type=TaskType.CAUSAL_LM,
+)
+model = get_peft_model(model, inner_config)
+
+trainable = <span class="kw">sum</span>(p.numel() <span class="kw">for</span> p <span class="kw">in</span> model.parameters() <span class="kw">if</span> p.requires_grad)
+total = <span class="kw">sum</span>(p.numel() <span class="kw">for</span> p <span class="kw">in</span> model.parameters())</pre>
+
+<div class="vis">
+<div class="vis-title">Inner LoRA 挂载到 merged model 上</div>
+<div class="vis-row">
+  <div class="vis-box result" style="min-width:140px">W_new (已 merge)<br>(4096, 4096)<br>包含旧任务知识<br>frozen, 不训练</div>
+  <div class="vis-eq">+</div>
+  <div class="vis-box param" style="min-width:70px">B_inner<br>(4096, <b>4</b>)</div>
+  <div class="vis-arrow">@</div>
+  <div class="vis-box param" style="min-width:70px">A_inner<br>(<b>4</b>, 4096)</div>
+  <div class="vis-arrow">=</div>
+  <div class="vis-box param" style="min-width:140px">W_final = W_new + B'A'<br>只有 B', A' 可训练<br>学习新任务增量</div>
+</div>
+</div>
+
+<div class="vis">
+<div class="vis-title">参数量对比: inner_r=4 vs 标准 r=8</div>
+<table>
+<tr><th>配置</th><th>每个目标层参数</th><th>计算 (d=4096)</th><th>总参数 (假设 6 个目标模块 x 32 层)</th></tr>
+<tr>
+  <td><b>标准 LoRA r=8</b></td>
+  <td>A: d*r + B: r*d = 2dr</td>
+  <td>2 * 4096 * 8 = 65,536</td>
+  <td>65,536 * 192 = <b>12,582,912</b></td>
+</tr>
+<tr>
+  <td><b>Inner LoRA r=4</b></td>
+  <td>A: d*r + B: r*d = 2dr</td>
+  <td>2 * 4096 * 4 = 32,768</td>
+  <td>32,768 * 192 = <b>6,291,456</b></td>
+</tr>
+<tr>
+  <td colspan="3"><b>Inner LoRA 参数量 = 标准的 50%</b></td>
+  <td>节省约 6.3M 参数</td>
+</tr>
+</table>
+</div>
+
+<h3>这里用到的 PEFT API</h3>
+<table>
+<tr><th>API</th><th>做什么</th><th>为什么用它</th></tr>
+<tr><td><code>LoraConfig(r, lora_alpha, ...)</code></td><td>定义 LoRA 的超参数配置</td><td>r=4 比标准 r=8 更小, 因为增量任务不需要太大容量</td></tr>
+<tr><td><code>get_peft_model(model, config)</code></td><td>在 model 的目标层上插入 LoRA adapter</td><td>自动找到 q_proj/v_proj 等, 插入 A/B 矩阵</td></tr>
+<tr><td><code>TaskType.CAUSAL_LM</code></td><td>指定任务类型为因果语言模型</td><td>PEFT 据此决定输出层的处理方式</td></tr>
+<tr><td><code>_auto_detect_targets(model, ...)</code></td><td>自动检测应该插入 LoRA 的 Linear 层名</td><td>不同模型的层名不同, 自动检测省去手动配置</td></tr>
+</table>
+
+<div class="note">
+<b>alpha/r 比值:</b> inner_lora_alpha=8, inner_lora_r=4, 所以 alpha/r = 2.0. 这个 scaling factor 控制 LoRA 更新的强度. 和标准设置 (alpha=16, r=8, ratio=2.0) 相同, 保持一致的学习动态.
+</div>
+
+<!-- ============================================================ -->
+<h2 style="page-break-before:always">Block 4: save_checkpoint — 保存 outer_checkpoint 路径 (Line 107-115)</h2>
+
+<p>保存时不仅存模型权重, 还要在 metadata 里记录 outer checkpoint 路径, 推理时需要它来重建嵌套链.</p>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">save_checkpoint</span>(self, model, processor, path, metadata):
+    os.makedirs(path, exist_ok=<span class="kw">True</span>)
+    model.save_pretrained(path)            <span class="cm"># 保存 inner LoRA 的 A, B 矩阵</span>
+    processor.save_pretrained(path)        <span class="cm"># 保存 tokenizer 等</span>
+    metadata[<span class="str">"ft_method"</span>] = self.name      <span class="cm"># "lora_in_lora"</span>
+    <span class="kw">if</span> self._outer_checkpoint:
+        metadata[<span class="str">"outer_checkpoint"</span>] = self._outer_checkpoint  <span class="cm"># 关键!</span>
+    <span class="kw">with</span> open(os.path.join(path, <span class="str">"mmit_meta.json"</span>), <span class="str">"w"</span>) <span class="kw">as</span> f:
+        json.dump(metadata, f, indent=<span class="num">2</span>, ensure_ascii=<span class="kw">False</span>)</pre>
+
+<div class="vis">
+<div class="vis-title">保存的目录结构</div>
+<pre class="code" style="background:#f0f5f0;border-color:#006400">checkpoint_task2/
+  adapter_config.json          <span class="cm"># PEFT 配置 (r=4, alpha=8, targets...)</span>
+  adapter_model.safetensors    <span class="cm"># inner LoRA 的 A, B 权重</span>
+  tokenizer.json               <span class="cm"># processor 文件</span>
+  tokenizer_config.json
+  special_tokens_map.json
+  <b style="color:#a00000">mmit_meta.json</b>               <span class="cm"># ← 关键: 包含 outer_checkpoint 路径</span></pre>
+</div>
+
+<div class="vis">
+<div class="vis-title">mmit_meta.json 内容示例</div>
+<pre class="code" style="background:#fff8e0;border-color:#806000">{
+  <span class="str">"ft_method"</span>: <span class="str">"lora_in_lora"</span>,
+  <span class="str">"outer_checkpoint"</span>: <span class="str">"/data/checkpoints/task1_lora"</span>,   <span class="cm">← Stage 1 的 checkpoint 路径</span>
+  <span class="str">"base_model_id"</span>: <span class="str">"llava-hf/llava-1.5-7b-hf"</span>,
+  <span class="str">"task"</span>: <span class="str">"visual_qa_task2"</span>
+}</pre>
+</div>
+
+<div class="note">
+<b>链式依赖:</b> checkpoint_task3 的 meta 指向 checkpoint_task2, checkpoint_task2 的 meta 指向 checkpoint_task1. 形成一条依赖链. 推理时必须按顺序重建.
+</div>
+
+<div class="note">
+<b>注意:</b> <code>model.save_pretrained(path)</code> 只保存 inner LoRA 的 adapter 权重 (很小, 几 MB). Base model 的 7B 权重不会被保存, 推理时从 HuggingFace 加载.
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 5: load_for_inference — 递归链重建 (Line 117-154)</h2>
+
+<p>推理时的 4 步流程: 读 meta -> 加载 base -> 合并 outer -> 加载 inner. 完整重现训练时的嵌套结构.</p>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">load_for_inference</span>(self, path, base_model_id, **kwargs):
+    <span class="cm"># Step 1: 读 metadata, 找 outer_checkpoint 路径</span>
+    meta_path = os.path.join(path, <span class="str">"mmit_meta.json"</span>)
+    <span class="kw">if</span> os.path.exists(meta_path):
+        <span class="kw">with</span> open(meta_path) <span class="kw">as</span> f:
+            meta = json.load(f)
+        outer_checkpoint = meta.get(<span class="str">"outer_checkpoint"</span>)
+
+    <span class="cm"># Step 2: 加载 base model (7B 预训练权重)</span>
+    processor = AutoProcessor.from_pretrained(base_model_id, ...)
+    model = AutoVLM.from_pretrained(base_model_id, torch_dtype=torch.bfloat16, ...)
+
+    <span class="cm"># Step 3: 合并 outer LoRA (和训练时一样)</span>
+    <span class="kw">if</span> outer_checkpoint <span class="kw">and</span> os.path.isdir(outer_checkpoint):
+        model = PeftModel.from_pretrained(model, outer_checkpoint)
+        model = model.merge_and_unload()
+
+    <span class="cm"># Step 4: 加载 inner LoRA (当前 checkpoint)</span>
+    model = PeftModel.from_pretrained(model, path)
+    model.eval()
+    <span class="kw">try</span>:
+        model = model.merge_and_unload()   <span class="cm"># 尝试也 merge inner, 推理更快</span>
+    <span class="kw">except</span> Exception:
+        <span class="kw">pass</span>                               <span class="cm"># merge 失败也没关系, 用 adapter 模式</span></pre>
+
+<div class="vis">
+<div class="vis-title">推理时的 4 步重建流程</div>
+
+<div class="vis-row">
+  <div style="font-size:7pt;font-weight:700;min-width:45px;color:#0040a0">Step 1</div>
+  <div class="vis-box input" style="min-width:160px">读 mmit_meta.json<br>outer_checkpoint = "/data/.../task1_lora"</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-label">知道了需要先 merge 哪个 checkpoint</div>
+</div>
+
+<div class="vis-row" style="margin-top:4px">
+  <div style="font-size:7pt;font-weight:700;min-width:45px;color:#0040a0">Step 2</div>
+  <div class="vis-box frozen" style="min-width:160px">AutoVLM.from_pretrained<br>加载 base model W<br>(llava-1.5-7b-hf, bfloat16)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-label">和训练时使用的相同的 base model</div>
+</div>
+
+<div class="vis-row" style="margin-top:4px">
+  <div style="font-size:7pt;font-weight:700;min-width:45px;color:#0040a0">Step 3</div>
+  <div class="vis-box frozen" style="min-width:70px">W</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result" style="min-width:100px">load outer LoRA<br>+ merge_and_unload</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result" style="min-width:100px">W_new = W + B_1 A_1<br>Task 1 知识恢复</div>
+</div>
+
+<div class="vis-row" style="margin-top:4px">
+  <div style="font-size:7pt;font-weight:700;min-width:45px;color:#0040a0">Step 4</div>
+  <div class="vis-box result" style="min-width:70px">W_new</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param" style="min-width:100px">load inner LoRA<br>from current path</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param" style="min-width:100px">W_final = W_new + B_2 A_2<br>Task 2 知识加上</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result" style="min-width:50px">eval()</div>
+</div>
+
+<div class="vis-label">最终模型 = 原始预训练 + Task 1 LoRA (merged) + Task 2 LoRA. 和训练时完全一致的权重状态.</div>
+</div>
+
+<h3>这里用到的 API</h3>
+<table>
+<tr><th>API</th><th>做什么</th><th>为什么用它</th></tr>
+<tr><td><code>AutoVLM.from_pretrained(...)</code></td><td>加载视觉语言模型</td><td>先试 AutoModelForImageTextToText, 旧版 transformers 用 AutoModelForVision2Seq</td></tr>
+<tr><td><code>torch.bfloat16</code></td><td>半精度浮点</td><td>7B 模型用 bf16 约占 14GB 显存 (vs fp32 的 28GB)</td></tr>
+<tr><td><code>device_map="auto"</code></td><td>自动分配到 GPU/CPU</td><td>多卡时自动分割, 单卡时全放 GPU</td></tr>
+<tr><td><code>model.eval()</code></td><td>切换到推理模式</td><td>关闭 dropout, BatchNorm 用 running stats</td></tr>
+<tr><td><code>try: merge_and_unload()</code></td><td>尝试合并 inner LoRA</td><td>merge 后推理更快 (省去 adapter 前向), 但某些量化模型不支持 merge</td></tr>
+</table>
+
+<div class="note">
+<b>兼容性处理:</b> <code>try/except ImportError</code> 自动适配新旧 transformers. 新版 (>=4.45) 有 <code>AutoModelForImageTextToText</code>, 旧版用 <code>AutoModelForVision2Seq</code>. 两者功能相同.
+</div>
+
+<!-- ============================================================ -->
+<h2>总结: LoRA-in-LoRA vs 标准 LoRA</h2>
+
+<div class="vis">
+<div class="vis-title">关键差异对比</div>
+<table>
+<tr><th style="width:20%">维度</th><th style="width:40%">标准 LoRA</th><th style="width:40%">LoRA-in-LoRA</th></tr>
+<tr>
+  <td><b>使用场景</b></td>
+  <td>单任务微调</td>
+  <td>多任务持续学习 (Continual Learning)</td>
+</tr>
+<tr>
+  <td><b>训练流程</b></td>
+  <td>base + LoRA, 一次性</td>
+  <td>每个任务: merge 旧 LoRA → 装新 LoRA</td>
+</tr>
+<tr>
+  <td><b>遗忘问题</b></td>
+  <td>不涉及 (只有一个任务)</td>
+  <td>merge 机制防止灾难性遗忘</td>
+</tr>
+<tr>
+  <td><b>Inner Rank</b></td>
+  <td>r=8 (典型)</td>
+  <td>r=4 (更小, 增量学习够用)</td>
+</tr>
+<tr>
+  <td><b>每任务参数</b></td>
+  <td>~12.6M (r=8)</td>
+  <td>~6.3M (r=4), 减少 50%</td>
+</tr>
+<tr>
+  <td><b>Checkpoint 内容</b></td>
+  <td>adapter 权重</td>
+  <td>adapter 权重 + outer_checkpoint 路径</td>
+</tr>
+<tr>
+  <td><b>推理加载</b></td>
+  <td>base + load adapter</td>
+  <td>base + merge outer + load inner (链式)</td>
+</tr>
+<tr>
+  <td><b>核心 API</b></td>
+  <td>get_peft_model</td>
+  <td>merge_and_unload + get_peft_model</td>
+</tr>
+</table>
+</div>
+
+<div class="vis">
+<div class="vis-title">代码结构一览 (155 行)</div>
+<table>
+<tr><th>行号</th><th>方法</th><th>做什么</th><th>核心 API</th></tr>
+<tr><td>1-29</td><td>imports + docstring</td><td>导入依赖, 论文引用</td><td>-</td></tr>
+<tr><td>31-62</td><td>__init__ / default_config / ui_params</td><td>配置项定义 (outer_checkpoint, inner_r, alpha)</td><td>-</td></tr>
+<tr><td>64-79</td><td>_prepare_model_impl Step 1</td><td>加载并 merge outer LoRA</td><td>PeftModel.from_pretrained, merge_and_unload</td></tr>
+<tr><td>82-98</td><td>_prepare_model_impl Step 2</td><td>装上 inner LoRA</td><td>LoraConfig, get_peft_model</td></tr>
+<tr><td>100-105</td><td>compute_loss / get_trainable_params</td><td>标准 CE loss, 返回可训练参数</td><td>CrossEntropyLoss</td></tr>
+<tr><td>107-115</td><td>save_checkpoint</td><td>保存 adapter + meta (含 outer 路径)</td><td>save_pretrained, json.dump</td></tr>
+<tr><td>117-154</td><td>load_for_inference</td><td>4 步链式重建</td><td>from_pretrained, merge_and_unload</td></tr>
+</table>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PEFT 核心 API 速查</div>
+<table>
+<tr><th>API</th><th>输入</th><th>输出</th><th>说明</th></tr>
+<tr><td><code>get_peft_model(model, config)</code></td><td>nn.Module + LoraConfig</td><td>PeftModel</td><td>在 target modules 上插入 LoRA adapter, 冻结 base weights</td></tr>
+<tr><td><code>PeftModel.from_pretrained(model, path)</code></td><td>nn.Module + adapter 目录</td><td>PeftModel</td><td>加载已保存的 adapter 权重到 model 上</td></tr>
+<tr><td><code>model.merge_and_unload()</code></td><td>PeftModel</td><td>nn.Module</td><td>W := W + (alpha/r) * B @ A, 删除 adapter 层</td></tr>
+<tr><td><code>model.save_pretrained(path)</code></td><td>PeftModel + 保存路径</td><td>-</td><td>只保存 adapter 权重 (adapter_model.safetensors)</td></tr>
+</table>
+</div>
+
+<div class="note">
+<b>总结:</b> LoRA-in-LoRA 的核心就是一个 <code>merge_and_unload</code> 操作 — 把旧任务的 LoRA "固化" 进 base weights, 然后在新的 base 上再装一个小 LoRA. 代码量很少 (155 行), 但解决了持续学习中的灾难性遗忘问题. 关键洞察: merge 让旧知识和预训练知识同等地位, 新 LoRA 的小 rank 限制了对已有能力的扰动.
+</div>
+</section>
+
+<section id="l2t" class="method-section">
+<div class="section-divider"><h1 class="section-heading">L2T (学习指令)</h1></div>
+<div class="print-hint"><b>提示:</b> Ctrl+P 打印为 PDF, 选择 A4 纵向, 边距"最小".</div>
+
+<h1>l2t.py 图解 — L2TMethod</h1>
+<div class="subtitle">156 行代码. 不改模型架构, 只修改 label masking 策略. 包装器模式: 可与 LoRA/QLoRA/Full FT 组合.</div>
+
+<!-- ═══════════════════ Block 1: Core Concept ═══════════════════ -->
+<h2>1. 核心思想 — Standard SFT vs L2T</h2>
+
+<p>标准 SFT 训练 VLM 时, 只在 <b>回答 (assistant)</b> 部分计算 loss, 用户指令部分全部 mask 为 -100. L2T 的关键洞察: 指令中的 <b>内容性词语</b> (如"狗的品种") 也应参与 loss 计算, 这迫使模型更好地关注视觉输入, 减少幻觉.</p>
+
+<div class="vis">
+<div class="vis-title">Standard SFT — 指令全部 masked</div>
+<p style="font-size:7pt;margin-bottom:3px;color:#666">User 轮次:</p>
+<div class="vis-row">
+  <div class="vis-box tok-masked">&lt;image&gt;</div>
+  <div class="vis-box tok-masked">这张</div>
+  <div class="vis-box tok-masked">图片</div>
+  <div class="vis-box tok-masked">里</div>
+  <div class="vis-box tok-masked">有</div>
+  <div class="vis-box tok-masked">什么</div>
+  <div class="vis-box tok-masked">?</div>
+  <span class="vis-label">labels = [-100, -100, -100, -100, -100, -100, -100]</span>
+</div>
+<p style="font-size:7pt;margin:3px 0 1px;color:#666">Assistant 轮次:</p>
+<div class="vis-row">
+  <div class="vis-box tok-always">图片</div>
+  <div class="vis-box tok-always">里</div>
+  <div class="vis-box tok-always">有</div>
+  <div class="vis-box tok-always">一只</div>
+  <div class="vis-box tok-always">猫</div>
+  <span class="vis-label">labels = [token_ids] (正常计算 loss)</span>
+</div>
+</div>
+
+<div class="vis">
+<div class="vis-title">L2T — 内容性指令 token 取消 mask</div>
+<p style="font-size:7pt;margin-bottom:3px;color:#666">User 轮次 (模板句 "Describe this image." 保持 masked; 内容词 unmask):</p>
+<div class="vis-row">
+  <div class="vis-box tok-masked">&lt;image&gt;</div>
+  <div class="vis-box tok-unmasked">这张</div>
+  <div class="vis-box tok-unmasked">图片</div>
+  <div class="vis-box tok-unmasked">里</div>
+  <div class="vis-box tok-unmasked">有</div>
+  <div class="vis-box tok-unmasked">什么</div>
+  <div class="vis-box tok-unmasked">?</div>
+  <span class="vis-label">labels = [-100, token_ids, token_ids, ...]  (内容词参与 loss!)</span>
+</div>
+<p style="font-size:7pt;margin:3px 0 1px;color:#666">Assistant 轮次:</p>
+<div class="vis-row">
+  <div class="vis-box tok-always">图片</div>
+  <div class="vis-box tok-always">里</div>
+  <div class="vis-box tok-always">有</div>
+  <div class="vis-box tok-always">一只</div>
+  <div class="vis-box tok-always">猫</div>
+  <span class="vis-label">labels = [token_ids] (与 Standard 相同)</span>
+</div>
+</div>
+
+<div class="note"><b>关键洞察:</b> 通过在指令 token 上也计算 loss, 模型被迫更好地理解问题中与图像相关的内容, 从而减少"不看图就回答"的幻觉现象. 论文实验表明这在 POPE、CHAIR 等幻觉基准上有显著提升.</div>
+
+<pre class="code"><span class="cm"># 论文元信息 (Line 1-12)</span>
+<span class="str">"""L2T: Learning to Instruct for Visual Instruction Tuning.
+Paper: Zhou et al., NeurIPS 2025
+Key idea: 在 SFT 中, 也对内容性指令 token 计算 loss.
+模板/样板指令 token 保持 masked.
+Implementation: 修改 labels tensor — unmask non-template instruction tokens.
+不需要架构或 loss 函数的任何改变."""</span></pre>
+
+<!-- ═══════════════════ Block 2: Wrapper Pattern ═══════════════════ -->
+<h2>2. 包装器模式 — _get_base + 委托 (Line 42-49, 78-81)</h2>
+
+<p>L2T 本身不是一种 PEFT 方法, 而是一个 <b>包装器</b>. 它包裹任何 base method (LoRA/QLoRA/Full FT), 所有模型操作都委托给 base, L2T 只负责修改 labels.</p>
+
+<pre class="code"><span class="kw">class</span> <span class="fn">L2TMethod</span>(TrainingMethod):
+    name = <span class="str">"l2t"</span>
+
+    <span class="kw">def</span> <span class="fn">__init__</span>(self):
+        self._base: Optional[TrainingMethod] = <span class="kw">None</span>   <span class="cm"># 延迟初始化的 base method</span>
+        self._templates: set[str] = set()              <span class="cm"># 模板句集合</span>
+
+    <span class="kw">def</span> <span class="fn">_get_base</span>(self, config: dict) -> TrainingMethod:
+        <span class="cm">"""通过 registry 获取 base method 实例, 仅初始化一次"""</span>
+        <span class="kw">if</span> self._base <span class="kw">is None</span>:
+            base_name = config.get(<span class="str">"base_method"</span>, <span class="str">"lora"</span>)
+            <span class="kw">from</span> mmit.registry <span class="kw">import</span> registry
+            cls = registry.get_cls(<span class="str">"training_method"</span>, base_name)
+            self._base = cls()
+        <span class="kw">return</span> self._base</pre>
+
+<div class="vis">
+<div class="vis-title">包装器架构 — L2T 委托所有方法给 Base</div>
+<div class="vis-row">
+  <div class="vis-box param" style="min-width:120px;padding:8px 12px">
+    L2TMethod<br><span style="font-size:6pt;font-weight:normal">(外壳)</span>
+  </div>
+  <div class="vis-arrow">&#x279C;</div>
+  <div class="vis-box result" style="min-width:100px;padding:8px 12px">
+    LoRA<br><span style="font-size:6pt">/ QLoRA / Full FT</span>
+  </div>
+  <span class="vis-label">prepare_model, compute_loss, get_trainable_params, save, load 全部委托</span>
+</div>
+<div style="margin-top:6px;font-size:7pt;color:#444">
+  <b>L2T 唯一自己做的事:</b> build_template_list() + preprocess_labels()
+</div>
+</div>
+
+<pre class="code"><span class="cm"># 委托示例 (Line 78-81, 100-104)</span>
+<span class="kw">def</span> <span class="fn">_prepare_model_impl</span>(self, model, processor, config):
+    base = self._get_base(config)
+    <span class="kw">return</span> base.prepare_model(model, processor, config)  <span class="cm"># 委托!</span>
+
+<span class="kw">def</span> <span class="fn">compute_loss</span>(self, model, batch, outputs):
+    base = self._get_base({})
+    <span class="kw">return</span> base.compute_loss(model, batch, outputs)      <span class="cm"># 委托!</span>
+
+<span class="kw">def</span> <span class="fn">get_trainable_params</span>(self, model):
+    base = self._get_base({})
+    <span class="kw">return</span> base.get_trainable_params(model)               <span class="cm"># 委托!</span></pre>
+
+<table>
+<tr><th>方法</th><th>L2T 自己做</th><th>委托给 Base</th></tr>
+<tr><td>prepare_model</td><td>-</td><td>&#10003; 全部委托</td></tr>
+<tr><td>compute_loss</td><td>-</td><td>&#10003; 全部委托</td></tr>
+<tr><td>get_trainable_params</td><td>-</td><td>&#10003; 全部委托</td></tr>
+<tr><td>build_template_list</td><td>&#10003; 自己实现</td><td>-</td></tr>
+<tr><td>preprocess_labels</td><td>&#10003; 核心创新</td><td>-</td></tr>
+<tr><td>save_checkpoint</td><td>添加 metadata</td><td>&#10003; 存储委托</td></tr>
+<tr><td>load_for_inference</td><td>读取 metadata</td><td>&#10003; 加载委托</td></tr>
+</table>
+
+<!-- ═══════════════════ Block 3: build_template_list ═══════════════════ -->
+<h2>3. build_template_list — 扫描数据集提取模板句 (Line 83-95)</h2>
+
+<p>训练前扫描整个数据集, 用 <code>Counter</code> 统计所有 user 轮次中的句子频率. 出现次数最多的 top-K 句子被判定为 <b>模板句</b> (样板指令), 保持 masked. 其余低频句子被视为 <b>内容性指令</b>, 将被 unmask.</p>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">build_template_list</span>(self, dataset: list, processor, top_k: int = <span class="num">20</span>):
+    sentence_counter: Counter = Counter()
+    <span class="kw">for</span> sample <span class="kw">in</span> dataset:
+        <span class="kw">if</span> hasattr(sample, <span class="str">"turns"</span>):
+            <span class="kw">for</span> turn <span class="kw">in</span> sample.turns:
+                <span class="kw">if</span> turn.role <span class="kw">in</span> (<span class="str">"human"</span>, <span class="str">"user"</span>):
+                    <span class="kw">for</span> sent <span class="kw">in</span> turn.content.replace(<span class="str">"\n"</span>, <span class="str">". "</span>).split(<span class="str">". "</span>):
+                        sent = sent.strip()
+                        <span class="kw">if</span> sent:
+                            sentence_counter[sent] += <span class="num">1</span>
+    self._templates = {sent <span class="kw">for</span> sent, _ <span class="kw">in</span> sentence_counter.most_common(top_k)}</pre>
+
+<div class="vis">
+<div class="vis-title">模板 vs 内容: Counter 频率统计</div>
+<div class="vis-row" style="flex-direction:column;align-items:flex-start;gap:3px">
+  <div style="display:flex;align-items:center;gap:6px">
+    <div class="vis-box tok-masked" style="min-width:260px;text-align:left">"Describe this image."</div>
+    <div class="vis-box param" style="min-width:60px">5000 次</div>
+    <div class="vis-arrow">&#x279C;</div>
+    <div class="vis-box tok-masked">模板句 (masked)</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px">
+    <div class="vis-box tok-masked" style="min-width:260px;text-align:left">"What is shown in the image?"</div>
+    <div class="vis-box param" style="min-width:60px">3200 次</div>
+    <div class="vis-arrow">&#x279C;</div>
+    <div class="vis-box tok-masked">模板句 (masked)</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px">
+    <div class="vis-box tok-unmasked" style="min-width:260px;text-align:left">"What breed is the dog in the photo?"</div>
+    <div class="vis-box result" style="min-width:60px">3 次</div>
+    <div class="vis-arrow">&#x279C;</div>
+    <div class="vis-box tok-unmasked">内容句 (unmask!)</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px">
+    <div class="vis-box tok-unmasked" style="min-width:260px;text-align:left">"How many red cars are parked?"</div>
+    <div class="vis-box result" style="min-width:60px">1 次</div>
+    <div class="vis-arrow">&#x279C;</div>
+    <div class="vis-box tok-unmasked">内容句 (unmask!)</div>
+  </div>
+</div>
+</div>
+
+<div class="note"><b>直觉:</b> "Describe this image." 出现了几千次, 它不携带任何具体视觉信息 — 在这些 token 上计算 loss 没有帮助. 但 "What breed is the dog?" 携带了具体的视觉内容 ("breed", "dog"), 模型需要真正看图才能回答 — 在这些 token 上计算 loss 能增强视觉注意力.</div>
+
+<div class="note"><b>参数 template_top_k:</b> 默认值 20, 表示频率最高的 20 个句子被视为模板. 可通过 UI slider 在 5-100 之间调节. 值越大, 越多句子被当作模板 (保持 masked); 值越小, 更多句子参与 loss.</div>
+
+<!-- ═══════════════════ Block 4: preprocess_labels ═══════════════════ -->
+<h2>4. preprocess_labels — 核心创新, 仅 5 行 (Line 97-101)</h2>
+
+<p>这就是 L2T 的 <b>全部算法</b>. 找到 labels 中所有 -100 (被 masked) 的位置, 将它们恢复为原始 input_ids. 效果: 原本不参与 loss 的指令 token 现在也参与了.</p>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">preprocess_labels</span>(self, input_ids, labels, batch_meta=<span class="kw">None</span>):
+    mask = labels == IGNORE_INDEX       <span class="cm"># Step 1: 找到所有 -100 位置</span>
+    <span class="kw">if</span> mask.any():
+        labels = labels.clone()         <span class="cm"># Step 2: 克隆避免原地修改</span>
+        labels[mask] = input_ids[mask]  <span class="cm"># Step 3: 用原始 token id 覆盖 -100</span>
+    <span class="kw">return</span> labels</pre>
+
+<div class="vis">
+<div class="vis-title">preprocess_labels 逐步执行</div>
+
+<h3 style="border:none;margin:6px 0 2px;font-size:7.5pt">输入: 一个包含 user + assistant 的 token 序列</h3>
+<div class="vis-row">
+  <span style="font-size:6.5pt;min-width:60px;color:#666">input_ids:</span>
+  <div class="vis-box input">128</div>
+  <div class="vis-box input">2041</div>
+  <div class="vis-box input">1550</div>
+  <div class="vis-box input">947</div>
+  <div class="vis-box input">|</div>
+  <div class="vis-box input">1550</div>
+  <div class="vis-box input">947</div>
+  <div class="vis-box input">682</div>
+  <div class="vis-box input">3217</div>
+  <div class="vis-box input">1876</div>
+</div>
+<div class="vis-row">
+  <span style="font-size:6.5pt;min-width:60px;color:#666">含义:</span>
+  <div class="vis-box" style="font-size:6pt">&lt;img&gt;</div>
+  <div class="vis-box" style="font-size:6pt">这张</div>
+  <div class="vis-box" style="font-size:6pt">图片</div>
+  <div class="vis-box" style="font-size:6pt">有什么</div>
+  <div class="vis-box" style="font-size:6pt">|</div>
+  <div class="vis-box" style="font-size:6pt">图片</div>
+  <div class="vis-box" style="font-size:6pt">里</div>
+  <div class="vis-box" style="font-size:6pt">有</div>
+  <div class="vis-box" style="font-size:6pt">一只</div>
+  <div class="vis-box" style="font-size:6pt">猫</div>
+</div>
+
+<h3 style="border:none;margin:8px 0 2px;font-size:7.5pt">Step 0: 标准 SFT labels (指令全部 -100)</h3>
+<div class="vis-row">
+  <span style="font-size:6.5pt;min-width:60px;color:#666">labels:</span>
+  <div class="vis-box tok-masked">-100</div>
+  <div class="vis-box tok-masked">-100</div>
+  <div class="vis-box tok-masked">-100</div>
+  <div class="vis-box tok-masked">-100</div>
+  <div class="vis-box tok-masked">-100</div>
+  <div class="vis-box tok-always">1550</div>
+  <div class="vis-box tok-always">947</div>
+  <div class="vis-box tok-always">682</div>
+  <div class="vis-box tok-always">3217</div>
+  <div class="vis-box tok-always">1876</div>
+</div>
+
+<h3 style="border:none;margin:8px 0 2px;font-size:7.5pt">Step 1: mask = (labels == -100)</h3>
+<div class="vis-row">
+  <span style="font-size:6.5pt;min-width:60px;color:#666">mask:</span>
+  <div class="vis-box param">True</div>
+  <div class="vis-box param">True</div>
+  <div class="vis-box param">True</div>
+  <div class="vis-box param">True</div>
+  <div class="vis-box param">True</div>
+  <div class="vis-box frozen">False</div>
+  <div class="vis-box frozen">False</div>
+  <div class="vis-box frozen">False</div>
+  <div class="vis-box frozen">False</div>
+  <div class="vis-box frozen">False</div>
+</div>
+
+<h3 style="border:none;margin:8px 0 2px;font-size:7.5pt">Step 3: labels[mask] = input_ids[mask] (用原始 token id 覆盖 -100)</h3>
+<div class="vis-row">
+  <span style="font-size:6.5pt;min-width:60px;color:#666">labels:</span>
+  <div class="vis-box tok-unmasked">128</div>
+  <div class="vis-box tok-unmasked">2041</div>
+  <div class="vis-box tok-unmasked">1550</div>
+  <div class="vis-box tok-unmasked">947</div>
+  <div class="vis-box tok-unmasked">|</div>
+  <div class="vis-box tok-always">1550</div>
+  <div class="vis-box tok-always">947</div>
+  <div class="vis-box tok-always">682</div>
+  <div class="vis-box tok-always">3217</div>
+  <div class="vis-box tok-always">1876</div>
+</div>
+<div class="vis-row">
+  <span style="font-size:6.5pt;min-width:60px;color:#666"></span>
+  <span class="vis-label" style="color:#006400;font-weight:700">&#x2191; 原来被忽略的 token 现在也参与 loss 计算!</span>
+</div>
+</div>
+
+<div class="note"><b>极简实现:</b> 整个 L2T 算法就是 <code>labels[mask] = input_ids[mask]</code> 这一行. 不需要新的 loss 函数, 不需要修改模型架构, 不需要额外的前向/反向传播. 这就是为什么 L2T 能与任何 base method 组合.</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 执行流</div>
+<pre style="font-family:var(--mono);font-size:7pt;margin:0;white-space:pre-wrap">labels = torch.tensor([-100, -100, -100, -100, -100, 1550, 947, 682, 3217, 1876])
+input_ids = torch.tensor([128, 2041, 1550, 947, 0, 1550, 947, 682, 3217, 1876])
+
+mask = labels == -100                  <span style="color:#666"># tensor([T, T, T, T, T, F, F, F, F, F])</span>
+labels = labels.clone()
+labels[mask] = input_ids[mask]         <span style="color:#666"># tensor([128, 2041, 1550, 947, 0, 1550, 947, 682, 3217, 1876])</span>
+                                       <span style="color:#666"># 现在所有 token 都参与 cross-entropy loss!</span></pre>
+</div>
+
+<!-- ═══════════════════ Block 5: Save / Load ═══════════════════ -->
+<h2>5. save / load — 委托给 base + 额外 metadata (Line 106-134)</h2>
+
+<p>保存时在 metadata 中记录 <code>ft_method = "l2t"</code> 和 <code>l2t_base_method = "lora"</code>, 以便加载时知道应该用哪个 base method 来恢复模型权重.</p>
+
+<pre class="code"><span class="cm"># save_checkpoint (Line 106-110)</span>
+<span class="kw">def</span> <span class="fn">save_checkpoint</span>(self, model, processor, path, metadata):
+    base = self._get_base({})
+    metadata[<span class="str">"ft_method"</span>] = self.name               <span class="cm"># "l2t"</span>
+    metadata[<span class="str">"l2t_base_method"</span>] = base.name          <span class="cm"># "lora" / "qlora" / "full_ft"</span>
+    base.save_checkpoint(model, processor, path, metadata)  <span class="cm"># 委托存储</span></pre>
+
+<pre class="code"><span class="cm"># load_for_inference (Line 112-134)</span>
+<span class="kw">def</span> <span class="fn">load_for_inference</span>(self, path, base_model_id, **kwargs):
+    <span class="kw">import</span> json
+    meta_path = os.path.join(path, <span class="str">"mmit_meta.json"</span>)
+    base_name = <span class="str">"lora"</span>                               <span class="cm"># 默认 fallback</span>
+    <span class="kw">if</span> os.path.exists(meta_path):
+        <span class="kw">with</span> open(meta_path) <span class="kw">as</span> f:
+            meta = json.load(f)
+        base_name = meta.get(<span class="str">"l2t_base_method"</span>, <span class="str">"lora"</span>)
+    <span class="kw">from</span> mmit.registry <span class="kw">import</span> registry
+    base_cls = registry.get(<span class="str">"training_method"</span>, base_name)
+    base = base_cls()
+    <span class="kw">return</span> base.load_for_inference(path, base_model_id, **kwargs)</pre>
+
+<div class="vis">
+<div class="vis-title">mmit_meta.json 示例</div>
+<pre style="font-family:var(--mono);font-size:7pt;margin:0;background:none;border:none;padding:0">{
+    "ft_method": "l2t",
+    "l2t_base_method": "lora",
+    "base_model_id": "llava-hf/llava-v1.6-mistral-7b-hf",
+    "lora_r": 8,
+    "lora_alpha": 16,
+    ...
+}</pre>
+</div>
+
+<div class="vis">
+<div class="vis-title">Save / Load 流程</div>
+<div class="vis-row">
+  <div class="vis-box param">save_checkpoint()</div>
+  <div class="vis-arrow">&#x279C;</div>
+  <div class="vis-box input">添加 metadata</div>
+  <div class="vis-arrow">&#x279C;</div>
+  <div class="vis-box result">base.save_checkpoint()</div>
+  <div class="vis-arrow">&#x279C;</div>
+  <div class="vis-box frozen">adapter_model/ + mmit_meta.json</div>
+</div>
+<div class="vis-row" style="margin-top:4px">
+  <div class="vis-box param">load_for_inference()</div>
+  <div class="vis-arrow">&#x279C;</div>
+  <div class="vis-box input">读取 mmit_meta.json</div>
+  <div class="vis-arrow">&#x279C;</div>
+  <div class="vis-box result">确定 base_method</div>
+  <div class="vis-arrow">&#x279C;</div>
+  <div class="vis-box frozen">base.load_for_inference()</div>
+</div>
+</div>
+
+<div class="note"><b>注意:</b> 推理时 L2T 不需要任何特殊处理 — 推理只需要模型权重, 而权重完全由 base method 管理. L2T 的效果已经"烤进"了权重中 (训练时多看了指令 token, 模型学到了更好的视觉注意力模式).</div>
+
+<!-- ═══════════════════ Summary ═══════════════════ -->
+<h2>6. 总结</h2>
+
+<table>
+<tr><th>维度</th><th>L2T</th><th>其他方法 (LoRA, MoRes, etc.)</th></tr>
+<tr><td>模型架构改动</td><td><b>无</b></td><td>新增参数 / 修改层</td></tr>
+<tr><td>Loss 函数改动</td><td><b>无</b></td><td>部分方法有自定义 loss</td></tr>
+<tr><td>改动对象</td><td><b>仅 labels tensor</b></td><td>权重 / 梯度 / 前向传播</td></tr>
+<tr><td>代码量</td><td>核心 5 行</td><td>几十到几百行</td></tr>
+<tr><td>可组合性</td><td>可与任何 base method 叠加</td><td>通常互斥</td></tr>
+<tr><td>推理开销</td><td><b>零</b> (与 base 完全相同)</td><td>视方法而定</td></tr>
+</table>
+
+<div class="note"><b>L2T 的独特之处:</b> 它是所有方法中唯一 <b>不改变模型架构, 不改变 loss 函数</b> 的方法 — 它只改变 loss 计算在 <b>哪些 token</b> 上执行. 极简的设计使它可以无缝叠加在 LoRA、QLoRA 或全量微调之上, 作为一个正交维度的增强.</div>
+</section>
+
+</div>
+
+<script>
+// IntersectionObserver for sidebar highlight
+document.addEventListener('DOMContentLoaded', function() {
+  const sections = document.querySelectorAll('.method-section');
+  const links = document.querySelectorAll('.sidebar-link[data-section]');
+
+  const observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        const id = entry.target.id;
+        links.forEach(function(link) {
+          link.classList.toggle('active', link.getAttribute('data-section') === id);
+        });
+      }
+    });
+  }, {
+    rootMargin: '-10% 0px -80% 0px',
+    threshold: 0
+  });
+
+  sections.forEach(function(section) {
+    observer.observe(section);
+  });
+});
+</script>
+
+</body>
+</html>

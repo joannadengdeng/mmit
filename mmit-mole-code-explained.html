@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>mole.py 图解 — LLaVA-MoLE 混合 LoRA 专家</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:8.5pt;line-height:1.4;padding:12px 20px;max-width:980px;margin:0 auto}
+
+@page{size:A4 portrait;margin:6mm}
+@media print{
+  body{padding:0;max-width:none;font-size:8pt;line-height:1.35}
+  .print-hint{display:none!important}
+  h2{page-break-after:avoid}
+  h3{page-break-after:avoid}
+  .vis,.pytorch,pre.code,table,.note{page-break-inside:avoid}
+}
+
+.print-hint{background:#fffbe0;border:1.5px solid #806000;padding:4px 10px;margin-bottom:6px;font-size:8pt;color:#806000;border-radius:3px}
+.print-hint b{color:#000}
+h1{font-size:13pt;font-weight:700;border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:3px}
+.subtitle{font-size:8pt;color:#444;font-style:italic;margin-bottom:8px}
+h2{font-size:10.5pt;font-weight:700;margin:10px 0 5px;padding:4px 8px;background:#000;color:#fff;border-radius:3px}
+h3{font-size:9pt;font-weight:700;margin:6px 0 3px;border-bottom:1px solid #ccc;padding-bottom:1px}
+p{margin:3px 0;font-size:8pt}
+
+pre.code{background:#f8f8f8;border:1px solid #000;border-radius:2px;padding:5px 8px;font-family:var(--mono);font-size:7.5pt;line-height:1.4;margin:4px 0;white-space:pre-wrap;word-break:break-word}
+.code .kw{color:#a00050;font-weight:600}.code .fn{color:#0040a0;font-weight:600}.code .str{color:#006400}.code .cm{color:#666;font-style:italic}.code .num{color:#a04000}
+
+.vis{border:1.2px solid #000;border-radius:3px;padding:6px 10px;margin:4px 0;background:#fafafa}
+.vis .vis-title{font-weight:700;font-size:9pt;margin-bottom:4px;color:#a00000}
+.vis-row{display:flex;align-items:center;gap:5px;margin:2px 0;font-family:var(--mono);font-size:7.5pt;flex-wrap:wrap}
+.vis-box{border:1px solid #000;padding:3px 8px;border-radius:2px;background:#fff;text-align:center;min-width:45px;font-size:7pt}
+.vis-box.param{background:#fff0f0;border-color:#a00000;font-weight:700}
+.vis-box.result{background:#e8f0ff;border-color:#0040a0}
+.vis-box.input{background:#fff8e0;border-color:#806000}
+.vis-box.frozen{background:#f0f5f0;border-color:#006400;border-style:dashed}
+.vis-arrow{font-size:12pt;font-weight:700;color:#000}
+.vis-eq{font-size:11pt;font-weight:700;color:#a00000}
+.vis-label{font-size:6.5pt;color:#666;font-style:italic}
+
+.pytorch{margin:3px 0;padding:5px 8px;background:#f0f0ff;border:1px solid #0040a0;border-radius:2px;font-size:7.5pt}
+.pytorch .pt-title{font-weight:700;color:#0040a0;font-size:8pt;margin-bottom:2px;font-family:var(--mono)}
+
+.note{background:#fff8e0;border-left:2.5px solid #806000;padding:4px 8px;margin:3px 0;font-size:7.5pt}
+.note b{color:#806000}
+
+table{width:100%;border-collapse:collapse;font-size:7pt;margin:3px 0}
+th,td{padding:2px 5px;border:1px solid #000;text-align:left;vertical-align:top}
+th{background:#000;color:#fff}
+
+.filemap{font-family:var(--mono);font-size:8pt;background:#f8f8f8;border:1px solid #000;border-radius:2px;padding:6px 10px;margin:6px 0;line-height:1.6}
+</style>
+</head>
+<body>
+
+<div class="print-hint"><b>📄</b> Cmd+P, A4 纵向, 最小边距, 勾选"背景图形"</div>
+
+<h1>mole.py 图解 — LLaVA-MoLE 混合 LoRA 专家 (390 行)</h1>
+<p class="subtitle">分块讲解 + 图表为主。基于 LLaVA-1.5-7B (hidden=4096, 32层, MLP: gate/up=11008, down=4096)。</p>
+
+<div class="filemap">
+<b>文件结构:</b><br>
+Line 37-50: &nbsp;&nbsp; <b>LoRAExpert</b> — 单个 LoRA 专家 (A+B 两个矩阵)<br>
+Line 53-122: &nbsp; <b>MoLELayer</b> — frozen Linear + 4 experts + router + dispatch<br>
+Line 125-162: <b>_inject_mole_layers()</b> — 把 MLP 层替换成 MoLELayer<br>
+Line 166-198: <b>_inject_attn_lora()</b> — 给 attention 加标准 LoRA<br>
+Line 201-277: <b>MoLEMethod._prepare_model_impl()</b> — 冻结 + 注入<br>
+Line 279-303: <b>_load_balance_loss()</b> — 均匀使用专家的约束<br>
+Line 305-315: <b>compute_loss()</b> — CE + balance loss<br>
+Line 321-389: <b>save/load</b> — 保存 experts + routers + attn LoRA
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 1: LoRAExpert — 一个专家长什么样 (Line 37-50)</h2>
+
+<pre class="code"><span class="kw">class</span> <span class="fn">LoRAExpert</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, in_features, out_features, rank, dropout=<span class="num">0.0</span>):
+        self.lora_A = nn.Linear(in_features, rank, bias=<span class="num">False</span>)    <span class="cm"># 降维: 4096 → 8</span>
+        self.lora_B = nn.Linear(rank, out_features, bias=<span class="num">False</span>)   <span class="cm"># 升维: 8 → 11008</span>
+        nn.init.kaiming_uniform_(self.lora_A.weight, a=<span class="num">5</span>**<span class="num">0.5</span>)
+        nn.init.zeros_(self.lora_B.weight)                          <span class="cm"># B=0 → 初始 delta=0</span>
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        <span class="kw">return</span> self.lora_B(self.lora_A(self.dropout(x)))             <span class="cm"># x→A→B = delta</span></pre>
+
+<div class="vis">
+<div class="vis-title">一个 Expert 的数据流 (以 gate_proj 为例)</div>
+<div class="vis-row">
+  <div class="vis-box input">x<br>(N, 4096)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box">dropout</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">lora_A<br>(N, 4096)→(N, 8)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">lora_B<br>(N, 8)→(N, 11008)</div>
+  <div class="vis-arrow">=</div>
+  <div class="vis-box param">delta<br>(N, 11008)</div>
+</div>
+<div class="vis-label">和标准 LoRA 完全一样: delta = B·A·x。区别是 MoLE 有 4 个这样的 expert, 每个 token 只用 1 个。</div>
+</div>
+
+<table>
+<tr><th>参数</th><th>shape</th><th>参数量</th><th>初始化</th></tr>
+<tr><td>lora_A.weight</td><td>(8, 4096)</td><td>32,768</td><td>Kaiming (让梯度稳定)</td></tr>
+<tr><td>lora_B.weight</td><td>(11008, 8)</td><td>88,064</td><td>全零 (初始 delta=0)</td></tr>
+<tr><td colspan="2"><b>每个 expert 合计</b></td><td><b>120,832</b></td><td></td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>Block 2: MoLELayer — Router + 多专家 dispatch (Line 53-122)</h2>
+
+<h3>2.1 __init__: 冻结原 Linear + 创建 4 expert + router</h3>
+
+<pre class="code"><span class="kw">class</span> <span class="fn">MoLELayer</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, base_linear, num_experts, rank, alpha, dropout):
+        self.base_linear = base_linear              <span class="cm"># 原始 nn.Linear, 冻结</span>
+        self.scaling = alpha / rank                  <span class="cm"># 16/8 = 2.0</span>
+        <span class="kw">for</span> p <span class="kw">in</span> base_linear.parameters():
+            p.requires_grad = <span class="num">False</span>                  <span class="cm"># 冻结原始权重</span>
+
+        self.experts = nn.ModuleList([
+            LoRAExpert(in_f, out_f, rank, dropout) <span class="kw">for</span> _ <span class="kw">in</span> range(num_experts)])  <span class="cm"># 4 个</span>
+        self.router = nn.Linear(in_f, num_experts, bias=<span class="num">False</span>)  <span class="cm"># (4096 → 4)</span></pre>
+
+<div class="vis">
+<div class="vis-title">MoLELayer 内部结构</div>
+<div class="vis-row">
+  <div class="vis-box frozen">base_linear<br>Linear(4096→11008)<br>FROZEN<br>~45M params</div>
+  <div class="vis-box param">Expert 0<br>A(4096→8)+B(8→11008)<br>120K params</div>
+  <div class="vis-box param">Expert 1<br>同上<br>120K</div>
+  <div class="vis-box param">Expert 2<br>同上<br>120K</div>
+  <div class="vis-box param">Expert 3<br>同上<br>120K</div>
+  <div class="vis-box param">Router<br>Linear(4096→4)<br>16K params</div>
+</div>
+<div class="vis-label">每个 MoLELayer: 1 frozen + 4 experts + 1 router = 4×120K + 16K = 499,712 可训练参数</div>
+</div>
+
+<h3>2.2 forward: router 选专家 + dispatch</h3>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">forward</span>(self, x):                         <span class="cm"># x: (batch, seq, 4096)</span>
+    base_out = self.base_linear(x)              <span class="cm"># frozen 输出: (B, seq, 11008)</span>
+
+    router_logits = self.router(x.detach())     <span class="cm"># (B, seq, 4) ← detach!</span>
+    routing_probs = F.softmax(router_logits, dim=-<span class="num">1</span>)  <span class="cm"># 归一化成概率</span>
+    expert_idx = routing_probs.argmax(dim=-<span class="num">1</span>)   <span class="cm"># (B, seq) top-1 选择</span>
+
+    <span class="cm"># dispatch: 每个 expert 处理分配给它的 token</span>
+    x_flat = x.reshape(-<span class="num">1</span>, x.shape[-<span class="num">1</span>])        <span class="cm"># (620, 4096)</span>
+    idx_flat = expert_idx.reshape(-<span class="num">1</span>)            <span class="cm"># (620,)</span>
+    delta = torch.zeros(...)                     <span class="cm"># (620, 11008)</span>
+
+    <span class="kw">for</span> i, expert <span class="kw">in</span> enumerate(self.experts):
+        mask = (idx_flat == i)                   <span class="cm"># 哪些 token 给 expert i</span>
+        <span class="kw">if</span> mask.any():
+            delta[mask] = expert(x_flat[mask])   <span class="cm"># 只跑选中的 token</span>
+
+    <span class="kw">return</span> base_out + delta.reshape(...) * self.scaling  <span class="cm"># frozen + expert delta × 2.0</span></pre>
+
+<div class="vis">
+<div class="vis-title">forward 数据流 (以公交车样本的 gate_proj 为例)</div>
+<div class="vis-row">
+  <div class="vis-box input">x (1, 620, 4096)</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box frozen">base_linear(x)<br>→ base_out<br>(1, 620, 11008)</div>
+  <div class="vis-label">frozen 原始输出</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box input">x.detach()</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param">router (4096→4)<br>→ softmax</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">probs (620, 4)<br>例: [0.12, 0.65, 0.15, 0.08]</div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box result">argmax<br>→ expert_idx=1</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box param">Expert 0<br>~200 tokens</div>
+  <div class="vis-box param" style="border-width:2px">Expert 1 ★<br>~300 tokens<br>(公交车 visual)</div>
+  <div class="vis-box param">Expert 2<br>~100 tokens<br>(文本)</div>
+  <div class="vis-box param">Expert 3<br>~20 tokens</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box frozen">base_out<br>(1, 620, 11008)</div>
+  <div class="vis-eq">+</div>
+  <div class="vis-box param">delta × 2.0<br>(1, 620, 11008)</div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box result">output<br>(1, 620, 11008)</div>
+</div>
+</div>
+
+<table>
+<tr><th>API</th><th>做什么</th><th>为什么</th></tr>
+<tr><td><code>x.detach()</code></td><td>切断梯度</td><td>不让 loss 的梯度通过 router 回传到 x，稳定训练</td></tr>
+<tr><td><code>F.softmax(_, dim=-1)</code></td><td>概率归一化</td><td>[2.1, 0.5, -0.3, 0.8] → [0.55, 0.11, 0.05, 0.15, ...]</td></tr>
+<tr><td><code>.argmax(dim=-1)</code></td><td>选最大的索引</td><td>概率 [0.12, 0.65, 0.15, 0.08] → 选 expert 1</td></tr>
+<tr><td><code>F.one_hot(idx, N)</code></td><td>整数→one-hot</td><td>expert_idx=1 → [0,1,0,0]，用于 balance loss</td></tr>
+</table>
+
+<div class="note">
+<b>x.detach() 为什么重要：</b>如果不 detach, loss 的梯度会通过 router → x → 回传到整个模型, 让 frozen 参数也收到梯度（违反冻结设计）。detach 让 router 只根据 x 的"值"做决定, 但不把梯度传回 x。
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 3: _inject_mole_layers — 替换 MLP 的 Linear (Line 125-162)</h2>
+
+<pre class="code"><span class="cm"># 遍历模型所有 module, 找 gate_proj / up_proj / down_proj</span>
+mlp_targets = {<span class="str">"gate_proj"</span>, <span class="str">"up_proj"</span>, <span class="str">"down_proj"</span>}
+
+<span class="kw">for</span> name, module <span class="kw">in</span> model.named_modules():
+    <span class="kw">if</span> freeze_patterns <span class="kw">and</span> any(p <span class="kw">in</span> name <span class="kw">for</span> p <span class="kw">in</span> freeze_patterns):
+        <span class="kw">continue</span>                                <span class="cm"># 跳过 visual/vision</span>
+    short = name.split(<span class="str">"."</span>)[-<span class="num">1</span>]
+    <span class="kw">if</span> short <span class="kw">in</span> mlp_targets <span class="kw">and</span> isinstance(module, nn.Linear):
+        mole = MoLELayer(module, num_experts, rank, alpha, dropout)
+        setattr(parent, short, mole)            <span class="cm"># 替换: parent.gate_proj = mole</span></pre>
+
+<div class="vis">
+<div class="vis-title">替换前 vs 替换后 (一个 LlamaDecoderLayer 的 MLP 部分)</div>
+<div class="vis-row">
+  <div class="vis-box" style="min-width:200px"><b>替换前</b><br>gate_proj: Linear(4096→11008)<br>up_proj: Linear(4096→11008)<br>down_proj: Linear(11008→4096)<br><span style="color:#666">3 个普通 Linear</span></div>
+  <div class="vis-arrow">→</div>
+  <div class="vis-box param" style="min-width:280px"><b>替换后</b><br>gate_proj: MoLELayer(frozen + 4 expert + router)<br>up_proj: MoLELayer(frozen + 4 expert + router)<br>down_proj: MoLELayer(frozen + 4 expert + router)<br><span style="color:#a00000">3 个 MoLELayer, 每个 ~500K 可训练参数</span></div>
+</div>
+<div class="vis-label">32 层 × 3 个 MoLELayer = 96 个 MoLELayer 被注入。注意: Attention 的 q/k/v/o 不用 MoLE, 用标准单 LoRA (下面 Block 4)。</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">setattr(parent, short, mole)</div>
+动态替换模块。等价于 <code>parent.gate_proj = mole</code>。<br>
+PyTorch 的 nn.Module 在 <code>__setattr__</code> 时自动注册子模块, 所以替换后新 MoLELayer 的参数自动被 <code>model.parameters()</code> 找到。
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 4: _inject_attn_lora — Attention 用标准 LoRA (Line 166-198)</h2>
+
+<pre class="code"><span class="cm"># 和 LoRAMethod 完全一样, 用 PEFT 库注入</span>
+lora_config = LoraConfig(
+    r=rank, lora_alpha=alpha, lora_dropout=dropout,
+    target_modules=[<span class="str">"q_proj"</span>, <span class="str">"v_proj"</span>, <span class="str">"k_proj"</span>, <span class="str">"o_proj"</span>],
+    task_type=TaskType.CAUSAL_LM)
+get_peft_model(model, lora_config)</pre>
+
+<div class="note">
+<b>为什么 MLP 用 MoE 而 Attention 不用？</b>论文的 insight: 数据冲突主要在 MLP 层（负责"记忆"知识），Attention 层主要做"关注"不太受数据类型影响。所以 MLP 用多专家分流, Attention 用单 LoRA 就够。
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 5: _prepare_model_impl — 完整注入流程 (Line 240-277)</h2>
+
+<pre class="code"><span class="cm"># Step 1: 冻结 7B 参数</span>
+<span class="kw">for</span> p <span class="kw">in</span> model.parameters():
+    p.requires_grad = <span class="num">False</span>
+
+<span class="cm"># Step 2: MLP 注入 MoLE (96 个 MoLELayer)</span>
+self._mole_layers, info = _inject_mole_layers(model, <span class="num">4</span>, <span class="num">8</span>, <span class="num">16</span>, <span class="num">0.05</span>, [<span class="str">"visual"</span>])
+
+<span class="cm"># Step 3: Attention 注入标准 LoRA (128 个 adapter)</span>
+attn_count = _inject_attn_lora(model, <span class="num">8</span>, <span class="num">16</span>, <span class="num">0.05</span>, [<span class="str">"visual"</span>])</pre>
+
+<div class="vis">
+<div class="vis-title">注入后的完整模型参数</div>
+<table>
+<tr><th>部分</th><th>组件</th><th>参数量</th><th>状态</th></tr>
+<tr><td rowspan="3">CLIP + projector</td><td>vision_tower</td><td>~300M</td><td>FROZEN</td></tr>
+<tr><td>projector</td><td>~25M</td><td>FROZEN</td></tr>
+<tr><td>embed_tokens + lm_head</td><td>~262M</td><td>FROZEN</td></tr>
+<tr><td rowspan="2">每层 Attention (×32)</td><td>原始 q/k/v/o proj</td><td>~67M/层</td><td>FROZEN</td></tr>
+<tr><td style="background:#fff0f0">LoRA adapters (r=8)</td><td style="background:#fff0f0">~262K/层</td><td style="background:#fff0f0"><b>TRAINABLE</b></td></tr>
+<tr><td rowspan="2">每层 MLP (×32)</td><td>原始 gate/up/down proj</td><td>~134M/层</td><td>FROZEN</td></tr>
+<tr><td style="background:#fff0f0">3 MoLELayer (4 expert + router 每个)</td><td style="background:#fff0f0">~1.5M/层</td><td style="background:#fff0f0"><b>TRAINABLE</b></td></tr>
+<tr style="font-weight:700"><td colspan="2">总可训练</td><td colspan="2">MoLE MLP: ~48M + Attn LoRA: ~8M = <b>~56M</b> (0.79%)</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 6: _load_balance_loss — 均匀使用专家 (Line 279-303)</h2>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">_load_balance_loss</span>(self):
+    <span class="kw">for</span> layer <span class="kw">in</span> self._mole_layers:              <span class="cm"># 96 个 MoLELayer</span>
+        probs = layer._routing_probs.reshape(-<span class="num">1</span>, <span class="num">4</span>)  <span class="cm"># (620, 4) softmax 概率</span>
+        mask = layer._expert_mask.reshape(-<span class="num">1</span>, <span class="num">4</span>)    <span class="cm"># (620, 4) one-hot 选择</span>
+        f = mask.mean(dim=<span class="num">0</span>)                       <span class="cm"># (4,) 每个 expert 分到的比例</span>
+        P = probs.mean(dim=<span class="num">0</span>)                      <span class="cm"># (4,) 每个 expert 的平均概率</span>
+        total_loss += (f * P).sum() * num_experts   <span class="cm"># N × Σ(fᵢ × Pᵢ)</span>
+    <span class="kw">return</span> total_loss / count</pre>
+
+<div class="vis">
+<div class="vis-title">数值例子: balance loss 怎么算</div>
+<table>
+<tr><th></th><th>Expert 0</th><th>Expert 1</th><th>Expert 2</th><th>Expert 3</th></tr>
+<tr><td><b>f (分到的比例)</b></td><td>0.32</td><td>0.48</td><td>0.16</td><td>0.04</td></tr>
+<tr><td><b>P (平均概率)</b></td><td>0.30</td><td>0.45</td><td>0.15</td><td>0.10</td></tr>
+<tr><td><b>f × P</b></td><td>0.096</td><td>0.216</td><td>0.024</td><td>0.004</td></tr>
+</table>
+<p style="font-size:7.5pt">
+L_balance = 4 × (0.096 + 0.216 + 0.024 + 0.004) = 4 × 0.34 = <b>1.36</b><br>
+完美均匀时 (f=P=[0.25,0.25,0.25,0.25]): L = 4 × (0.0625×4) = <b>1.0</b> ← 最小值<br>
+不均匀 → L > 1 → 惩罚 → 迫使 router 均匀分流
+</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 7: compute_loss — CE + balance (Line 305-315)</h2>
+
+<pre class="code">text_loss, metrics = _ce_loss.compute(model, batch, outputs)
+balance_loss = self._load_balance_loss()
+total_loss = text_loss + <span class="num">0.01</span> * balance_loss</pre>
+
+<div class="vis">
+<div class="vis-title">Loss 组成</div>
+<div class="vis-row">
+  <div class="vis-box result">CE loss<br>~2.34</div>
+  <div class="vis-eq">+</div>
+  <div class="vis-box">0.01</div>
+  <div class="vis-eq">×</div>
+  <div class="vis-box result">balance loss<br>~1.36</div>
+  <div class="vis-eq">=</div>
+  <div class="vis-box param">total<br>~2.354</div>
+</div>
+<div class="vis-label">balance loss 远小于 CE, 只是温和地推 router 均匀分流。</div>
+</div>
+
+<!-- ============================================================ -->
+<h2>Block 8: save / load (Line 321-389)</h2>
+
+<pre class="code"><span class="cm"># save: 两部分分别保存</span>
+torch.save(mole_state, <span class="str">"mole_experts.pt"</span>)   <span class="cm"># 96 个 MoLELayer 的 experts + routers</span>
+model.save_pretrained(path)                  <span class="cm"># Attention LoRA (PEFT 格式)</span>
+
+<span class="cm"># load: 重建结构 + 填入权重</span>
+self.prepare_model(model, processor, config) <span class="cm"># 重新注入 MoLE + LoRA</span>
+mole_state = torch.load(<span class="str">"mole_experts.pt"</span>)  <span class="cm"># 加载 expert 权重</span>
+<span class="kw">for</span> i, layer <span class="kw">in</span> enumerate(self._mole_layers):
+    layer.experts.load_state_dict(mole_state[f<span class="str">"mole_layer_{i}"</span>][<span class="str">"experts"</span>])
+    layer.router.load_state_dict(mole_state[f<span class="str">"mole_layer_{i}"</span>][<span class="str">"router"</span>])
+model = PeftModel.from_pretrained(model, path)  <span class="cm"># 加载 attn LoRA</span>
+model = model.merge_and_unload()                 <span class="cm"># merge → 零额外开销</span></pre>
+
+<div class="vis">
+<div class="vis-title">checkpoint 结构</div>
+<div class="vis-row" style="flex-direction:column;align-items:flex-start;gap:2px;font-family:var(--mono);font-size:7.5pt">
+<div>output/final/</div>
+<div>&nbsp;&nbsp;├── <b>mole_experts.pt</b> &nbsp;&nbsp;&nbsp;&nbsp; ← 96 个 MoLELayer 的 experts + routers (~190MB)</div>
+<div>&nbsp;&nbsp;├── adapter_model.bin &nbsp;&nbsp; ← Attention LoRA 权重 (PEFT 格式, ~32MB)</div>
+<div>&nbsp;&nbsp;├── adapter_config.json</div>
+<div>&nbsp;&nbsp;├── tokenizer_config.json</div>
+<div>&nbsp;&nbsp;└── mmit_meta.json</div>
+</div>
+<div class="vis-label">MoLE 的 checkpoint ~220MB (vs LoRA ~8MB, vs MoReS ~32KB)。因为有 4×96=384 个 expert。</div>
+</div>
+
+<!-- ============================================================ -->
+<h2>总结: mole.py vs mores.py</h2>
+
+<table>
+<tr><th></th><th>MoLE (mole.py)</th><th>MoReS (mores.py)</th></tr>
+<tr><td><b>改什么</b></td><td>MLP 层的 weight (通过 expert delta)</td><td>hidden state (通过 hook)</td></tr>
+<tr><td><b>怎么改</b></td><td>替换 Linear 为 MoLELayer<br>setattr(parent, name, mole)</td><td>register_forward_hook<br>在 layer 输出后拦截</td></tr>
+<tr><td><b>选择机制</b></td><td>Router (Linear→softmax→argmax)<br>每 token 选 1 个 expert</td><td>norm.topk(6)<br>选 6 个最重要的 token</td></tr>
+<tr><td><b>参数量</b></td><td>~56M (4 expert × 3 proj × 32 层)</td><td>~8K (1 个共享 intervention)</td></tr>
+<tr><td><b>辅助 loss</b></td><td>balance loss (均匀分流)</td><td>ortho loss (保持正交)</td></tr>
+<tr><td><b>checkpoint</b></td><td>~220MB</td><td>~32KB</td></tr>
+<tr><td><b>适合场景</b></td><td>多数据集混合 (VQA+OCR+Science)</td><td>极致参数效率</td></tr>
+</table>
+
+</body>
+</html>

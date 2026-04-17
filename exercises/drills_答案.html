@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PyTorch 手写代码练习 — 参考答案</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:9pt;line-height:1.4;padding:10px 18px;max-width:780px;margin:0 auto}
+@page{size:A4 portrait;margin:8mm 10mm}
+@media print{body{padding:0;max-width:none;font-size:8.5pt}}
+h1{font-size:14pt;font-weight:700;border-bottom:2.5px solid #000;padding-bottom:3px;margin-bottom:6px}
+h2{font-size:10.5pt;font-weight:700;margin:10px 0 4px;padding:3px 8px;background:#000;color:#fff;border-radius:3px}
+h3{font-size:9pt;font-weight:700;margin:6px 0 2px}
+pre{background:#f5f5f5;border:1px solid #000;border-radius:2px;padding:5px 8px;font-family:var(--mono);font-size:7.5pt;line-height:1.35;margin:3px 0;white-space:pre-wrap}
+p{margin:2px 0;font-size:8pt}
+.tip{font-size:7pt;color:#666}
+</style>
+</head>
+<body>
+
+<h1>PyTorch 手写代码练习 — 参考答案 (40 题)</h1>
+<p class="tip">对照你手写的代码检查。关键是思路正确，语法细节不必完全一致。</p>
+
+<div class="answers">
+
+<h1 style="font-size:11pt">参考答案 (仅供验证)</h1>
+<p style="font-size:7pt;color:#888">以下为每题关键实现代码，完整验证请运行 pytorch_drills.py</p>
+
+<h2>Group 1: Tensor 基础</h2>
+
+<h3>Ex 1: create_tensor</h3>
+<pre>return torch.tensor([1, 2, 3, 4, 5], dtype=torch.float32)</pre>
+
+<h3>Ex 2: tensor_shape</h3>
+<pre>B, S, D = x.shape
+return B, S, D</pre>
+
+<h3>Ex 3: reshape_tensor</h3>
+<pre>return x.reshape(2, 3, 4)</pre>
+
+<h3>Ex 4: transpose_last_two</h3>
+<pre>return x.transpose(-1, -2)</pre>
+
+<h3>Ex 5: matmul_exercise</h3>
+<pre>return a @ b</pre>
+
+<h3>Ex 6: split_heads</h3>
+<pre>B, S, HD = x.shape
+D = HD // num_heads
+return x.reshape(B, S, num_heads, D).permute(0, 2, 1, 3)</pre>
+
+<h3>Ex 7: merge_heads</h3>
+<pre>B, H, S, D = x.shape
+return x.permute(0, 2, 1, 3).contiguous().view(B, S, H * D)</pre>
+
+<h3>Ex 8: move_to_device</h3>
+<pre>return x.to(device=device, dtype=dtype)</pre>
+
+<h2>Group 2: 激活函数</h2>
+
+<h3>Ex 9: my_relu</h3>
+<pre>return torch.clamp(x, min=0)</pre>
+
+<h3>Ex 10: my_softmax</h3>
+<pre>x_stable = x - x.max(dim=dim, keepdim=True).values
+e = torch.exp(x_stable)
+return e / e.sum(dim=dim, keepdim=True)</pre>
+
+<h3>Ex 11: my_gelu</h3>
+<pre>c = 0.7978845608  # sqrt(2/pi)
+return 0.5 * x * (1 + torch.tanh(c * (x + 0.044715 * x ** 3)))</pre>
+
+<h3>Ex 12: my_silu</h3>
+<pre>return x * torch.sigmoid(x)</pre>
+
+<h3>Ex 13: swiglu_forward</h3>
+<pre>return (gate_out * torch.sigmoid(gate_out)) * up_out</pre>
+
+<h3>Ex 14: top_k_by_norm</h3>
+<pre>norms = torch.norm(x, dim=-1)
+return norms.topk(k).indices</pre>
+
+<h2>Group 3: Loss 函数</h2>
+
+<h3>Ex 15: my_cross_entropy</h3>
+<pre>log_probs = torch.log_softmax(logits, dim=-1)
+return -log_probs[range(len(targets)), targets].mean()</pre>
+
+<h3>Ex 16: ce_with_ignore</h3>
+<pre>mask = targets != ignore_index
+log_probs = torch.log_softmax(logits, dim=-1)
+valid_log_probs = log_probs[mask]
+valid_targets = targets[mask]
+return -valid_log_probs[range(len(valid_targets)), valid_targets].mean()</pre>
+
+<h3>Ex 17: focal_loss</h3>
+<pre>log_probs = F.log_softmax(logits, dim=-1)
+log_pt = log_probs.gather(1, targets.unsqueeze(1)).squeeze(1)
+pt = log_pt.exp()
+return (-((1 - pt) ** gamma) * log_pt).mean()</pre>
+
+<h3>Ex 18: label_smoothing_loss</h3>
+<pre>log_probs = F.log_softmax(logits, dim=-1)
+nll = -log_probs[range(len(targets)), targets]
+smooth = -log_probs.mean(dim=-1)
+return ((1 - epsilon) * nll + epsilon * smooth).mean()</pre>
+
+<h3>Ex 19: contrastive_loss</h3>
+<pre>q = F.normalize(queries, dim=-1)
+k = F.normalize(keys, dim=-1)
+sim = q @ k.T / temperature
+return F.cross_entropy(sim, torch.arange(len(q)))</pre>
+
+<h3>Ex 20: moe_load_balance_loss</h3>
+<pre>T, E = router_logits.shape
+probs = F.softmax(router_logits, dim=-1)
+indices = router_logits.topk(top_k, dim=-1).indices
+mask = torch.zeros(T, E).scatter_(1, indices, 1.0)
+f = mask.mean(dim=0)
+p = probs.mean(dim=0)
+return E * (f * p).sum()</pre>
+
+<h2>Group 4: nn.Module</h2>
+
+<h3>Ex 21: SimpleLinear</h3>
+<pre>__init__: self.weight = nn.Parameter(torch.randn(out_f, in_f))
+          self.bias = nn.Parameter(torch.zeros(out_f))
+forward:  return x @ self.weight.T + self.bias</pre>
+
+<h3>Ex 22: MyLayerNorm</h3>
+<pre>__init__: self.weight = nn.Parameter(torch.ones(dim))
+          self.bias = nn.Parameter(torch.zeros(dim))
+          self.eps = eps
+forward:  mean = x.mean(-1, keepdim=True)
+          var = x.var(-1, unbiased=False, keepdim=True)
+          return self.weight * (x - mean) / torch.sqrt(var + self.eps) + self.bias</pre>
+
+<h3>Ex 23: MyRMSNorm</h3>
+<pre>__init__: self.weight = nn.Parameter(torch.ones(dim)); self.eps = eps
+forward:  rms = torch.sqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+          return x / rms * self.weight</pre>
+
+<h3>Ex 24: MyDropout</h3>
+<pre>__init__: self.p = p
+forward:  if not self.training: return x
+          mask = torch.bernoulli(torch.full_like(x, 1 - self.p))
+          return x * mask / (1 - self.p)</pre>
+
+<h3>Ex 25: MyEmbedding</h3>
+<pre>__init__: self.weight = nn.Parameter(torch.randn(vocab_size, embed_dim))
+forward:  return self.weight[input_ids]</pre>
+
+<h3>Ex 26: LoRALinear</h3>
+<pre>__init__: self.base = base_linear; self.scale = scale
+          for p in base_linear.parameters(): p.requires_grad = False
+          in_f, out_f = base_linear.in_features, base_linear.out_features
+          self.A = nn.Parameter(torch.randn(rank, in_f) * 0.01)
+          self.B = nn.Parameter(torch.zeros(out_f, rank))
+forward:  return self.base(x) + self.scale * (x @ self.A.T @ self.B.T)</pre>
+
+<h2>Group 5: Attention</h2>
+
+<h3>Ex 27: scaled_dot_product_attention</h3>
+<pre>d_k = Q.shape[-1]
+scores = Q @ K.transpose(-1, -2) / math.sqrt(d_k)
+weights = F.softmax(scores, dim=-1)
+return weights @ V, weights</pre>
+
+<h3>Ex 28: causal_mask</h3>
+<pre>return torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool()</pre>
+
+<h3>Ex 29: masked_attention</h3>
+<pre>d_k = Q.shape[-1]
+scores = Q @ K.transpose(-1, -2) / math.sqrt(d_k)
+scores.masked_fill_(mask.unsqueeze(0), float('-inf'))
+weights = F.softmax(scores, dim=-1)
+return weights @ V</pre>
+
+<h3>Ex 30: MultiHeadAttention</h3>
+<pre>__init__: self.H = num_heads; self.d = dim // num_heads
+          self.W_q/k/v/o = nn.Linear(dim, dim)
+forward:  B,S,D = x.shape
+          Q,K,V = self.W_q(x), self.W_k(x), self.W_v(x)
+          Q,K,V = [split_heads(t, self.H) for t in (Q,K,V)]
+          out, _ = scaled_dot_product_attention(Q, K, V)
+          return self.W_o(merge_heads(out))</pre>
+
+<h3>Ex 31: rope_frequencies</h3>
+<pre>inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
+positions = torch.arange(seq_len).float()
+return positions.unsqueeze(1) * inv_freq.unsqueeze(0)</pre>
+
+<h3>Ex 32: apply_rope</h3>
+<pre>x2 = x.reshape(*x.shape[:-1], -1, 2)
+x_even, x_odd = x2[..., 0], x2[..., 1]
+cos_f, sin_f = freqs.cos(), freqs.sin()
+y_even = x_even * cos_f - x_odd * sin_f
+y_odd = x_even * sin_f + x_odd * cos_f
+return torch.stack([y_even, y_odd], dim=-1).flatten(-2)</pre>
+
+<h2>Group 6: 训练循环</h2>
+
+<h3>Ex 33: training_step</h3>
+<pre>logits = model(x)
+loss = F.cross_entropy(logits, targets)
+loss.backward()
+torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+optimizer.step()
+optimizer.zero_grad()
+return loss.item()</pre>
+
+<h3>Ex 34: gradient_accumulation_step</h3>
+<pre>optimizer.zero_grad()
+total = 0.0
+for mb, tgt in zip(micro_batches, targets_list):
+    loss = F.cross_entropy(model(mb), tgt) / accum_steps
+    loss.backward()
+    total += loss.item()
+optimizer.step()
+return total</pre>
+
+<h3>Ex 35: cosine_warmup_schedule</h3>
+<pre>if step < warmup_steps:
+    return step / warmup_steps
+progress = (step - warmup_steps) / (total_steps - warmup_steps)
+return min_lr_ratio + 0.5 * (1 - min_lr_ratio) * (1 + math.cos(math.pi * progress))</pre>
+
+<h3>Ex 36: freeze_and_count</h3>
+<pre>for p in model.parameters(): p.requires_grad = False
+for name, p in model.named_parameters():
+    if any(n in name for n in trainable_names):
+        p.requires_grad = True
+return sum(p.numel() for p in model.parameters() if p.requires_grad)</pre>
+
+<h2>Group 7: 保存 & Hook</h2>
+
+<h3>Ex 37: save_trainable_only</h3>
+<pre>return {n: p.data for n, p in model.named_parameters() if p.requires_grad}</pre>
+
+<h3>Ex 38: load_partial</h3>
+<pre>result = model.load_state_dict(partial_state_dict, strict=False)
+return list(result.missing_keys), list(result.unexpected_keys)</pre>
+
+<h3>Ex 39: register_intervention_hook</h3>
+<pre>target = dict(model.named_modules())[layer_name]
+def hook(module, input, output):
+    return output + delta
+return target.register_forward_hook(hook)</pre>
+
+<h3>Ex 40: orthogonal_intervention</h3>
+<pre>diff = W @ h.T - R @ h.T          # (D, B)
+h_prime = h + (R.T @ diff).T      # (B, D)
+I = torch.eye(R.shape[0], device=R.device)
+ortho_penalty = ((R.T @ R - I) ** 2).sum()
+return h_prime, ortho_penalty</pre>
+
+</div>
+
+</body>
+</html>

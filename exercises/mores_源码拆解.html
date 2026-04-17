@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>mores.py 源码拆解 — 边读代码边看内部发生了什么</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:7.5pt;line-height:1.35;padding:8px 10px;max-width:none;margin:0 auto}
+@page{size:A4 portrait;margin:5mm 6mm}
+@media print{body{padding:0;font-size:7pt;line-height:1.25}}
+h1{font-size:11pt;font-weight:700;border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:4px}
+h2{font-size:8.5pt;font-weight:700;margin:8px 0 3px;padding:2px 6px;background:#fff;border:1.5px solid #000;border-radius:2px;page-break-after:avoid}
+p{margin:2px 0;font-size:7pt}
+.row{display:flex;gap:8px;margin:4px 0;page-break-inside:avoid}
+.col-code{flex:1;min-width:0}
+.col-state{flex:1;min-width:0}
+pre.code{background:#fff;border:1px solid #000;border-radius:2px;padding:4px 6px;font-family:var(--mono);font-size:6.5pt;line-height:1.4;margin:0;white-space:pre-wrap;word-break:break-word}
+.kw{color:#000;font-weight:700}.fn{color:#000;font-weight:600;text-decoration:underline}.str{color:#000}.cm{color:#444;font-style:italic}.num{color:#000}
+.state{background:#fff;border:2px solid #000;border-radius:2px;padding:4px 6px;font-family:var(--mono);font-size:6.5pt;line-height:1.35;margin:0}
+.state b{color:#000}
+.output{background:#fff;border:1px solid #000;border-left:4px solid #000;border-radius:2px;padding:4px 6px;font-family:var(--mono);font-size:6.5pt;line-height:1.35;margin:3px 0}
+.output b{color:#000}
+.danger{background:#fff;border:2px dashed #000;border-radius:2px;padding:4px 6px;font-size:6.5pt;margin:3px 0}
+.danger b{color:#000}
+.note{background:#fff;border-left:3px solid #000;padding:3px 6px;margin:3px 0;font-size:6.5pt}
+.note b{color:#000}
+.graph{font-family:var(--mono);font-size:6pt;line-height:1.2;white-space:pre;background:#fff;border:1px solid #000;padding:4px 6px;margin:4px 0;border-radius:2px;page-break-inside:avoid}
+table{width:100%;border-collapse:collapse;font-size:6.5pt;margin:3px 0}
+th,td{padding:2px 4px;border:1px solid #000;text-align:left;vertical-align:top}
+th{background:#fff;font-weight:700;border-bottom:2px solid #000}
+hr{border:none;border-top:1px solid #000;margin:6px 0}
+.label-code{font-size:6pt;color:#000;font-weight:700;margin-bottom:1px;text-transform:uppercase}
+.label-state{font-size:6pt;color:#000;font-weight:700;margin-bottom:1px;text-transform:uppercase}
+</style>
+</head>
+<body>
+
+<h1>mores.py 源码拆解 — 边读代码边看内部发生了什么</h1>
+<p>MoReS 方法的 510 行代码，逐段拆解。基于 LLaVA-1.5-7B (hidden_dim=4096, 32 层, rank=1)。</p>
+
+<hr>
+
+<!-- ═══════════════ Part 1 ═══════════════ -->
+<h2>Part 1: OrthogonalIntervention.__init__ (Line 42-70) — 创建干预模块</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">源代码</div>
+<pre class="code"><span class="kw">class</span> <span class="fn">OrthogonalIntervention</span>(nn.Module):
+    <span class="str">"""Low-rank orthogonal intervention module.
+    Implements: h' = h + R^T * (W*h + b - R*h)
+    """</span>
+
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, hidden_dim: int,
+                 rank: int = <span class="num">1</span>,
+                 dropout: float = <span class="num">0.0</span>):
+        <span class="fn">super</span>().__init__()
+        self.hidden_dim = hidden_dim
+        self.rank = rank
+
+        <span class="cm"># R: orthogonal projection [rank, hidden_dim]</span>
+        self.R = nn.<span class="fn">Parameter</span>(
+            torch.<span class="fn">empty</span>(rank, hidden_dim))
+        nn.init.<span class="fn">orthogonal_</span>(self.R)
+
+        <span class="cm"># W: steering matrix [rank, hidden_dim]</span>
+        self.W = nn.<span class="fn">Linear</span>(hidden_dim, rank, bias=<span class="kw">True</span>)
+        nn.init.<span class="fn">zeros_</span>(self.W.weight)
+        nn.init.<span class="fn">zeros_</span>(self.W.bias)
+
+        self.dropout = nn.<span class="fn">Dropout</span>(dropout) \
+            <span class="kw">if</span> dropout > <span class="num">0</span> \
+            <span class="kw">else</span> nn.<span class="fn">Identity</span>()</pre>
+</div>
+<div class="col-state">
+<div class="label-state">内部发生了什么</div>
+<div class="state">
+<b>super().__init__() 创建空字典：</b>
+<pre>self._parameters        = {}
+self._modules           = {}
+self._buffers           = {}
+self._forward_hooks     = {}
+self._forward_pre_hooks = {}
+self.training           = True</pre>
+</div>
+
+<div class="state" style="margin-top:3px">
+<b>self.R = nn.Parameter(torch.empty(1, 4096))</b>
+<pre>__setattr__ 检测到 Parameter
+→ 存入 _parameters（不是 _modules!）
+
+self._parameters = {
+  <b>"R": Parameter(1, 4096)</b>  ← 新增!
+}
+
+nn.init.orthogonal_(self.R):
+  R 变成单位向量，||R|| = 1
+  例如: tensor([[0.013, -0.007, ..., 0.021]])
+  shape: (<b>1, 4096</b>), requires_grad: True</pre>
+</div>
+
+<div class="state" style="margin-top:3px">
+<b>self.W = nn.Linear(4096, 1, bias=True)</b>
+<pre>__setattr__ 检测到 Module
+→ 存入 _modules
+
+self._modules = {
+  <b>"W": Linear(in=4096, out=1)</b>  ← 新增!
+}
+
+W 自己也是 Module，内部有：
+W._parameters = {
+  "weight": Parameter(<b>1, 4096</b>) ← 全零!
+  "bias":   Parameter(<b>1</b>)       ← 全零!
+}</pre>
+</div>
+
+<div class="state" style="margin-top:3px">
+<b>self.dropout = nn.Identity() (dropout=0.05 时为 Dropout)</b>
+<pre>self._modules = {
+  "W":       Linear(4096, 1),
+  <b>"dropout": Identity()</b>  ← 新增!
+}</pre>
+</div>
+
+<div class="output">
+<b>完整的内部字典：</b>
+<pre>self._parameters = {
+  "R": Parameter(1, 4096)      ← 4096 个值
+}
+self._modules = {
+  "W":       Linear(4096, 1)   ← weight(1,4096) + bias(1)
+  "dropout": Identity()        ← 无参数
+}</pre>
+</div>
+
+<div class="note">
+<b>参数总量：</b>R: 4096 + W.weight: 4096 + W.bias: 1 = <b>8,193 可训练参数</b>。对比 LoRA 的数百万参数，这里只有 8K!
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Part 2 ═══════════════ -->
+<h2>Part 2: orthogonal_penalty (Line 72-76) — 正交性惩罚</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">源代码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">orthogonal_penalty</span>(self) -> torch.Tensor:
+    <span class="str">"""Soft orthogonality: ||R*R^T - I||_F^2"""</span>
+    RRt = self.R @ self.R.<span class="fn">t</span>()
+    I = torch.<span class="fn">eye</span>(self.rank,
+        device=self.R.device,
+        dtype=self.R.dtype)
+    <span class="kw">return</span> (RRt - I).<span class="fn">pow</span>(<span class="num">2</span>).<span class="fn">sum</span>()</pre>
+</div>
+<div class="col-state">
+<div class="label-state">具体计算过程 (rank=1, hidden_dim=4096)</div>
+<div class="state">
+<b>第一步: R @ R.t()</b>
+<pre>R shape:    (1, 4096)
+R.t() shape: (4096, 1)
+RRt = R @ R.t()
+    = (1, 4096) @ (4096, 1)
+    = (<b>1, 1</b>)
+    = [[s]]   其中 s = ||R||^2 (R 的 L2 范数平方)</pre>
+</div>
+
+<div class="state" style="margin-top:3px">
+<b>第二步: I = eye(1) = [[1]]</b>
+</div>
+
+<div class="output">
+<b>情况 1: R 是单位向量 (||R||=1)</b>
+<pre>s = 1.0, RRt = [[1.0]]
+penalty = (1.0 - 1.0)^2 = <b>0.0</b> ← 完美!</pre>
+<b>情况 2: R 漂移了 (||R||=1.05)</b>
+<pre>s = 1.1025, RRt = [[1.1025]]
+penalty = (1.1025 - 1.0)^2 = <b>0.0105</b></pre>
+<b>情况 3: R 严重漂移 (||R||=2.0)</b>
+<pre>s = 4.0, RRt = [[4.0]]
+penalty = (4.0 - 1.0)^2 = <b>9.0</b> ← 很大的惩罚!</pre>
+</div>
+
+<div class="note">
+<b>用途：</b>这个惩罚会乘以 0.01 加到 loss 里。它迫使 R 始终保持为正交矩阵（rank=1 时就是单位向量）。如果不加这个约束，R 可以任意缩放，干预的几何意义就丢了。
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Part 3 ═══════════════ -->
+<h2>Part 3: forward — 简单路径 (Line 98-105) — 干预所有 token</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">源代码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">forward</span>(self, h, vis_mask=<span class="kw">None</span>,
+            steer_ratio=<span class="num">1.0</span>):
+    R = self.R  <span class="cm"># [rank, hidden_dim]</span>
+
+    <span class="kw">if</span> vis_mask <span class="kw">is None and</span> \
+       steer_ratio >= <span class="num">1.0</span>:
+        <span class="cm"># Steer all tokens (simple path)</span>
+        Rh = F.<span class="fn">linear</span>(h, R)
+        <span class="cm"># [B, seq, rank]</span>
+        Wh = self.<span class="fn">W</span>(h)
+        <span class="cm"># [B, seq, rank]</span>
+        delta_low = self.<span class="fn">dropout</span>(Wh - Rh)
+        delta = F.<span class="fn">linear</span>(delta_low, R.<span class="fn">t</span>())
+        <span class="kw">return</span> h + delta</pre>
+</div>
+<div class="col-state">
+<div class="label-state">逐步计算 (batch=1, seq=620, dim=4096)</div>
+<div class="state">
+<b>输入:</b>
+<pre>h: (<b>1, 620, 4096</b>)
+  ← 1 个 batch, 620 个 token, 4096 维
+R: (1, 4096)  ← 正交投影方向</pre>
+</div>
+
+<div class="output">
+<b>Step 1: Rh = F.linear(h, R)</b>
+<pre>F.linear(h, R) = h @ R.T
+  h:   (1, 620, 4096)
+  R.T: (4096, <b>1</b>)
+  Rh:  (1, 620, <b>1</b>)
+← 每个 token 投影到 R 方向上的分量（标量）</pre>
+
+<b>Step 2: Wh = self.W(h)</b>
+<pre>W 是 Linear(4096, 1):
+  h:  (1, 620, 4096)
+  Wh: (1, 620, <b>1</b>)
+← 每个 token 经过 W 变换后的标量</pre>
+
+<b>Step 3: delta_low = dropout(Wh - Rh)</b>
+<pre>Wh - Rh: (1, 620, 1) - (1, 620, 1)
+        = (1, 620, <b>1</b>)
+← 低维空间中的"修正量"</pre>
+
+<b>Step 4: delta = F.linear(delta_low, R.t())</b>
+<pre>F.linear(delta_low, R.t()) = delta_low @ R
+  delta_low: (1, 620, 1)
+  R:         (1, 4096)
+  delta:     (1, 620, <b>4096</b>)
+← 把低维修正投射回 4096 维空间</pre>
+
+<b>Step 5: return h + delta</b>
+<pre>h + delta: (1, 620, 4096) + (1, 620, 4096)
+         = (1, 620, <b>4096</b>)  ← 形状不变!</pre>
+</div>
+
+<div class="danger">
+<b>初始化时 W=0 意味着什么？</b>
+<pre>训练开始时 W.weight=0, W.bias=0, 所以:
+  Wh = 0
+  delta_low = 0 - Rh = -Rh
+  delta = -R^T @ R @ h
+  h' = h - R^T(R @ h)
+
+这就是<b>投影去除</b>! 把 h 在 R 方向上的分量减掉。
+= 从每个 token 中移除 R 所指方向的信息。
+
+随着训练，W 学到非零值 → 变成"先移除旧信息，再注入新信息"。</pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Part 4 ═══════════════ -->
+<h2>Part 4: forward — 选择性路径 (Line 107-135) — 只干预 top 1% 视觉 token</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">源代码</div>
+<pre class="code"><span class="cm"># ── Selective steering ──</span>
+h_out = h.<span class="fn">clone</span>()
+
+<span class="kw">for</span> b <span class="kw">in</span> <span class="fn">range</span>(h.<span class="fn">size</span>(<span class="num">0</span>)):
+    <span class="kw">if</span> vis_mask <span class="kw">is not None</span>:
+        vis_idx = vis_mask[b].<span class="fn">nonzero</span>(
+            as_tuple=<span class="kw">True</span>)[<span class="num">0</span>]
+    <span class="kw">else</span>:
+        vis_idx = torch.<span class="fn">arange</span>(
+            h.<span class="fn">size</span>(<span class="num">1</span>), device=h.device)
+
+    <span class="kw">if</span> vis_idx.<span class="fn">numel</span>() == <span class="num">0</span>:
+        <span class="kw">continue</span>
+
+    <span class="cm"># Select top-k% by norm</span>
+    <span class="kw">if</span> steer_ratio < <span class="num">1.0</span> \
+       <span class="kw">and</span> vis_idx.<span class="fn">numel</span>() > <span class="num">1</span>:
+        h_vis = h[b, vis_idx]
+        norms = h_vis.<span class="fn">norm</span>(dim=-<span class="num">1</span>)
+        k = <span class="fn">max</span>(<span class="num">1</span>,
+            <span class="fn">int</span>(vis_idx.<span class="fn">numel</span>()
+                 * steer_ratio))
+        _, topk_local = norms.<span class="fn">topk</span>(k)
+        vis_idx = vis_idx[topk_local]
+
+    <span class="cm"># Apply intervention</span>
+    h_sel = h[b, vis_idx]
+    Rh = F.<span class="fn">linear</span>(h_sel, R)
+    Wh = self.<span class="fn">W</span>(h_sel)
+    delta_low = self.<span class="fn">dropout</span>(Wh - Rh)
+    delta = F.<span class="fn">linear</span>(delta_low, R.<span class="fn">t</span>())
+    h_out[b, vis_idx] = h_sel + delta
+
+<span class="kw">return</span> h_out</pre>
+</div>
+<div class="col-state">
+<div class="label-state">逐步计算 (620 个视觉 token, steer_ratio=0.01)</div>
+<div class="state">
+<b>Step 1: h_out = h.clone()</b>
+<pre>深拷贝 h，后续修改 h_out 不影响原始 h。
+这很重要: hook 不应该修改原始张量。</pre>
+</div>
+
+<div class="output">
+<b>Step 2: 找到视觉 token 位置</b>
+<pre>vis_mask[0]: [F, F, T, T, T, ..., T, F, F, ...]
+              ↑文本  ↑-------620个视觉------↑  ↑文本
+
+vis_idx = vis_mask[0].nonzero()
+        = tensor([2, 3, 4, ..., 621])
+        → <b>620</b> 个视觉 token 的索引</pre>
+</div>
+
+<div class="output">
+<b>Step 3: 按 L2 范数选 top 1%</b>
+<pre>h_vis = h[0, vis_idx]  → (620, 4096)
+norms = h_vis.norm(dim=-1) → (620,)
+  例如: [12.3, 8.7, 15.1, 9.4, ...]
+
+k = max(1, int(620 * 0.01)) = max(1, 6) = <b>6</b>
+
+_, topk_local = norms.topk(6)
+  topk_local = [2, 45, 103, 287, 412, 599]
+  ← 范数最大的 6 个 token 的局部索引
+
+vis_idx = vis_idx[topk_local]
+  ← 转回全局索引，例如 [4, 47, 105, 289, 414, 601]</pre>
+</div>
+
+<div class="output">
+<b>Step 4: 只对 6 个 token 做干预</b>
+<pre>h_sel: (<b>6</b>, 4096)   ← 不是 620 个!
+Rh:    (6, 1)
+Wh:    (6, 1)
+delta_low: (6, 1)
+delta:     (6, 4096)
+
+h_out[0, vis_idx] = h_sel + delta
+← 只修改这 6 个位置，其余 token 不变!</pre>
+</div>
+
+<div class="note">
+<b>为什么只选 top 1%？</b>论文发现：范数最大的视觉 token 包含最关键的视觉信息。只干预这些 token，效果反而更好（论文 Table 3）。而且计算量极小: 620 个 token 中只处理 6 个。
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Part 5 ═══════════════ -->
+<h2>Part 5: 辅助函数 (Line 138-234) — 解析层位置 + 查找模型结构</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">源代码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">_parse_positions</span>(positions,
+                     num_layers: int):
+    <span class="str">"""解析层位置。接受多种格式:
+    "f4+l5" → 前4 + 后5
+    "all"   → 全部
+    "f4"    → 前4
+    "l5"    → 后5
+    """</span>
+    <span class="kw">if</span> <span class="fn">isinstance</span>(positions, list):
+        <span class="kw">return</span> <span class="fn">sorted</span>(idx <span class="kw">for</span> idx
+            <span class="kw">in</span> positions
+            <span class="kw">if</span> <span class="num">0</span> <= idx < num_layers)
+
+    position_str = <span class="fn">str</span>(positions).\
+        <span class="fn">strip</span>().<span class="fn">lower</span>()
+    <span class="kw">if</span> position_str == <span class="str">"all"</span>:
+        <span class="kw">return</span> <span class="fn">list</span>(<span class="fn">range</span>(num_layers))
+
+    layers = <span class="fn">set</span>()
+    <span class="kw">for</span> part <span class="kw">in</span> position_str.<span class="fn">split</span>(<span class="str">"+"</span>):
+        match = re.<span class="fn">match</span>(
+            <span class="str">r"^([fl])(\d+)$"</span>, part)
+        <span class="kw">if</span> match:
+            prefix = match.<span class="fn">group</span>(<span class="num">1</span>)
+            count = <span class="fn">int</span>(match.<span class="fn">group</span>(<span class="num">2</span>))
+            <span class="kw">if</span> prefix == <span class="str">"f"</span>:
+                layers.<span class="fn">update</span>(
+                    <span class="fn">range</span>(<span class="fn">min</span>(count,
+                        num_layers)))
+            <span class="kw">else</span>:
+                layers.<span class="fn">update</span>(
+                    <span class="fn">range</span>(<span class="fn">max</span>(<span class="num">0</span>,
+                        num_layers - count),
+                        num_layers))
+    <span class="kw">return</span> <span class="fn">sorted</span>(layers)</pre>
+</div>
+<div class="col-state">
+<div class="label-state">具体例子 (num_layers=32)</div>
+<div class="output">
+<b>_parse_positions("f4+l5", 32)</b>
+<pre>拆分: ["f4", "l5"]
+
+"f4": prefix="f", count=4
+  → range(min(4, 32)) = range(4)
+  → {0, 1, 2, 3}
+
+"l5": prefix="l", count=5
+  → range(max(0, 32-5), 32) = range(27, 32)
+  → {27, 28, 29, 30, 31}
+
+合并: {0,1,2,3,27,28,29,30,31}
+排序: <b>[0, 1, 2, 3, 27, 28, 29, 30, 31]</b>
+← 共 9 层</pre>
+</div>
+</div>
+</div>
+
+<div class="row" style="margin-top:4px">
+<div class="col-code">
+<div class="label-code">源代码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">_find_llm_layers</span>(model):
+    <span class="str">"""查找 LLM 的 decoder 层列表"""</span>
+    search_paths = [
+      <span class="str">"language_model.model.layers"</span>,
+      <span class="str">"model.model.layers"</span>,
+      <span class="str">"model.layers"</span>,
+      <span class="str">"language_model.layers"</span>,
+      <span class="str">"transformer.h"</span>,
+    ]
+    <span class="kw">for</span> path <span class="kw">in</span> search_paths:
+        obj = model
+        <span class="kw">for</span> attr <span class="kw">in</span> path.<span class="fn">split</span>(<span class="str">"."</span>):
+            <span class="kw">if</span> <span class="fn">hasattr</span>(obj, attr):
+                obj = <span class="fn">getattr</span>(obj, attr)
+            <span class="kw">else</span>: ...
+        <span class="kw">if</span> <span class="fn">isinstance</span>(obj, nn.ModuleList):
+            <span class="kw">return</span> obj, <span class="fn">len</span>(obj)
+    ...</pre>
+</div>
+<div class="col-state">
+<div class="label-state">LLaVA-1.5-7B 实际调用</div>
+<div class="output">
+<b>_find_llm_layers(model)</b>
+<pre>尝试: "language_model.model.layers"
+  model.language_model → LlamaForCausalLM
+  .model → LlamaModel
+  .layers → ModuleList ← 找到了!
+
+返回: (ModuleList of <b>32</b> LlamaDecoderLayer, 32)</pre>
+</div>
+<div class="output">
+<b>_get_hidden_dim(model)</b>
+<pre>model.config.text_config.hidden_size → <b>4096</b></pre>
+</div>
+<div class="output">
+<b>_detect_image_token_id(model)</b>
+<pre>model.config.image_token_index → <b>32000</b>
+← <image> token 在词表中的 ID</pre>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Part 6a ═══════════════ -->
+<h2>Part 6a: _prepare_model_impl — 冻结全部参数 (Line 297-300)</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">源代码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">_prepare_model_impl</span>(self, model,
+                        processor, config):
+    rank = <span class="fn">int</span>(config.<span class="fn">get</span>(
+        <span class="str">"intervention_rank"</span>, <span class="num">1</span>))
+    positions_str = config.<span class="fn">get</span>(
+        <span class="str">"positions"</span>, <span class="str">"f4+l5"</span>)
+    dropout = <span class="fn">float</span>(config.<span class="fn">get</span>(
+        <span class="str">"dropout"</span>, <span class="num">0.05</span>))
+    ...
+
+    <span class="cm"># Freeze entire model</span>
+    <span class="kw">for</span> p <span class="kw">in</span> model.<span class="fn">parameters</span>():
+        <span class="kw">if</span> p.dtype <span class="kw">in</span> (torch.float32,
+                       torch.float16,
+                       torch.bfloat16):
+            p.requires_grad = <span class="kw">False</span></pre>
+</div>
+<div class="col-state">
+<div class="label-state">内部发生了什么</div>
+<div class="state">
+<b>model.parameters() 遍历整个模型树：</b>
+<pre>LlavaForConditionalGeneration
+├── vision_tower (ViT)    ← ~300M params
+├── multi_modal_projector ← ~8M params
+└── language_model (LLaMA-7B) ← ~6.7B params
+
+总计: ~<b>7B 参数</b>，全部 requires_grad=False</pre>
+</div>
+
+<div class="danger">
+<b>为什么检查 dtype？</b>量化模型（INT8/INT4）的参数 dtype 不是 float，修改它们的 requires_grad 会报错。所以只冻结 float 类型的参数。
+</div>
+
+<div class="note">
+<b>冻结 ≠ 删除。</b>参数还在 _parameters 字典里，forward 正常运行。只是 backward 不会计算这些参数的梯度。
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Part 6b ═══════════════ -->
+<h2>Part 6b: _prepare_model_impl — 创建干预模块 (Line 302-331)</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">源代码</div>
+<pre class="code"><span class="cm"># Find LLM layers and hidden dim</span>
+layer_list, num_layers = \
+    <span class="fn">_find_llm_layers</span>(model)
+hidden_dim = <span class="fn">_get_hidden_dim</span>(model)
+target_indices = <span class="fn">_parse_positions</span>(
+    positions_str, num_layers)
+
+<span class="cm"># Create intervention(s)</span>
+self._hooks = []
+device = <span class="fn">next</span>(model.<span class="fn">parameters</span>()).device
+dtype = <span class="fn">next</span>(model.<span class="fn">parameters</span>()).dtype
+
+<span class="kw">if</span> share_weights:
+    <span class="cm"># Paper: single shared intervention</span>
+    self._intervention = \
+        <span class="fn">OrthogonalIntervention</span>(
+            hidden_dim, rank=rank,
+            dropout=dropout
+        ).<span class="fn">to</span>(device=device, dtype=dtype)
+    interventions = \
+        [self._intervention] \
+        * <span class="fn">len</span>(target_indices)
+<span class="kw">else</span>:
+    <span class="cm"># Independent per layer</span>
+    interventions = []
+    <span class="kw">for</span> _ <span class="kw">in</span> target_indices:
+        iv = <span class="fn">OrthogonalIntervention</span>(...)
+        interventions.<span class="fn">append</span>(iv)</pre>
+</div>
+<div class="col-state">
+<div class="label-state">内部发生了什么</div>
+<div class="output">
+<b>查找结果：</b>
+<pre>layer_list = model.language_model.model.layers
+  → ModuleList of 32 LlamaDecoderLayer
+hidden_dim = 4096
+target_indices = [0,1,2,3,27,28,29,30,31]
+  → 9 层</pre>
+</div>
+
+<div class="state">
+<b>share_weights=True (论文默认):</b>
+<pre>创建 <b>1</b> 个 OrthogonalIntervention:
+  R: (1, 4096)   ← 4096 params
+  W.weight: (1, 4096) ← 4096 params
+  W.bias: (1)    ← 1 param
+  共 8,193 params
+
+interventions = [iv] * 9
+= [iv, iv, iv, iv, iv, iv, iv, iv, iv]
+     ↓   ↓   ↓   ↓   ↓   ↓   ↓   ↓   ↓
+  全部指向<b>同一个对象</b>!</pre>
+</div>
+
+<div class="danger">
+<b>[iv] * 9 的陷阱/妙处：</b>这不是创建 9 个独立对象! 是同一个对象的 9 个引用。所以 9 层共享同一套 R 和 W 参数。训练时梯度会从 9 层汇聚到同一组参数上。这正是论文的设计: 共享权重效果最好（论文 Table 4）。
+</div>
+
+<div class="note">
+<b>参数对比：</b>
+<table>
+<tr><th>方法</th><th>可训练参数</th><th>相对大小</th></tr>
+<tr><td>Full FT</td><td>7,000,000,000</td><td>1x</td></tr>
+<tr><td>LoRA (rank=128)</td><td>~50,000,000</td><td>0.007x</td></tr>
+<tr><td><b>MoReS (rank=1)</b></td><td><b>8,193</b></td><td><b>0.0000012x</b></td></tr>
+</table>
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Part 6c ═══════════════ -->
+<h2>Part 6c: _prepare_model_impl — 注册 hooks (Line 336-375) — 核心机制</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">源代码</div>
+<pre class="code"><span class="cm"># Attach hooks</span>
+method_ref = self
+
+<span class="kw">for</span> idx, iv <span class="kw">in</span> <span class="fn">zip</span>(target_indices,
+                    interventions):
+    <span class="kw">def</span> <span class="fn">make_hook</span>(intervention):
+        <span class="kw">def</span> <span class="fn">hook</span>(module, input, output):
+            <span class="kw">if</span> <span class="fn">isinstance</span>(output, tuple):
+                h = output[<span class="num">0</span>]
+            <span class="kw">else</span>:
+                h = output
+
+            <span class="cm"># Build visual token mask</span>
+            vis_mask = <span class="kw">None</span>
+            <span class="kw">if</span> method_ref._vis_only \
+               <span class="kw">and</span> method_ref.\
+                   _image_token_id \
+                   <span class="kw">is not None</span>:
+                ids = <span class="fn">getattr</span>(model,
+                    <span class="str">"_mores_input_ids"</span>,
+                    <span class="kw">None</span>)
+                <span class="kw">if</span> ids <span class="kw">is not None</span> \
+                   <span class="kw">and</span> ids.shape[<span class="num">1</span>] \
+                       == h.shape[<span class="num">1</span>]:
+                    vis_mask = \
+                        (ids == method_ref.\
+                             _image_token_id)
+
+            h_new = <span class="fn">intervention</span>(
+                h, vis_mask=vis_mask,
+                steer_ratio=\
+                    method_ref._steer_ratio)
+
+            <span class="kw">if</span> <span class="fn">isinstance</span>(output, tuple):
+                <span class="kw">return</span> (h_new,) + output[<span class="num">1</span>:]
+            <span class="kw">return</span> h_new
+        <span class="kw">return</span> hook
+
+    h = layer_list[idx].\
+        <span class="fn">register_forward_hook</span>(
+            <span class="fn">make_hook</span>(iv))
+    self._hooks.<span class="fn">append</span>(h)</pre>
+</div>
+<div class="col-state">
+<div class="label-state">内部发生了什么</div>
+<div class="state">
+<b>为什么需要 make_hook 闭包工厂？</b>
+<pre>如果直接写:
+  for idx, iv in zip(...):
+    def hook(module, input, output):
+        intervention(h, ...)  <span class="cm">← 捕获的是变量 iv</span>
+
+问题: Python 闭包捕获的是<b>变量</b>不是<b>值</b>!
+循环结束后 iv 指向最后一个元素，
+所有 9 个 hook 都会用同一个 iv。
+
+make_hook(intervention) 创建新的作用域:
+  intervention 是函数参数 → 每次调用绑定不同的值
+  (虽然 share_weights 时值相同，但这是正确的模式)</pre>
+</div>
+
+<div class="output">
+<b>注册结果：</b>
+<pre>layer_list[0]._forward_hooks = {
+  hook_id_0: &lt;hook 函数&gt;  ← 新增!
+}
+layer_list[1]._forward_hooks = {
+  hook_id_1: &lt;hook 函数&gt;  ← 新增!
+}
+...
+layer_list[31]._forward_hooks = {
+  hook_id_8: &lt;hook 函数&gt;  ← 新增!
+}
+
+共 9 个 hook，绑定到 9 层:
+  层 0,1,2,3 和 层 27,28,29,30,31</pre>
+</div>
+
+<div class="state" style="margin-top:3px">
+<b>hook 的执行时机：</b>
+<pre>当 model(x) 执行时:
+  layer_0.forward(x) 正常执行
+  → 输出 output
+  → PyTorch 自动调用 _forward_hooks 中的函数
+  → hook(layer_0, input, output)
+  → output 被替换为 h + delta
+  → 传给 layer_1
+
+关键: <b>LLM 权重完全不变</b>，
+hook 在"层的输出"上动手脚。</pre>
+</div>
+</div>
+</div>
+
+<div class="row" style="margin-top:4px">
+<div class="col-code">
+<div class="label-code">源代码 — 预处理 hook</div>
+<pre class="code"><span class="cm"># Capture input_ids for visual</span>
+<span class="cm"># token detection</span>
+<span class="kw">def</span> <span class="fn">_capture_input_ids</span>(module,
+                       args, kwargs):
+    <span class="kw">if</span> <span class="str">"input_ids"</span> <span class="kw">in</span> kwargs:
+        module._mores_input_ids = \
+            kwargs[<span class="str">"input_ids"</span>]
+    <span class="kw">elif</span> <span class="fn">len</span>(args) > <span class="num">0</span> \
+         <span class="kw">and</span> <span class="fn">isinstance</span>(args[<span class="num">0</span>],
+                        torch.Tensor):
+        module._mores_input_ids = args[<span class="num">0</span>]
+
+pre_h = model.<span class="fn">register_forward_pre_hook</span>(
+    _capture_input_ids,
+    with_kwargs=<span class="kw">True</span>)
+self._hooks.<span class="fn">append</span>(pre_h)</pre>
+</div>
+<div class="col-state">
+<div class="label-state">内部发生了什么</div>
+<div class="state">
+<b>这是 pre-hook（在 forward 之前执行）：</b>
+<pre>model._forward_pre_hooks = {
+  pre_hook_id: _capture_input_ids  ← 新增!
+}
+
+执行顺序:
+1. model(input_ids=..., images=...)
+2. <b>_capture_input_ids 先执行</b>
+   → model._mores_input_ids = input_ids
+   例如: tensor([[1, 345, 32000, 32000, ..., 2]])
+                          ↑ image token = 32000
+3. model.forward() 正常执行
+4. 每一层的 hook 读取 _mores_input_ids
+   → vis_mask = (ids == 32000)
+   → tensor([[F, F, T, T, ..., F]])</pre>
+</div>
+
+<div class="note">
+<b>为什么需要 pre-hook？</b>forward_hook 只能访问当前层的 input/output。但 input_ids 只在模型最顶层可见（被 embedding 层转换后就消失了）。所以用 pre-hook 把 input_ids 存到 model 上，供各层 hook 读取。
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Part 6d ═══════════════ -->
+<h2>Part 6d: _prepare_model_impl — 可选: 解冻 projector (Line 377-406)</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">源代码</div>
+<pre class="code"><span class="cm"># Projector: only unfreeze if</span>
+<span class="cm"># config says so (default: frozen)</span>
+train_projector = config.<span class="fn">get</span>(
+    <span class="str">"train_projector"</span>, <span class="kw">False</span>)
+projector_unfrozen = <span class="num">0</span>
+<span class="kw">if</span> train_projector:
+    <span class="kw">for</span> name, module \
+        <span class="kw">in</span> model.<span class="fn">named_modules</span>():
+        <span class="kw">if</span> <span class="str">"projector"</span> <span class="kw">in</span> \
+           name.<span class="fn">lower</span>():
+            <span class="kw">for</span> p <span class="kw">in</span> \
+                module.<span class="fn">parameters</span>():
+                p.requires_grad = <span class="kw">True</span>
+                projector_unfrozen \
+                    += p.<span class="fn">numel</span>()
+
+intervention_params = <span class="fn">sum</span>(
+    p.<span class="fn">numel</span>()
+    <span class="kw">for</span> iv <span class="kw">in</span> self._all_interventions
+    <span class="kw">for</span> p <span class="kw">in</span> iv.<span class="fn">parameters</span>())
+total = intervention_params \
+    + projector_unfrozen</pre>
+</div>
+<div class="col-state">
+<div class="label-state">内部发生了什么</div>
+<div class="state">
+<b>默认 train_projector=False (论文设置):</b>
+<pre>projector 保持冻结
+projector_unfrozen = 0
+
+intervention_params = 8,193
+total = 8,193</pre>
+</div>
+
+<div class="output">
+<b>如果 train_projector=True:</b>
+<pre>找到: "multi_modal_projector"
+  → Linear(1024, 4096): 4,194,304 + 4096
+  → Linear(4096, 4096): 16,777,216 + 4096
+  projector_unfrozen = ~20,979,712
+
+total = 8,193 + 20,979,712 = ~21M</pre>
+</div>
+
+<div class="note">
+<b>论文结论：</b>只训练 intervention (8K params) 就够了。加上 projector 有时反而过拟合。这是 MoReS 最大的优势: 极少参数，极快训练。
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Part 7 ═══════════════ -->
+<h2>Part 7: compute_loss (Line 409-423) — 计算训练损失</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">源代码</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">compute_loss</span>(self, model,
+                 batch, outputs):
+    text_loss = <span class="fn">_standard_ce_loss</span>(
+        outputs, batch)
+    metrics = {
+        <span class="str">"text_loss"</span>: text_loss.<span class="fn">item</span>()}
+
+    <span class="cm"># Soft orthogonality penalty on R</span>
+    ortho_loss = torch.<span class="fn">tensor</span>(
+        <span class="num">0.0</span>, device=text_loss.device,
+        dtype=text_loss.dtype)
+    <span class="kw">for</span> iv <span class="kw">in</span> self._all_interventions:
+        ortho_loss = ortho_loss \
+            + iv.<span class="fn">orthogonal_penalty</span>()
+    <span class="kw">if</span> ortho_loss.<span class="fn">item</span>() > <span class="num">0</span>:
+        total_loss = text_loss \
+            + <span class="num">0.01</span> * ortho_loss
+        metrics[<span class="str">"ortho_loss"</span>] = \
+            ortho_loss.<span class="fn">item</span>()
+    <span class="kw">else</span>:
+        total_loss = text_loss
+
+    <span class="kw">return</span> total_loss, metrics</pre>
+</div>
+<div class="col-state">
+<div class="label-state">具体计算</div>
+<div class="state">
+<b>两部分损失：</b>
+<pre>1. text_loss = CrossEntropyLoss(logits, labels)
+   ← 和 LoRA、Full FT 完全一样的文本生成损失
+   ← 衡量模型生成回答的质量
+
+2. ortho_loss = intervention.orthogonal_penalty()
+   ← ||R @ R.T - I||^2
+   ← 迫使 R 保持正交</pre>
+</div>
+
+<div class="output">
+<b>训练中的实际数值：</b>
+<pre>text_loss  = 2.3400  ← CE loss
+ortho_loss = 0.0020  ← R 几乎是正交的
+
+total = 2.3400 + 0.01 * 0.0020
+      = 2.3400 + 0.00002
+      = <b>2.34002</b>
+
+正交惩罚的贡献非常小 (0.001%),
+但它是必要的 — 没有它 R 会渐渐偏离正交，
+干预的几何意义会退化。</pre>
+</div>
+
+<div class="note">
+<b>梯度只流向 8,193 个参数：</b>虽然 forward 经过了 7B 个参数，但因为 requires_grad=False，backward 只计算 R, W.weight, W.bias 的梯度。优化器也只更新这 3 个张量。
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Part 8 ═══════════════ -->
+<h2>Part 8: save/load (Line 443-509) — 保存与加载</h2>
+<div class="row">
+<div class="col-code">
+<div class="label-code">源代码 — 保存</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">save_checkpoint</span>(self, model,
+                    processor, path,
+                    metadata):
+    os.<span class="fn">makedirs</span>(path, exist_ok=<span class="kw">True</span>)
+
+    <span class="cm"># Save intervention state</span>
+    intervention_states = {}
+    <span class="kw">for</span> i, iv <span class="kw">in</span> <span class="fn">enumerate</span>(
+        self._all_interventions):
+        intervention_states[
+            <span class="str">f"intervention_{i}"</span>] = \
+            iv.<span class="fn">state_dict</span>()
+    torch.<span class="fn">save</span>(intervention_states,
+        os.path.<span class="fn">join</span>(path,
+            <span class="str">"mores_interventions.pt"</span>))
+
+    <span class="cm"># Save projector weights</span>
+    projector_state = {}
+    <span class="kw">for</span> name, p <span class="kw">in</span> \
+        model.<span class="fn">named_parameters</span>():
+        <span class="kw">if</span> <span class="str">"projector"</span> <span class="kw">in</span> name.<span class="fn">lower</span>():
+            projector_state[name] = p.data
+    <span class="kw">if</span> projector_state:
+        torch.<span class="fn">save</span>(projector_state, ...)
+
+    processor.<span class="fn">save_pretrained</span>(path)
+    <span class="cm"># + save metadata JSON</span></pre>
+</div>
+<div class="col-state">
+<div class="label-state">保存了什么</div>
+<div class="state">
+<b>intervention.state_dict() 的内容：</b>
+<pre>{
+  "R":        tensor(1, 4096),   ← 4096 floats
+  "W.weight": tensor(1, 4096),   ← 4096 floats
+  "W.bias":   tensor(1),         ← 1 float
+}
+
+只有 3 个张量，共 8,193 个 float16 值。</pre>
+</div>
+
+<div class="output">
+<b>文件大小对比：</b>
+<table>
+<tr><th>方法</th><th>保存文件大小</th><th>内容</th></tr>
+<tr><td>Full FT</td><td><b>~14 GB</b></td><td>整个模型所有参数</td></tr>
+<tr><td>LoRA (rank=128)</td><td><b>~100 MB</b></td><td>A, B 矩阵 (每层)</td></tr>
+<tr><td><b>MoReS (rank=1)</b></td><td><b>~32 KB</b></td><td>R + W.weight + W.bias</td></tr>
+</table>
+<pre>32 KB = 8193 * 2 bytes (float16) + 文件头
+      ≈ 16,386 bytes ≈ <b>16 KB</b>
+加上 metadata JSON ≈ <b>~32 KB 总计</b></pre>
+</div>
+
+<div class="note">
+<b>32 KB vs 14 GB:</b>差了 <b>400,000 倍</b>。你可以用微信发送 MoReS 的 checkpoint。
+</div>
+</div>
+</div>
+
+<div class="row" style="margin-top:4px">
+<div class="col-code">
+<div class="label-code">源代码 — 加载</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">load_for_inference</span>(self, path,
+                       base_model_id,
+                       **kwargs):
+    <span class="cm"># 1. 加载原始模型</span>
+    processor = AutoProcessor.\
+        <span class="fn">from_pretrained</span>(base_model_id)
+    model = AutoVLM.\
+        <span class="fn">from_pretrained</span>(base_model_id,
+            torch_dtype=torch.bfloat16,
+            device_map=<span class="str">"auto"</span>)
+
+    <span class="cm"># 2. 重新建立 hooks</span>
+    self.<span class="fn">prepare_model</span>(model,
+        processor, config)
+
+    <span class="cm"># 3. 加载 intervention 权重</span>
+    states = torch.<span class="fn">load</span>(iv_path,
+        map_location=<span class="str">"cpu"</span>,
+        weights_only=<span class="kw">True</span>)
+    <span class="kw">for</span> i, iv <span class="kw">in</span> <span class="fn">enumerate</span>(
+        self._all_interventions):
+        iv.<span class="fn">load_state_dict</span>(
+            states[<span class="str">f"intervention_{i}"</span>])
+
+    <span class="cm"># 4. 加载 projector 权重 (如果有)</span>
+    ...
+
+    model.<span class="fn">eval</span>()
+    <span class="kw">return</span> model, processor, info</pre>
+</div>
+<div class="col-state">
+<div class="label-state">加载的完整流程</div>
+<div class="state">
+<b>三步加载：</b>
+<pre>Step 1: 加载原始 LLaVA-1.5-7B (~14GB)
+  ← 和预训练模型完全一样
+
+Step 2: prepare_model(model, ...)
+  ← 冻结所有参数
+  ← 创建新的 OrthogonalIntervention (随机初始化)
+  ← 注册 9 个 forward hooks
+  ← 注册 1 个 pre-hook
+  此时: intervention 参数是随机的
+
+Step 3: iv.load_state_dict(states[...])
+  ← 从 32KB 文件读取训练好的 R, W.weight, W.bias
+  ← 覆盖随机初始化的值
+  此时: intervention 参数是训练好的
+
+Step 4: model.eval()
+  ← dropout 关闭
+  ← 准备推理</pre>
+</div>
+
+<div class="note">
+<b>加载速度：</b>主要时间花在 Step 1 加载 7B 基座模型。Step 3 加载 32KB 几乎瞬间完成。
+</div>
+</div>
+</div>
+
+<hr>
+
+<!-- ═══════════════ Summary ═══════════════ -->
+<h2>总结: MoReS 完整工作流</h2>
+<div class="graph">
+┌─────────────────────────────────────────────────────────────────┐
+│                    MoReS 训练完整流程                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. 冻结 7B 模型                                                │
+│     for p in model.parameters():                                │
+│         p.requires_grad = False                                 │
+│     ┌──────────────────────────────────────┐                    │
+│     │ vision_tower:    300M params  FROZEN │                    │
+│     │ projector:       8M params    FROZEN │                    │
+│     │ language_model:  6.7B params  FROZEN │                    │
+│     └──────────────────────────────────────┘                    │
+│                                                                 │
+│  2. 创建 1 个 intervention (8,193 params)                       │
+│     ┌──────────────────────────────────────┐                    │
+│     │ R:        (1, 4096)  正交初始化       │                    │
+│     │ W.weight: (1, 4096)  全零初始化       │                    │
+│     │ W.bias:   (1,)       全零初始化       │                    │
+│     │ requires_grad = True  ← 可训练!       │                    │
+│     └──────────────────────────────────────┘                    │
+│                                                                 │
+│  3. 用 hook 挂载到 9 层                                         │
+│     layer 0  ← hook → intervention ──┐                          │
+│     layer 1  ← hook → intervention   │                          │
+│     layer 2  ← hook → intervention   │ 全部指向                 │
+│     layer 3  ← hook → intervention   │ 同一个                   │
+│     layer 27 ← hook → intervention   │ intervention            │
+│     layer 28 ← hook → intervention   │ 对象!                    │
+│     layer 29 ← hook → intervention   │                          │
+│     layer 30 ← hook → intervention   │                          │
+│     layer 31 ← hook → intervention ──┘                          │
+│                                                                 │
+│  4. 训练循环                                                     │
+│     ┌──────────────────────────────────────────────────┐        │
+│     │ forward:                                         │        │
+│     │   input_ids → embedding → layer0 → [hook修改]    │        │
+│     │   → layer1 → [hook修改] → ... → layer31         │        │
+│     │   → [hook修改] → logits                          │        │
+│     │                                                  │        │
+│     │ loss = CE_loss + 0.01 * ||R@R.T - I||^2         │        │
+│     │                                                  │        │
+│     │ backward:                                        │        │
+│     │   只计算 R, W.weight, W.bias 的梯度              │        │
+│     │   7B 参数完全不动                                 │        │
+│     │                                                  │        │
+│     │ optimizer.step():                                │        │
+│     │   只更新 8,193 个参数                             │        │
+│     └──────────────────────────────────────────────────┘        │
+│                                                                 │
+│  5. 保存: 32KB 文件                                              │
+│     mores_interventions.pt (R + W.weight + W.bias)              │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+数学公式: h' = h + R^T * (W*h + b - R*h)
+
+初始化时 (W=0, b=0):
+  h' = h + R^T * (0 - R*h) = h - R^T * R * h
+     = h 减去 R 方向上的分量（投影去除）
+
+训练后 (W 学到非零值):
+  h' = h + R^T * (W*h + b - R*h)
+     = 先去除 R 方向上的旧信息，再注入 W 学到的新信息
+     = 表示空间的"方向替换"（representation steering）
+</div>
+
+</body>
+</html>
