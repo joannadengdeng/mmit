@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MoReS vis_mask 实现细节 — 图解</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --mono:'SF Mono','Fira Code','Consolas',monospace;
+  --sans:-apple-system,'Helvetica Neue',sans-serif;
+}
+body{
+  background:#fff;
+  color:#000;
+  font-family:var(--sans);
+  font-size:11pt;
+  line-height:1.55;
+  padding:24px 32px;
+  max-width:1100px;
+  margin:0 auto;
+}
+
+@page { size: A4 portrait; margin: 10mm; }
+@media print {
+  body { padding: 0; max-width: none; }
+  .print-hint { display: none !important; }
+  .section { page-break-inside: avoid; }
+  h2 { page-break-after: avoid; }
+}
+
+.print-hint{
+  background:#fffbe0;
+  border:2px solid #806000;
+  padding:10px 16px;
+  margin-bottom:16px;
+  font-size:10pt;
+  color:#806000;
+  border-radius:4px;
+}
+.print-hint b{color:#000}
+
+h1{
+  font-size:18pt;
+  font-weight:700;
+  border-bottom:2px solid #000;
+  padding-bottom:6px;
+  margin-bottom:6px;
+}
+.subtitle{
+  font-size:10pt;
+  color:#444;
+  font-style:italic;
+  margin-bottom:18px;
+}
+h2{
+  font-size:13pt;
+  font-weight:700;
+  margin:20px 0 10px;
+  padding:6px 12px;
+  background:#000;
+  color:#fff;
+  border-radius:4px;
+}
+h3{
+  font-size:11pt;
+  font-weight:700;
+  margin:12px 0 6px;
+  color:#000;
+}
+
+.section{margin-bottom:20px;page-break-inside:avoid}
+p{margin:8px 0}
+
+/* === 长条形 hidden state 可视化 === */
+.hs-bar{
+  display:flex;
+  width:100%;
+  height:48px;
+  border:1.5px solid #000;
+  border-radius:3px;
+  overflow:hidden;
+  margin:6px 0;
+  background:#fff;
+  font-family:var(--mono);
+  font-size:8pt;
+}
+.hs-seg{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  border-right:1px solid #000;
+  text-align:center;
+  padding:2px;
+  line-height:1.2;
+}
+.hs-seg:last-child{border-right:none}
+.hs-seg.text-sys{background:#e8eef5;color:#0040a0}
+.hs-seg.text-user{background:#dde3ea;color:#0040a0}
+.hs-seg.visual{background:#fff8e0;color:#a04000}
+.hs-seg.visual-strong{background:#ffe8c0;color:#a04000;font-weight:700}
+.hs-seg.text-q{background:#eef0ee;color:#444}
+.hs-seg.text-asst{background:#e8f5e8;color:#006400}
+.hs-seg .lbl{font-size:7.5pt;font-weight:700}
+.hs-seg .cnt{font-size:7pt;color:#666}
+
+.hs-axis{
+  display:flex;
+  font-family:var(--mono);
+  font-size:7pt;
+  color:#666;
+  margin-top:2px;
+}
+.hs-axis div{text-align:center;border-right:1px dashed #ccc;padding:1px}
+.hs-axis div:last-child{border-right:none}
+
+/* === Norm 条形图 === */
+.norm-chart{
+  display:flex;
+  align-items:flex-end;
+  height:120px;
+  border-bottom:1.5px solid #000;
+  border-left:1.5px solid #000;
+  margin:8px 0 4px;
+  padding:0 4px;
+  position:relative;
+}
+.norm-bar{
+  flex:1;
+  margin:0 0.5px;
+  position:relative;
+}
+.norm-bar.text-sys{background:#0040a0}
+.norm-bar.text-user{background:#0040a0}
+.norm-bar.visual-low{background:#f5b870}
+.norm-bar.visual-mid{background:#e08020}
+.norm-bar.visual-high{background:#a04000}
+.norm-bar.text-q{background:#666}
+.norm-bar.text-asst{background:#006400}
+.norm-bar.selected{
+  outline:2px solid #a00000;
+  outline-offset:1px;
+}
+.norm-axis-y{
+  position:absolute;
+  left:-30px;
+  top:0;
+  height:100%;
+  width:24px;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  font-size:7pt;
+  font-family:var(--mono);
+  text-align:right;
+  color:#666;
+}
+.norm-axis-x{
+  display:flex;
+  font-size:7pt;
+  font-family:var(--mono);
+  color:#666;
+  margin-top:2px;
+}
+.norm-axis-x div{flex:1;text-align:center;border-right:1px dashed #ccc}
+
+.legend{
+  display:flex;
+  gap:14px;
+  margin:8px 0;
+  font-size:9pt;
+  flex-wrap:wrap;
+}
+.legend-item{display:flex;align-items:center;gap:5px}
+.legend-box{display:inline-block;width:14px;height:14px;border:1px solid #000}
+
+/* === 代码块 === */
+pre.code{
+  background:#f8f8f8;
+  border:1.5px solid #000;
+  border-radius:4px;
+  padding:10px 14px;
+  font-family:var(--mono);
+  font-size:9pt;
+  line-height:1.55;
+  overflow-x:auto;
+  margin:8px 0;
+}
+.code .kw{color:#a00050;font-weight:600}
+.code .fn{color:#0040a0;font-weight:600}
+.code .str{color:#006400}
+.code .cm{color:#666;font-style:italic}
+.code .num{color:#a04000}
+.code .var{color:#a04000}
+.code .hl{background:#ffe8e8;padding:1px 3px;border-radius:2px}
+
+/* === 三角分类表 === */
+.compare-table{
+  width:100%;
+  border-collapse:collapse;
+  margin:10px 0;
+  font-size:9.5pt;
+}
+.compare-table th, .compare-table td{
+  border:1px solid #000;
+  padding:6px 10px;
+  text-align:left;
+  vertical-align:top;
+}
+.compare-table th{background:#000;color:#fff;font-size:10pt}
+.compare-table td.theory{background:#e6efff}
+.compare-table td.actual{background:#fff0e0}
+.compare-table td.result{background:#e8f5e8}
+
+/* === Note === */
+.note{
+  background:#fff8e0;
+  border-left:4px solid #806000;
+  padding:8px 14px;
+  font-size:10pt;
+  margin:10px 0;
+}
+.note b{color:#806000}
+.note.danger{
+  background:#ffe8e8;
+  border-left-color:#a00000;
+}
+.note.danger b{color:#a00000}
+
+/* === Step 标号 === */
+.step-num{
+  display:inline-block;
+  background:#a00000;
+  color:#fff;
+  width:22px;
+  height:22px;
+  border-radius:50%;
+  text-align:center;
+  line-height:22px;
+  font-weight:700;
+  font-size:10pt;
+  margin-right:6px;
+}
+
+/* === 箭头 === */
+.arrow{
+  text-align:center;
+  font-size:18pt;
+  margin:6px 0;
+  color:#000;
+  font-weight:700;
+  line-height:1;
+}
+
+.hl-text{background:#ffe8e8;padding:1px 4px;border:1px solid #a00000;border-radius:2px;font-family:var(--mono);font-size:9pt;color:#a00000}
+.hl-num{background:#fff8e0;padding:1px 4px;border:1px solid #806000;border-radius:2px;font-family:var(--mono);font-size:9pt}
+</style>
+</head>
+<body>
+
+<div class="print-hint">
+  <b>📄 单页 A4 打印：</b>按 Cmd+P / Ctrl+P, A4 纵向, 最小边距, 勾选"背景图形"
+</div>
+
+<h1>MoReS vis_mask 实现细节 — 图解</h1>
+<p class="subtitle">理论上 vis_mask 应该精确标记视觉 token, 但实际代码里它一直是 None。最终为什么还能 work？</p>
+
+<!-- ==================================================================== -->
+<div class="section">
+<h2>🎯 理论目的：vis_mask 应该长什么样</h2>
+
+<p>MoReS 论文说"只对视觉 token 做干预"。在长度 620 的 hidden states 里，vis_mask 应该这样：</p>
+
+<div class="hs-bar">
+<div class="hs-seg text-sys" style="width:4.8%">
+  <span class="lbl">F</span>
+  <span class="cnt">系统</span>
+</div>
+<div class="hs-seg text-user" style="width:0.3%"></div>
+<div class="hs-seg visual" style="width:92.9%">
+  <span class="lbl">T T T T T ... T (576 个 True)</span>
+  <span class="cnt">576 个视觉 token</span>
+</div>
+<div class="hs-seg text-q" style="width:1.6%"></div>
+<div class="hs-seg text-asst" style="width:0.4%"></div>
+</div>
+<div class="hs-axis">
+<div style="width:4.8%">0~29</div>
+<div style="width:0.3%">30,31</div>
+<div style="width:92.9%">32~607 (576 visual tokens)</div>
+<div style="width:1.6%">608~617</div>
+<div style="width:0.4%">618,619</div>
+</div>
+
+<p style="font-size:10pt"><b>vis_mask 应该是：</b><span class="hl-text">[F]×30 + [F]×2 + [T]×576 + [F]×10 + [F]×2</span> — 一个长 620 的布尔张量</p>
+<p style="font-size:10pt">然后 MoReS 用 <code>vis_mask</code> 找出视觉位置，从那 576 个里选 norm top 1% (= 6 个) 做干预。</p>
+</div>
+
+<!-- ==================================================================== -->
+<div class="section">
+<h2>💥 实际代码里发生了什么</h2>
+
+<pre class="code"><span class="cm"># mores.py:332-339 真实代码</span>
+<span class="kw">def</span> <span class="fn">hook</span>(module, input, output):
+    h = output[<span class="num">0</span>]                                    <span class="cm"># shape: (1, 620, 4096)</span>
+    vis_mask = <span class="kw">None</span>
+    <span class="kw">if</span> method_ref._vis_only <span class="kw">and</span> image_token_id <span class="kw">is not</span> <span class="kw">None</span>:
+        ids = <span class="fn">getattr</span>(model, <span class="str">"_mores_input_ids"</span>, <span class="kw">None</span>)   <span class="cm"># shape: (1, 45) ← input_ids 长度 45</span>
+        <span class="kw">if</span> ids <span class="kw">is not</span> <span class="kw">None</span> <span class="kw">and</span> <span class="hl">ids.shape[1] == h.shape[1]</span>:
+            <span class="cm">#                                    ↑ 45         ↑ 620</span>
+            <span class="cm">#                                    永远不相等! 这个判断永远是 False!</span>
+            vis_mask = (ids == image_token_id)
+    <span class="cm"># → vis_mask 一直是 None</span></pre>
+
+<div class="note danger">
+<b>关键 bug/feature：</b>因为 <code>input_ids</code> 长度是 <b>45</b>（&lt;image&gt; 还是 1 个 token），
+而进入 hook 时 <code>hidden_states</code> 长度已经是 <b>620</b>（&lt;image&gt; 被展开成 576 个）。
+两个 shape 不相等，<code>if</code> 永远不进，<code>vis_mask</code> 一直是 <code>None</code>。
+</div>
+</div>
+
+<!-- ==================================================================== -->
+<div class="section">
+<h2>🔄 vis_mask=None 时实际怎么工作</h2>
+
+<p>看 <code>OrthogonalIntervention.forward()</code> 里的分支：</p>
+
+<pre class="code"><span class="kw">def</span> <span class="fn">forward</span>(self, h, vis_mask=<span class="kw">None</span>, steer_ratio=<span class="num">1.0</span>):
+    <span class="cm"># selective steering 分支</span>
+    <span class="kw">for</span> b <span class="kw">in</span> <span class="fn">range</span>(h.size(<span class="num">0</span>)):
+        <span class="kw">if</span> vis_mask <span class="kw">is not</span> <span class="kw">None</span>:
+            vis_idx = vis_mask[b].nonzero()[<span class="num">0</span>]
+        <span class="kw">else</span>:
+            <span class="hl">vis_idx = torch.arange(h.size(<span class="num">1</span>), device=h.device)</span>
+            <span class="cm">#                       ↑ 全部 620 个位置都是"候选"</span>
+
+        <span class="cm"># top-k by norm</span>
+        <span class="kw">if</span> steer_ratio &lt; <span class="num">1.0</span> <span class="kw">and</span> vis_idx.numel() &gt; <span class="num">1</span>:
+            h_vis = h[b, vis_idx]                  <span class="cm"># (620, 4096)</span>
+            norms = h_vis.norm(dim=-<span class="num">1</span>)            <span class="cm"># (620,)</span>
+            k = <span class="fn">max</span>(<span class="num">1</span>, <span class="fn">int</span>(<span class="num">620</span> * <span class="num">0.01</span>))      <span class="cm"># k = 6</span>
+            _, topk_local = norms.topk(k)          <span class="cm"># 选 norm 最大的 6 个</span>
+            vis_idx = vis_idx[topk_local]
+        <span class="cm"># 对这 6 个位置做干预</span></pre>
+</div>
+
+<!-- ==================================================================== -->
+<div class="section">
+<h2>📊 关键问题：从 620 个里选 6 个会选到视觉 token 吗？</h2>
+
+<p>看真实的 norm 分布（假设值，但符合 LLaVA-1.5 的实际情况）：</p>
+
+<div style="position:relative;padding-left:40px">
+<div class="norm-axis-y">
+  <div>10</div><div>8</div><div>6</div><div>4</div><div>2</div><div>0</div>
+</div>
+<div class="norm-chart">
+  <!-- 30 个 system prompt: norm ~3.5 -->
+  <div class="norm-bar text-sys" style="height:35%" title="sys: 3.5"></div>
+  <div class="norm-bar text-sys" style="height:32%"></div>
+  <div class="norm-bar text-sys" style="height:38%"></div>
+  <div class="norm-bar text-sys" style="height:34%"></div>
+  <div class="norm-bar text-sys" style="height:36%"></div>
+  <div class="norm-bar text-sys" style="height:33%"></div>
+
+  <!-- 2 个 USER: -->
+  <div class="norm-bar text-user" style="height:32%"></div>
+
+  <!-- 576 个 visual tokens (用 32 个 bar 代表) -->
+  <div class="norm-bar visual-low" style="height:50%"></div>
+  <div class="norm-bar visual-low" style="height:48%"></div>
+  <div class="norm-bar visual-mid" style="height:62%"></div>
+  <div class="norm-bar visual-low" style="height:52%"></div>
+  <div class="norm-bar visual-mid" style="height:65%"></div>
+  <div class="norm-bar visual-low" style="height:50%"></div>
+  <div class="norm-bar visual-mid" style="height:60%"></div>
+  <div class="norm-bar visual-mid" style="height:58%"></div>
+  <div class="norm-bar visual-high selected" style="height:88%"></div>
+  <div class="norm-bar visual-mid" style="height:62%"></div>
+  <div class="norm-bar visual-low" style="height:52%"></div>
+  <div class="norm-bar visual-high selected" style="height:90%"></div>
+  <div class="norm-bar visual-mid" style="height:60%"></div>
+  <div class="norm-bar visual-low" style="height:48%"></div>
+  <div class="norm-bar visual-mid" style="height:65%"></div>
+  <div class="norm-bar visual-high selected" style="height:92%"></div>
+  <div class="norm-bar visual-low" style="height:54%"></div>
+  <div class="norm-bar visual-mid" style="height:60%"></div>
+  <div class="norm-bar visual-low" style="height:50%"></div>
+  <div class="norm-bar visual-high selected" style="height:85%"></div>
+  <div class="norm-bar visual-mid" style="height:62%"></div>
+  <div class="norm-bar visual-low" style="height:52%"></div>
+  <div class="norm-bar visual-mid" style="height:60%"></div>
+  <div class="norm-bar visual-high selected" style="height:87%"></div>
+  <div class="norm-bar visual-low" style="height:50%"></div>
+  <div class="norm-bar visual-mid" style="height:64%"></div>
+  <div class="norm-bar visual-high selected" style="height:89%"></div>
+  <div class="norm-bar visual-low" style="height:48%"></div>
+  <div class="norm-bar visual-mid" style="height:60%"></div>
+  <div class="norm-bar visual-low" style="height:52%"></div>
+
+  <!-- 10 个问题 + 2 个 ASSISTANT -->
+  <div class="norm-bar text-q" style="height:36%"></div>
+  <div class="norm-bar text-q" style="height:34%"></div>
+  <div class="norm-bar text-q" style="height:38%"></div>
+  <div class="norm-bar text-asst" style="height:35%"></div>
+</div>
+</div>
+
+<div class="legend">
+<div class="legend-item"><span class="legend-box" style="background:#0040a0"></span>系统/USER (30+2 个, norm~3.5)</div>
+<div class="legend-item"><span class="legend-box" style="background:#f5b870"></span>普通 visual (norm ~5)</div>
+<div class="legend-item"><span class="legend-box" style="background:#e08020"></span>中等 visual (norm ~6)</div>
+<div class="legend-item"><span class="legend-box" style="background:#a04000"></span>关键 visual (norm ~9)</div>
+<div class="legend-item"><span class="legend-box" style="background:#666"></span>问题文本</div>
+<div class="legend-item"><span class="legend-box" style="background:#006400"></span>ASSISTANT</div>
+<div class="legend-item"><span class="legend-box" style="background:#fff;outline:2px solid #a00000;outline-offset:1px"></span>norm.topk(6) 选中</div>
+</div>
+
+<p style="font-size:10pt;margin-top:8px"><b>观察：</b>norm.topk(6) 选出的 6 个位置（红框）<b>全部落在 visual token 区间</b>。
+为什么？因为视觉 token 经过 CLIP+projector 后没有归一化，norm 普遍 5~10，
+而文本 token 的 norm 通常稳定在 3~5。所以哪怕从全部 620 个位置里选，topk 也会自然偏向视觉 token。</p>
+</div>
+
+<!-- ==================================================================== -->
+<div class="section">
+<h2>🎲 三种情况对比</h2>
+
+<table class="compare-table">
+<tr>
+  <th style="width:18%">维度</th>
+  <th style="width:27%">论文设计 (理论)</th>
+  <th style="width:27%">mmit 实际行为</th>
+  <th style="width:28%">最终结果</th>
+</tr>
+<tr>
+  <td><b>vis_mask</b></td>
+  <td class="theory">长度 620, 标记 576 个视觉位置为 True</td>
+  <td class="actual"><code>None</code> (永远构造不出来)</td>
+  <td class="result">—</td>
+</tr>
+<tr>
+  <td><b>vis_idx 候选</b></td>
+  <td class="theory">576 个视觉位置</td>
+  <td class="actual">全部 620 个位置 (<code>arange(620)</code>)</td>
+  <td class="result">候选范围更大</td>
+</tr>
+<tr>
+  <td><b>top-k 选择</b></td>
+  <td class="theory">从 576 中选 norm top 1% = 6 个</td>
+  <td class="actual">从 620 中选 norm top 1% = 6 个</td>
+  <td class="result">数学上不同, 但顺序相似</td>
+</tr>
+<tr>
+  <td><b>最终选出的位置</b></td>
+  <td class="theory">6 个视觉 token 的位置</td>
+  <td class="actual">6 个 norm 最大的位置</td>
+  <td class="result"><b>大概率仍是 6 个视觉位置</b><br>(因为视觉 norm 远大于文本)</td>
+</tr>
+<tr>
+  <td><b>修正效果</b></td>
+  <td class="theory">只改视觉 hidden state</td>
+  <td class="actual">绝大多数情况只改视觉</td>
+  <td class="result">效果接近一致</td>
+</tr>
+</table>
+</div>
+
+<!-- ==================================================================== -->
+<div class="section">
+<h2>📝 一句话总结</h2>
+
+<div class="note">
+<b>理论：</b>vis_mask 应该长 620, 标记 576 个视觉位置为 True, 然后只从这些位置里挑 norm top 1%。<br>
+<b>实际：</b>因为 input_ids (45) 和 hidden states (620) 长度不匹配, vis_mask 永远构造不出来。代码退化成"从全部 620 个位置里选 norm top 1%"。<br>
+<b>为什么没出大错：</b>视觉 token 的 norm 通常远大于文本 token, <code>norm.topk(6)</code> 自然就选到视觉位置上, 效果和理论想要的差不多。<br>
+<b>论文里要不要说？</b>如果你在写 MoReS 的 follow-up paper, 这是一个值得验证的细节——
+应该实测在 LLaVA-1.5 上, <code>norm.topk(6)</code> 选出的 6 个位置是不是真的全在 32~607 这个 visual 区间。
+</div>
+</div>
+
+</body>
+</html>

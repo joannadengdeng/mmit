@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>peft 库 · 第一轮：直觉与概念</title>
+<style>
+:root{--bg:#0f1117;--s:#1a1d27;--s2:#242836;--bd:#2e3347;--t:#e2e8f0;--dim:#8892a8;
+--a:#6c8cff;--pk:#ff6c9a;--g:#4ade80;--o:#fb923c;--p:#a78bfa;--cy:#22d3ee;--y:#facc15;--r:#f87171;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--t);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow-x:hidden;}
+.wrap{max-width:960px;margin:0 auto;padding:28px 24px 120px;}
+h1{color:var(--a);font-size:1.5rem;margin-bottom:4px;font-weight:700;}
+.sub{color:var(--dim);font-size:0.82rem;margin-bottom:28px;}
+.progress{display:flex;gap:4px;margin-bottom:24px;position:sticky;top:0;z-index:100;background:var(--bg);padding:12px 0;}
+.dot{width:100%;height:6px;border-radius:3px;background:var(--s2);cursor:pointer;transition:all .3s;}
+.dot.done{background:var(--a);}.dot.cur{background:var(--g);box-shadow:0 0 8px var(--g);}
+.step{display:none;animation:fadeIn .3s ease;}.step.on{display:block;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+h2{color:var(--a);font-size:1.15rem;margin-bottom:12px;font-weight:700;}
+p{font-size:.88rem;color:var(--dim);line-height:1.85;margin-bottom:10px;}
+strong{color:var(--t);}
+code{color:var(--cy);font-family:'SF Mono','Cascadia Code',monospace;font-size:.82em;}
+canvas{display:block;margin:16px auto;border-radius:12px;background:var(--s);border:1px solid var(--bd);}
+.note{border-radius:10px;padding:16px 20px;margin:12px 0 16px;font-size:.85rem;line-height:1.85;}
+.note-orange{background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.2);}
+.note-orange strong{color:var(--o);}
+.note-blue{background:rgba(108,140,255,.07);border:1px solid rgba(108,140,255,.18);}
+.note-blue strong{color:var(--a);}
+.note-green{background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.18);}
+.note-green strong{color:var(--g);}
+.note-purple{background:rgba(167,139,250,.07);border:1px solid rgba(167,139,250,.18);}
+.note-purple strong{color:var(--p);}
+.note-pink{background:rgba(255,108,154,.07);border:1px solid rgba(255,108,154,.18);}
+.note-pink strong{color:var(--pk);}
+.code-box{background:var(--s2);border:1px solid var(--bd);border-radius:10px;padding:14px 18px;margin:10px 0 14px;overflow-x:auto;font-family:'SF Mono','Cascadia Code',monospace;font-size:.75rem;line-height:1.75;white-space:pre;}
+.kw{color:var(--pk)}.fn{color:var(--a)}.cm{color:var(--dim);font-style:italic}.st{color:var(--g)}.ty{color:var(--cy)}.num{color:var(--o)}.op{color:var(--t)}
+.output{background:#0d0f14;border:1px solid var(--bd);border-radius:10px;padding:14px 18px;margin:10px 0 14px;font-family:'SF Mono','Cascadia Code',monospace;font-size:.72rem;line-height:1.7;color:var(--dim);white-space:pre;overflow-x:auto;}
+.nav{display:flex;justify-content:space-between;margin-top:32px;}
+.btn{background:var(--s);border:1px solid var(--bd);color:var(--dim);padding:12px 28px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:.82rem;transition:all .2s;}
+.btn:hover{border-color:var(--a);color:var(--t);}
+.btn.primary{background:rgba(108,140,255,.12);border-color:var(--a);color:var(--a);}
+.btn:disabled{opacity:.3;cursor:default;}
+.cols{display:flex;gap:16px;margin:12px 0;}.cols>div{flex:1;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>peft · 第一轮：直觉与概念</h1>
+<p class="sub">不写代码，先把 LoRA 和 peft 库在做什么搞懂。看完这轮再去看第二轮的 API 就不跳了。</p>
+<div class="progress" id="prog"></div>
+
+<!-- ═══════════════════ 0: 为什么需要 LoRA ═══════════════════ -->
+<div class="step on" id="s0">
+<h2>问题：全量微调太贵了</h2>
+
+<canvas id="cv0" width="900" height="360"></canvas>
+
+<p>你有一个预训练好的大模型（比如 LLaMA-7B），想让它学会做新任务。最直接的办法是<strong>全量微调</strong>：把所有 70 亿个参数都拿来训练。</p>
+
+<div class="note note-orange">
+<strong>全量微调的代价：</strong><br>
+• 模型参数 7B × 2 字节（float16）= <strong>14 GB</strong><br>
+• 梯度也要存：又 14 GB<br>
+• Adam 优化器存两个状态（m 和 v）：又 28 GB<br>
+• 总共需要 <strong>~56 GB 显存</strong>，一张 A100 80GB 才刚刚够<br><br>
+而且训练完的模型也是完整的 14 GB — 你为每个任务存一份完整模型？
+</div>
+
+<p><strong>LoRA 的想法：</strong>别动原始的 70 亿参数了。给模型旁边加一些<strong>很小的</strong>可训练参数（比如 800 万个），只训练这些小参数，效果也能很好。</p>
+</div>
+
+<!-- ═══════════════════ 1: LoRA 的直觉 ═══════════════════ -->
+<div class="step" id="s1">
+<h2>LoRA 的核心直觉</h2>
+
+<canvas id="cv1" width="900" height="420"></canvas>
+
+<p>模型里有很多 <strong>Linear 层</strong>（线性变换层），每一层就是一个<strong>权重矩阵 W</strong>。比如 Attention 的 Q 投影层 <code>q_proj</code>，它的 W 是 4096×4096。</p>
+
+<p>LoRA 的核心思想：</p>
+
+<div class="note note-blue">
+<strong>微调时，W 的变化量 ΔW 其实是"低秩"的。</strong><br><br>
+什么意思？就是说 ΔW 这个 4096×4096 的大矩阵，可以用两个小矩阵相乘来近似：<br>
+<code>ΔW ≈ B × A</code><br>
+其中 A 是 <strong>r×4096</strong>，B 是 <strong>4096×r</strong>，r 很小（比如 16）<br><br>
+原来要存 4096×4096 = <strong>1600万</strong> 个参数的变化<br>
+现在只需要存 16×4096 + 4096×16 = <strong>13万</strong> 个参数<br>
+<strong>压缩了 120 倍！</strong>
+</div>
+
+<p>打个比方：你不需要重新画一幅完整的画（改 W），只需要在画上面贴一张<strong>半透明贴纸</strong>（A × B），画面就变了。</p>
+</div>
+
+<!-- ═══════════════════ 2: rank 的含义 ═══════════════════ -->
+<div class="step" id="s2">
+<h2>r（rank）到底是什么</h2>
+
+<canvas id="cv2" width="900" height="400"></canvas>
+
+<p><code>r</code> 就是 A 矩阵的行数 / B 矩阵的列数，也叫<strong>"秩"</strong>。它控制 LoRA 的大小。</p>
+
+<div class="cols">
+<div class="note note-green">
+<strong>r 小（比如 4~8）：</strong><br>
+• 参数很少，省显存<br>
+• 表达能力有限<br>
+• 适合简单任务
+</div>
+<div class="note note-orange">
+<strong>r 中等（比如 16~32）：</strong><br>
+• 最常用的范围<br>
+• 效果接近全量微调<br>
+• 参数量是 W 的 ~1%
+</div>
+<div class="note note-purple">
+<strong>r 大（比如 64~128）：</strong><br>
+• 参数更多<br>
+• 接近全量微调的效果<br>
+• 但省显存的优势减弱
+</div>
+</div>
+
+<div class="note note-blue">
+<strong>一个具体的算术例子：</strong><br>
+LLaMA-7B 有 32 层 attention，每层有 q_proj 和 v_proj 两个层要加 LoRA：<br><br>
+• 每个 LoRA：r=16 → A (16×4096) + B (4096×16) = 131,072 个参数<br>
+• 总共 32 层 × 2 个 = 64 个 LoRA<br>
+• 64 × 131,072 = <strong>~840 万个可训练参数</strong><br>
+• 占原始 70 亿参数的 <strong>0.12%</strong><br><br>
+保存到磁盘只需要 <strong>~20 MB</strong>（对比原始模型 14 GB）
+</div>
+</div>
+
+<!-- ═══════════════════ 3: 一个 Linear 层变成什么样 ═══════════════════ -->
+<div class="step" id="s3">
+<h2>一个 Linear 层加了 LoRA 后变成什么样？</h2>
+
+<canvas id="cv3" width="900" height="440"></canvas>
+
+<p>这是最关键的一步。加 LoRA 之前和之后，一个 <code>Linear</code> 层的计算过程变了：</p>
+
+<div class="cols">
+<div class="note note-orange">
+<strong>原来（只有 W）：</strong><br>
+<code>输出 = W × 输入</code><br><br>
+W 是 4096×4096 的大矩阵<br>
+全部冻结，不训练
+</div>
+<div class="note note-green">
+<strong>加了 LoRA 之后：</strong><br>
+<code>输出 = W × 输入 + B × A × 输入</code><br><br>
+W 还是冻结的<br>
+A 和 B 是新加的小矩阵，<strong>只训练它们</strong>
+</div>
+</div>
+
+<div class="note note-blue">
+<strong>理解这个公式，你就理解了 LoRA 的全部：</strong><br><br>
+• <code>W × 输入</code> — 原始模型的计算，<strong>不变</strong><br>
+• <code>B × A × 输入</code> — LoRA 加的"补丁"，这个是<strong>可训练的</strong><br>
+• 两个结果<strong>相加</strong>就是最终输出<br><br>
+所以 LoRA 不是替换了原来的层，而是在旁边<strong>加了一条小旁路</strong>。<br>
+原路不动，旁路可调。
+</div>
+</div>
+
+<!-- ═══════════════════ 4: 哪些层加 LoRA ═══════════════════ -->
+<div class="step" id="s4">
+<h2>模型有那么多层，给哪些加 LoRA？</h2>
+
+<canvas id="cv4" width="900" height="440"></canvas>
+
+<p>一个 Transformer 模型有很多层。不是每个层都需要加 LoRA。</p>
+
+<div class="note note-orange">
+<strong>Transformer 一层里有这些 Linear 层：</strong><br><br>
+<strong>Attention 部分：</strong><br>
+• <code>q_proj</code> — 计算 Query<br>
+• <code>k_proj</code> — 计算 Key<br>
+• <code>v_proj</code> — 计算 Value<br>
+• <code>o_proj</code> — Attention 输出投影<br><br>
+<strong>FFN/MLP 部分：</strong><br>
+• <code>gate_proj</code>、<code>up_proj</code>、<code>down_proj</code>
+</div>
+
+<div class="note note-green">
+<strong>通常只给 q_proj 和 v_proj 加 LoRA：</strong><br><br>
+• 这是 LoRA 原始论文的推荐做法<br>
+• Attention 的 Q 和 V 投影层对任务适应最敏感<br>
+• 只改这两个就够了，效果接近全量微调<br>
+• 参数量最少，最省显存<br><br>
+当然你也可以选择给更多层加 LoRA（比如也给 k_proj 和 o_proj 加），参数多了效果会好一点，但边际收益递减。
+</div>
+
+<p>而且 LLaMA-7B 有 <strong>32 层</strong>这样的结构（32 个 decoder layer），每层都有 q_proj 和 v_proj。所以是 32 层的 q_proj + 32 层的 v_proj = <strong>64 个 Linear 层</strong>同时加 LoRA。</p>
+</div>
+
+<!-- ═══════════════════ 5: peft 库做了什么 ═══════════════════ -->
+<div class="step" id="s5">
+<h2>peft 库到底在做什么？</h2>
+
+<canvas id="cv5" width="900" height="400"></canvas>
+
+<p>你现在知道了 LoRA 的原理。但手动去模型里找到每个 q_proj 和 v_proj，然后给它们加上 A 和 B 矩阵，这太麻烦了。</p>
+
+<p><strong>peft 库就是一个自动注入工具。</strong>你告诉它"我要给哪些层加 LoRA，r 设多少"，它帮你：</p>
+
+<div class="note note-blue">
+<strong>peft 做的三件事：</strong><br><br>
+<strong>① 注入</strong> — 找到你指定的层（比如所有 q_proj 和 v_proj），把它们从普通的 <code>Linear</code> 替换成带 LoRA 旁路的 <code>lora.Linear</code><br><br>
+<strong>② 冻结</strong> — 把原始模型的所有参数设为"不训练"（<code>requires_grad=False</code>），只有新加的 A 和 B 是"要训练的"<br><br>
+<strong>③ 包装</strong> — 把修改后的模型包装成一个 <code>PeftModel</code> 对象，它提供保存/加载/合并等便利方法
+</div>
+
+<div class="note note-green">
+<strong>类比：</strong><br>
+模型是一台机器。peft 是一个改装师。<br><br>
+你给改装师一张配置单（"我要给 q_proj 和 v_proj 加 LoRA，r=16"），<br>
+改装师打开机器，把指定零件旁边装上小配件（A 和 B），然后锁死原来的零件（冻结），<br>
+最后把改好的机器装进一个新外壳里交给你（PeftModel）。
+</div>
+</div>
+
+<!-- ═══════════════════ 6: "注入"具体是什么意思 ═══════════════════ -->
+<div class="step" id="s6">
+<h2>"注入"具体是什么意思？</h2>
+
+<canvas id="cv6" width="900" height="440"></canvas>
+
+<p>PyTorch 的模型本质上是一棵<strong>模块树</strong>。每个模型是很多模块嵌套的：</p>
+
+<div class="output">LlamaForCausalLM
+  └─ LlamaModel
+       └─ layers (32 个)
+            └─ LlamaDecoderLayer
+                 ├─ self_attn
+                 │    ├─ <span style="color:var(--o)">q_proj: Linear(4096, 4096)</span>     ← 这个要改
+                 │    ├─ k_proj: Linear(4096, 4096)
+                 │    ├─ <span style="color:var(--o)">v_proj: Linear(4096, 4096)</span>     ← 这个要改
+                 │    └─ o_proj: Linear(4096, 4096)
+                 └─ mlp
+                      ├─ gate_proj: Linear(4096, 11008)
+                      ├─ up_proj: Linear(4096, 11008)
+                      └─ down_proj: Linear(11008, 4096)</div>
+
+<p>peft 的"注入"就是<strong>遍历这棵树</strong>，找到名字里包含 <code>q_proj</code> 和 <code>v_proj</code> 的节点，把它们从普通 <code>Linear</code> 替换成 <code>lora.Linear</code>：</p>
+
+<div class="note note-green">
+<strong>替换前：</strong><code>q_proj = Linear(4096, 4096)</code> — 只有一个 W<br>
+<strong>替换后：</strong><code>q_proj = lora.Linear</code> — 内部有 W（冻结）+ A（训练）+ B（训练）<br><br>
+从外面看，它的输入输出形状<strong>没变</strong>（还是接收 4096 维输入，输出 4096 维），<br>
+但内部多了一条 LoRA 旁路。
+</div>
+</div>
+
+<!-- ═══════════════════ 7: 冻结与训练 ═══════════════════ -->
+<div class="step" id="s7">
+<h2>训练时发生了什么？</h2>
+
+<canvas id="cv7" width="900" height="400"></canvas>
+
+<p>LoRA 注入后的训练和普通训练<strong>写法完全一样</strong>（forward → loss → backward → step），但内部有很大不同：</p>
+
+<div class="note note-blue">
+<strong>前向传播（forward）：</strong><br>
+每个 lora.Linear 层同时算两条路：<br>
+<code>输出 = W × 输入 + (α/r) × B × A × 输入</code><br><br>
+<code>α/r</code> 是一个缩放系数（后面的轮次会详细讲），现在只需要知道它控制 LoRA 的影响力大小。
+</div>
+
+<div class="note note-orange">
+<strong>反向传播（backward）：</strong><br>
+• 梯度会流过 A 和 B（因为 <code>requires_grad=True</code>）<br>
+• 梯度<strong>不会</strong>流过 W（因为 <code>requires_grad=False</code>）<br>
+• 所以 W 的梯度<strong>不用计算也不用存储</strong> → 省显存<br>
+• optimizer 也只需要给 A 和 B 维护状态 → 又省显存
+</div>
+
+<div class="note note-green">
+<strong>显存节省来自哪里：</strong><br>
+全量微调：参数 14GB + 梯度 14GB + optimizer 状态 28GB = <strong>56 GB</strong><br>
+LoRA (r=16)：冻结参数 14GB（只推理不存梯度）+ LoRA 参数/梯度/状态 <strong>~0.06 GB</strong> ≈ <strong>14.1 GB</strong><br><br>
+省了 <strong>75%</strong> 的显存！一张 24GB 的 4090 就能跑。
+</div>
+</div>
+
+<!-- ═══════════════════ 8: adapter — 保存和加载 ═══════════════════ -->
+<div class="step" id="s8">
+<h2>Adapter：可拆卸的小零件</h2>
+
+<canvas id="cv8" width="900" height="400"></canvas>
+
+<p>训练完后，你需要保存结果。LoRA 的一大好处是：<strong>只需要保存 A 和 B 矩阵</strong>，不需要保存完整模型。</p>
+
+<div class="note note-blue">
+<strong>保存的内容（叫 "adapter"）：</strong><br><br>
+所有 64 个 LoRA 的 A 和 B 矩阵权重 → 一个 <strong>~20 MB</strong> 的文件<br>
+加一个 JSON 配置文件（记录 r=16, alpha=32, target_modules 等）<br><br>
+对比全量微调保存整个模型：<strong>14 GB</strong>
+</div>
+
+<div class="note note-green">
+<strong>"Adapter" 这个词的含义：</strong><br><br>
+就像手机壳——手机（原始模型）不变，换个壳（adapter）就变了。<br><br>
+• 你可以给同一个 base 模型做多个 adapter（一个用于聊天，一个用于代码）<br>
+• 每个 adapter 只有 20 MB<br>
+• 加载时：先加载 base 模型，再把 adapter "装上去"<br>
+• 不用了就"拆掉"，base 模型完好无损
+</div>
+
+<div class="note note-purple">
+<strong>还可以合并（merge）：</strong><br>
+如果你确定了要用某个 adapter，可以把 LoRA 永久合并回 W：<br>
+<code>W_new = W + B × A</code><br>
+合并后变回普通模型，推理速度不受影响，也不再需要 peft 库。
+</div>
+</div>
+
+<!-- ═══════════════════ 9: 完整流程鸟瞰 ═══════════════════ -->
+<div class="step" id="s9">
+<h2>完整流程鸟瞰</h2>
+
+<canvas id="cv9" width="900" height="360"></canvas>
+
+<p>把前面讲的串起来，LoRA 的完整流程就是：</p>
+
+<div class="note note-blue">
+<strong>① 加载原始模型</strong> — 从 HuggingFace 下载预训练模型（14 GB）<br><br>
+<strong>② 配置 LoRA</strong> — 告诉 peft："r=16，给 q_proj 和 v_proj 加 LoRA"<br><br>
+<strong>③ 注入</strong> — peft 自动把 64 个 Linear 替换成 lora.Linear，冻结原始参数<br><br>
+<strong>④ 训练</strong> — 正常写训练循环，只有 LoRA 的 A 和 B 在被更新<br><br>
+<strong>⑤ 保存 adapter</strong> — 只保存 A 和 B（20 MB），不保存完整模型<br><br>
+<strong>⑥ 部署/使用</strong> — 加载 base 模型 + adapter，或者合并后部署
+</div>
+
+<div class="note note-green">
+<strong>你现在知道了：</strong><br>
+✓ 为什么需要 LoRA（全量微调太贵）<br>
+✓ LoRA 在做什么（给 Linear 层加 A×B 旁路）<br>
+✓ r 是什么（控制旁路大小的超参数）<br>
+✓ 哪些层被改了（通常是 q_proj 和 v_proj）<br>
+✓ peft 库做了什么（自动注入 + 冻结 + 包装）<br>
+✓ "注入"是什么意思（替换模块树的节点）<br>
+✓ 训练时梯度怎么流（只流过 A 和 B）<br>
+✓ adapter 是什么（可拆卸的小权重文件）<br><br>
+<strong>第二轮</strong>会讲 peft 的具体 API：<code>LoraConfig</code>、<code>get_peft_model()</code>、<code>PeftModel</code> 这三个东西怎么用、参数怎么配。有了这一轮的概念基础，第二轮会好懂很多。
+</div>
+</div>
+
+<div class="nav">
+  <button class="btn" id="btnPrev" onclick="go(-1)" disabled>← 上一步</button>
+  <span id="stepLabel" style="color:var(--dim);font-size:.82rem;"></span>
+  <button class="btn primary" id="btnNext" onclick="go(1)">下一步 →</button>
+</div>
+</div>
+
+<script>
+const dpr=window.devicePixelRatio||1;
+const TOTAL=10;
+const SKEY='peft-guide-r1-step';
+let cur=Math.min(TOTAL-1,Math.max(0,parseInt(localStorage.getItem(SKEY))||0));
+
+function cv(id){const c=document.getElementById(id);if(!c)return null;const w=+c.getAttribute('width'),h=+c.getAttribute('height');c.width=w*dpr;c.height=h*dpr;c.style.width=w+'px';c.style.height=h+'px';const x=c.getContext('2d');x.scale(dpr,dpr);x.clearRect(0,0,w,h);return x;}
+function rr(x,a,b,w,h,r,f,s,lw=1){x.beginPath();x.roundRect(a,b,w,h,r);if(f){x.fillStyle=f;x.fill();}if(s){x.strokeStyle=s;x.lineWidth=lw;x.stroke();}}
+function tx(x,t,a,b,c,sz=12,al='center'){x.fillStyle=c;x.font=`bold ${sz}px -apple-system,BlinkMacSystemFont,sans-serif`;x.textAlign=al;x.textBaseline='middle';t.split('\n').forEach((l,i)=>x.fillText(l,a,b+i*(sz+5)));}
+function txn(x,t,a,b,c,sz=12,al='center'){x.fillStyle=c;x.font=`${sz}px -apple-system,BlinkMacSystemFont,sans-serif`;x.textAlign=al;x.textBaseline='middle';t.split('\n').forEach((l,i)=>x.fillText(l,a,b+i*(sz+5)));}
+function ar(x,x1,y1,x2,y2,c,lw=2){x.beginPath();x.moveTo(x1,y1);x.lineTo(x2,y2);x.strokeStyle=c;x.lineWidth=lw;x.stroke();const a=Math.atan2(y2-y1,x2-x1),s=8;x.beginPath();x.moveTo(x2,y2);x.lineTo(x2-s*Math.cos(a-.35),y2-s*Math.sin(a-.35));x.lineTo(x2-s*Math.cos(a+.35),y2-s*Math.sin(a+.35));x.closePath();x.fillStyle=c;x.fill();}
+function circle(x,cx,cy,r,f,s,lw=2){x.beginPath();x.arc(cx,cy,r,0,Math.PI*2);if(f){x.fillStyle=f;x.fill();}if(s){x.strokeStyle=s;x.lineWidth=lw;x.stroke();}}
+function dashedLine(x,x1,y1,x2,y2,c,lw=1){x.save();x.setLineDash([5,4]);x.beginPath();x.moveTo(x1,y1);x.lineTo(x2,y2);x.strokeStyle=c;x.lineWidth=lw;x.stroke();x.restore();}
+const cl={a:'#6c8cff',pk:'#ff6c9a',g:'#4ade80',o:'#fb923c',p:'#a78bfa',cy:'#22d3ee',dim:'#5a6078',t:'#c8cfe0',bg:'#1a1d27',bd:'#2e3347',y:'#facc15',r:'#f87171'};
+
+function buildProgress(){const p=document.getElementById('prog');p.innerHTML='';for(let i=0;i<TOTAL;i++){const d=document.createElement('div');d.className='dot'+(i<cur?' done':'')+(i===cur?' cur':'');d.onclick=()=>dotClick(i);p.appendChild(d);}}
+function render(noScroll){document.querySelectorAll('.step').forEach((s,i)=>s.classList.toggle('on',i===cur));buildProgress();document.getElementById('btnPrev').disabled=cur===0;const n=document.getElementById('btnNext');n.textContent=cur===TOTAL-1?'完成！':'下一步 →';n.disabled=cur===TOTAL-1;document.getElementById('stepLabel').textContent=`${cur+1} / ${TOTAL}`;requestAnimationFrame(()=>{try{drawFns[cur]?.();}catch(e){console.error(e);}});if(!noScroll)window.scrollTo({top:0,behavior:'smooth'});}
+function go(d){cur=Math.max(0,Math.min(TOTAL-1,cur+d));localStorage.setItem(SKEY,cur);render();}
+function dotClick(i){cur=i;localStorage.setItem(SKEY,cur);render();}
+
+const drawFns={};
+
+// ── 0: 全量微调 vs LoRA ──
+drawFns[0]=function(){
+  const x=cv('cv0');if(!x)return;
+  tx(x,'全量微调 vs LoRA',450,25,cl.t,16);
+
+  // Full fine-tuning side
+  rr(x,30,55,400,280,14,cl.r+'08',cl.r+'20');
+  tx(x,'全量微调',230,80,cl.r,14);
+
+  // Big model block
+  rr(x,60,105,340,70,8,cl.dim+'10',cl.dim);
+  tx(x,'W（70 亿参数）',230,130,cl.dim,11);
+  txn(x,'全部要训练 → 全部存梯度 → 全部存优化器状态',230,155,cl.dim,8);
+
+  // Memory bars
+  rr(x,60,195,80,30,4,cl.pk+'20',cl.pk);txn(x,'参数 14G',100,210,cl.pk,8);
+  rr(x,60,230,80,30,4,cl.o+'20',cl.o);txn(x,'梯度 14G',100,245,cl.o,8);
+  rr(x,60,265,160,30,4,cl.r+'20',cl.r);txn(x,'optimizer 28G',140,280,cl.r,8);
+
+  rr(x,250,195,120,100,6,cl.r+'10',cl.r);
+  tx(x,'总计 ~56 GB',310,235,cl.r,12);
+  txn(x,'1× A100 80G 才够',310,260,cl.dim,9);
+
+  // LoRA side
+  rr(x,460,55,420,280,14,cl.g+'08',cl.g+'20');
+  tx(x,'LoRA 微调',670,80,cl.g,14);
+
+  // Big model frozen
+  rr(x,490,105,360,70,8,cl.dim+'08',cl.dim+'30');
+  tx(x,'W（70 亿参数）',670,130,cl.dim,11);
+  txn(x,'全部冻结 → 不存梯度 → 不存优化器状态',670,155,cl.dim,8);
+  txn(x,'❄ 冻结',830,115,cl.cy,9);
+
+  // Small LoRA params
+  rr(x,490,195,50,30,4,cl.g+'20',cl.g);txn(x,'A,B',515,210,cl.g,8);
+  txn(x,'0.12%',555,210,cl.g,8);
+
+  rr(x,490,240,360,70,6,cl.g+'08',cl.g);
+  tx(x,'只需 ~14.1 GB',670,265,cl.g,12);
+  txn(x,'14G 冻结参数 + 0.06G LoRA',670,290,cl.dim,9);
+
+  // VS arrow
+  tx(x,'vs',445,200,cl.y,18);
+};
+
+// ── 1: LoRA 直觉 ──
+drawFns[1]=function(){
+  const x=cv('cv1');if(!x)return;
+  tx(x,'LoRA 的核心直觉：大变化 = 两个小矩阵相乘',450,25,cl.t,14);
+
+  // Original big delta
+  rr(x,30,60,240,240,10,cl.dim+'08',cl.dim+'25');
+  tx(x,'ΔW',150,120,cl.dim,24);
+  txn(x,'4096 × 4096',150,160,cl.dim,10);
+  txn(x,'= 16,777,216 个参数',150,182,cl.dim,9);
+  txn(x,'微调的变化量',150,220,cl.dim,9);
+  txn(x,'（我们想要但存不起）',150,245,cl.dim,8);
+
+  // ≈ sign
+  tx(x,'≈',300,180,cl.y,28);
+
+  // Matrix B
+  rr(x,340,80,80,200,8,cl.a+'15',cl.a);
+  tx(x,'B',380,160,cl.a,18);
+  txn(x,'4096',380,195,cl.a,8);
+  txn(x,'×',380,210,cl.a,8);
+  txn(x,'16',380,225,cl.a,8);
+
+  // × sign
+  tx(x,'×',445,180,cl.t,20);
+
+  // Matrix A
+  rr(x,470,140,200,80,8,cl.g+'15',cl.g);
+  tx(x,'A',570,170,cl.g,18);
+  txn(x,'16 × 4096',570,195,cl.g,8);
+
+  // Result annotation
+  ar(x,680,180,730,180,cl.y);
+  rr(x,740,120,150,120,8,cl.y+'08',cl.y+'25');
+  tx(x,'只需存',815,148,cl.y,10);
+  txn(x,'A: 16×4096 = 65,536',815,175,cl.g,9);
+  txn(x,'B: 4096×16 = 65,536',815,198,cl.a,9);
+  txn(x,'合计: 131,072',815,225,cl.y,10);
+
+  // Compression ratio
+  rr(x,30,320,860,80,10,cl.y+'06',cl.y+'15');
+  tx(x,'压缩比',100,350,cl.y,11);
+  txn(x,'16,777,216',260,345,cl.dim,11);
+  txn(x,'→',340,345,cl.y,14);
+  txn(x,'131,072',410,345,cl.g,11);
+  txn(x,'压缩了 128 倍',560,345,cl.y,13);
+  txn(x,'只需要 0.78% 的参数就能表示同样的变化',560,370,cl.dim,9);
+};
+
+// ── 2: rank ──
+drawFns[2]=function(){
+  const x=cv('cv2');if(!x)return;
+  tx(x,'r (rank) 是什么',450,25,cl.t,16);
+
+  // Visual: different r values
+  const ranks=[
+    {r:4,w:20,col:cl.g,label:'r=4',desc:'很小\n省显存',params:'2×4×4096\n= 32,768'},
+    {r:8,w:35,col:cl.a,label:'r=8',desc:'较小\n够用',params:'2×8×4096\n= 65,536'},
+    {r:16,w:55,col:cl.o,label:'r=16',desc:'常用\n推荐',params:'2×16×4096\n= 131,072'},
+    {r:32,w:80,col:cl.p,label:'r=32',desc:'较大\n更强',params:'2×32×4096\n= 262,144'},
+    {r:64,w:110,col:cl.pk,label:'r=64',desc:'很大\n接近全量',params:'2×64×4096\n= 524,288'},
+  ];
+
+  // W reference
+  rr(x,30,55,150,300,10,cl.dim+'08',cl.dim+'20');
+  tx(x,'W',105,120,cl.dim,20);
+  txn(x,'4096×4096',105,155,cl.dim,9);
+  txn(x,'= 16.7M 参数',105,175,cl.dim,8);
+  txn(x,'(冻结不动)',105,200,cl.dim,8);
+
+  // Different ranks
+  ranks.forEach((rk,i)=>{
+    const bx=210+i*140;
+    rr(x,bx,55,120,300,10,rk.col+'08',rk.col+'20');
+    tx(x,rk.label,bx+60,80,rk.col,14);
+
+    // B bar
+    rr(x,bx+20,110,rk.w,120,4,rk.col+'20',rk.col);
+    txn(x,'B',bx+20+rk.w/2,160,rk.col,8);
+
+    // A bar
+    rr(x,bx+20,245,80,rk.w*0.4,4,rk.col+'20',rk.col);
+    txn(x,'A',bx+60,250+rk.w*0.2,rk.col,8);
+
+    txn(x,rk.desc,bx+60,290,cl.dim,8);
+    txn(x,rk.params,bx+60,330,rk.col,7);
+  });
+
+  // Arrow showing "r controls this dimension"
+  dashedLine(x,250,230,870,230,cl.y);
+  txn(x,'← r 越大，A 和 B 越大，参数越多，表达力越强 →',560,225,cl.y,9);
+};
+
+// ── 3: lora.Linear 详细图 ──
+drawFns[3]=function(){
+  const x=cv('cv3');if(!x)return;
+  tx(x,'一个 Linear 层加 LoRA 后的数据流',450,25,cl.t,14);
+
+  // Input
+  rr(x,30,170,100,60,8,cl.cy+'15',cl.cy);
+  tx(x,'输入 x',80,195,cl.cy,11);
+  txn(x,'(4096)',80,215,cl.cy,8);
+
+  // Split
+  ar(x,130,185,185,140,cl.dim);
+  ar(x,130,210,185,310,cl.dim);
+
+  // Top path: W (frozen)
+  rr(x,190,100,200,80,10,cl.dim+'10',cl.dim);
+  tx(x,'W × x',290,130,cl.dim,13);
+  txn(x,'原始路径（冻结 ❄）',290,155,cl.dim,9);
+
+  ar(x,395,140,480,200,cl.dim);
+
+  // Bottom path: LoRA
+  rr(x,190,280,80,65,8,cl.g+'15',cl.g);
+  tx(x,'A',230,305,cl.g,14);
+  txn(x,'r×4096',230,330,cl.g,7);
+
+  ar(x,275,310,310,310,cl.g);
+
+  rr(x,315,280,80,65,8,cl.a+'15',cl.a);
+  tx(x,'B',355,305,cl.a,14);
+  txn(x,'4096×r',355,330,cl.a,7);
+
+  ar(x,400,310,480,225,cl.g);
+
+  // Label the LoRA path
+  rr(x,190,360,210,40,6,cl.g+'08',cl.g+'20');
+  txn(x,'LoRA 旁路（可训练 🔥）',295,380,cl.g,9);
+
+  // Plus sign
+  circle(x,500,210,18,cl.y+'15',cl.y,2);
+  tx(x,'+',500,210,cl.y,18);
+
+  // Output
+  ar(x,520,210,580,210,cl.y);
+  rr(x,585,180,120,60,8,cl.y+'15',cl.y);
+  tx(x,'输出',645,200,cl.y,12);
+  txn(x,'W·x + B·A·x',645,225,cl.y,8);
+
+  // Scaling note
+  rr(x,570,290,300,80,8,cl.p+'06',cl.p+'15');
+  txn(x,'实际上还有一个缩放系数 α/r',720,315,cl.p,9);
+  txn(x,'输出 = W·x + (α/r)·B·A·x',720,340,cl.p,8);
+
+  // Legend
+  rr(x,30,400,400,30,6,null,cl.bd);
+  circle(x,60,415,5,cl.dim,null);txn(x,'冻结（不训练）',120,415,cl.dim,8);
+  circle(x,210,415,5,cl.g,null);txn(x,'可训练',260,415,cl.g,8);
+  circle(x,320,415,5,cl.y,null);txn(x,'输出',360,415,cl.y,8);
+};
+
+// ── 4: 哪些层加 LoRA ──
+drawFns[4]=function(){
+  const x=cv('cv4');if(!x)return;
+  tx(x,'Transformer 一层的结构 → 哪些层加 LoRA',450,25,cl.t,14);
+
+  // One decoder layer
+  rr(x,30,55,850,370,14,'#ffffff03',cl.bd);
+  tx(x,'一个 Decoder Layer（×32 层）',455,80,cl.t,12);
+
+  // Attention block
+  rr(x,60,100,380,300,10,cl.a+'06',cl.a+'15');
+  tx(x,'Self-Attention',250,125,cl.a,12);
+
+  const attnLayers=[
+    {name:'q_proj',lora:true,desc:'Query 投影'},
+    {name:'k_proj',lora:false,desc:'Key 投影'},
+    {name:'v_proj',lora:true,desc:'Value 投影'},
+    {name:'o_proj',lora:false,desc:'输出投影'},
+  ];
+  attnLayers.forEach((l,i)=>{
+    const ly=155+i*55;
+    const col=l.lora?cl.g:cl.dim;
+    rr(x,90,ly,320,42,6,col+'08',col,l.lora?2:1);
+    tx(x,l.name,175,ly+15,col,11,'left');
+    txn(x,l.desc,175,ly+33,cl.dim,8,'left');
+    if(l.lora){
+      rr(x,310,ly+5,80,30,4,cl.g+'20',cl.g);
+      txn(x,'+ LoRA',350,ly+20,cl.g,8);
+    }
+  });
+
+  // MLP block
+  rr(x,470,100,390,300,10,cl.p+'06',cl.p+'15');
+  tx(x,'FFN / MLP',665,125,cl.p,12);
+
+  const mlpLayers=[
+    {name:'gate_proj',desc:'4096 → 11008'},
+    {name:'up_proj',desc:'4096 → 11008'},
+    {name:'down_proj',desc:'11008 → 4096'},
+  ];
+  mlpLayers.forEach((l,i)=>{
+    const ly=155+i*55;
+    rr(x,500,ly,330,42,6,cl.dim+'08',cl.dim);
+    tx(x,l.name,590,ly+15,cl.dim,11,'left');
+    txn(x,l.desc,590,ly+33,cl.dim,8,'left');
+  });
+
+  txn(x,'通常不加 LoRA',665,350,cl.dim,9);
+  txn(x,'（也可以加，但性价比低）',665,370,cl.dim,8);
+
+  // Summary
+  rr(x,60,410,400,22,4,cl.g+'10',cl.g);
+  txn(x,'绿色 = 会加 LoRA 的层     灰色 = 不动',260,420,cl.t,9);
+};
+
+// ── 5: peft 做了什么 ──
+drawFns[5]=function(){
+  const x=cv('cv5');if(!x)return;
+  tx(x,'peft 库做了什么（三件事）',450,25,cl.t,15);
+
+  // Step 1: You give config
+  rr(x,30,60,250,120,10,cl.o+'08',cl.o+'25');
+  tx(x,'你给一个配置',155,85,cl.o,12);
+  txn(x,'"r=16"',155,110,cl.t,10);
+  txn(x,'"给 q_proj, v_proj 加"',155,130,cl.t,9);
+  txn(x,'"dropout=0.05"',155,150,cl.t,9);
+
+  ar(x,285,120,335,120,cl.dim);
+
+  // Step 2: peft does magic
+  rr(x,340,55,260,310,10,cl.a+'06',cl.a+'20');
+  tx(x,'peft 自动执行',470,80,cl.a,12);
+
+  // Sub-step 1
+  rr(x,360,100,220,65,6,cl.a+'10',cl.a);
+  tx(x,'① 注入',470,118,cl.a,11);
+  txn(x,'遍历模块树',470,138,cl.t,8);
+  txn(x,'Linear → lora.Linear',470,153,cl.t,8);
+
+  // Sub-step 2
+  rr(x,360,175,220,65,6,cl.cy+'10',cl.cy);
+  tx(x,'② 冻结',470,193,cl.cy,11);
+  txn(x,'所有原始参数',470,213,cl.t,8);
+  txn(x,'requires_grad = False',470,228,cl.t,8);
+
+  // Sub-step 3
+  rr(x,360,250,220,65,6,cl.g+'10',cl.g);
+  tx(x,'③ 包装',470,268,cl.g,11);
+  txn(x,'包成 PeftModel',470,288,cl.t,8);
+  txn(x,'提供 save/load 方法',470,303,cl.t,8);
+
+  ar(x,605,190,660,190,cl.dim);
+
+  // Result
+  rr(x,665,60,220,300,10,cl.g+'08',cl.g+'25');
+  tx(x,'你拿到的结果',775,85,cl.g,12);
+
+  rr(x,690,110,170,60,6,'#0d0f14',cl.bd);
+  txn(x,'原始 W（冻结❄）',775,132,cl.dim,9);
+  txn(x,'不训练、不存梯度',775,150,cl.dim,7);
+
+  txn(x,'+',775,185,cl.t,14);
+
+  rr(x,690,200,170,60,6,cl.g+'10',cl.g);
+  txn(x,'LoRA A & B（可训练🔥）',775,222,cl.g,9);
+  txn(x,'只有这些被优化',775,240,cl.g,7);
+
+  txn(x,'+',775,275,cl.t,14);
+
+  rr(x,690,290,170,45,6,cl.p+'10',cl.p);
+  txn(x,'save / load / merge',775,305,cl.p,8);
+  txn(x,'等便利方法',775,322,cl.p,7);
+};
+
+// ── 6: 模块树 ──
+drawFns[6]=function(){
+  const x=cv('cv6');if(!x)return;
+  tx(x,'"注入"= 替换模块树中的节点',450,25,cl.t,14);
+
+  // Tree: before
+  rr(x,20,55,420,370,12,cl.dim+'06',cl.dim+'20');
+  tx(x,'替换前',230,78,cl.dim,12);
+
+  const tree=[
+    {d:0,t:'LlamaForCausalLM',c:cl.dim},
+    {d:1,t:'└─ LlamaModel',c:cl.dim},
+    {d:2,t:'└─ layers[0]',c:cl.dim},
+    {d:3,t:'├─ self_attn',c:cl.dim},
+    {d:4,t:'├─ q_proj: Linear',c:cl.o,hl:true},
+    {d:4,t:'├─ k_proj: Linear',c:cl.dim},
+    {d:4,t:'├─ v_proj: Linear',c:cl.o,hl:true},
+    {d:4,t:'└─ o_proj: Linear',c:cl.dim},
+    {d:3,t:'└─ mlp',c:cl.dim},
+    {d:4,t:'├─ gate_proj: Linear',c:cl.dim},
+    {d:4,t:'└─ down_proj: Linear',c:cl.dim},
+  ];
+  tree.forEach((n,i)=>{
+    const lx=45+n.d*22;
+    const ly=100+i*28;
+    if(n.hl) rr(x,lx-5,ly-10,220,22,4,cl.o+'10',cl.o+'25');
+    txn(x,n.t,lx,ly,n.c,9,'left');
+  });
+  txn(x,'橙色 = 目标层',230,420,cl.o,8);
+
+  // Arrow
+  ar(x,445,230,470,230,cl.g,3);
+  txn(x,'peft',458,210,cl.g,9);
+  txn(x,'注入',458,250,cl.g,9);
+
+  // Tree: after
+  rr(x,480,55,410,370,12,cl.g+'06',cl.g+'20');
+  tx(x,'替换后',685,78,cl.g,12);
+
+  const tree2=[
+    {d:0,t:'PeftModel',c:cl.g},
+    {d:1,t:'└─ LoraModel',c:cl.g},
+    {d:2,t:'└─ LlamaForCausalLM',c:cl.dim},
+    {d:3,t:'└─ layers[0]',c:cl.dim},
+    {d:4,t:'├─ self_attn',c:cl.dim},
+    {d:5,t:'├─ q_proj: lora.Linear',c:cl.g,hl:true},
+    {d:6,t:'├─ base_layer: Linear ❄',c:cl.dim},
+    {d:6,t:'├─ lora_A 🔥',c:cl.g},
+    {d:6,t:'└─ lora_B 🔥',c:cl.g},
+    {d:5,t:'├─ k_proj: Linear',c:cl.dim},
+    {d:5,t:'└─ v_proj: lora.Linear',c:cl.g,hl:true},
+  ];
+  tree2.forEach((n,i)=>{
+    const lx=500+n.d*18;
+    const ly=100+i*28;
+    if(n.hl) rr(x,lx-5,ly-10,200,22,4,cl.g+'10',cl.g+'25');
+    txn(x,n.t,lx,ly,n.c,9,'left');
+  });
+
+  // Annotations
+  rr(x,500,400,380,22,4,null,cl.bd);
+  txn(x,'外面多了 PeftModel/LoraModel 包装层   内部 Linear → lora.Linear',690,410,cl.dim,7);
+};
+
+// ── 7: 训练时的梯度流 ──
+drawFns[7]=function(){
+  const x=cv('cv7');if(!x)return;
+  tx(x,'训练时的数据流和梯度流',450,25,cl.t,14);
+
+  // Forward
+  rr(x,30,55,420,155,12,cl.a+'06',cl.a+'15');
+  tx(x,'前向传播（Forward）',240,78,cl.a,12);
+
+  rr(x,55,100,100,40,6,cl.cy+'10',cl.cy);
+  txn(x,'输入 x',105,115,cl.cy,9);
+
+  ar(x,160,115,200,95,cl.dim);
+  rr(x,205,80,150,35,6,cl.dim+'08',cl.dim);
+  txn(x,'W·x (冻结路径)',280,97,cl.dim,8);
+
+  ar(x,160,125,200,150,cl.g);
+  rr(x,205,135,150,35,6,cl.g+'10',cl.g);
+  txn(x,'B·A·x (LoRA路径)',280,152,cl.g,8);
+
+  ar(x,360,97,385,115,cl.dim);
+  ar(x,360,152,385,125,cl.g);
+  circle(x,395,120,12,cl.y+'15',cl.y);
+  txn(x,'+',395,120,cl.y,10);
+  ar(x,408,120,430,120,cl.y);
+  txn(x,'输出',440,115,cl.y,9,'left');
+
+  // Backward
+  rr(x,30,225,420,155,12,cl.o+'06',cl.o+'15');
+  tx(x,'反向传播（Backward）',240,248,cl.o,12);
+
+  rr(x,55,275,160,40,6,cl.dim+'06',cl.dim+'25');
+  txn(x,'W 的梯度',135,290,cl.dim,9);
+  txn(x,'✗ 不计算',135,305,cl.r,8);
+
+  rr(x,240,275,170,40,6,cl.g+'10',cl.g);
+  txn(x,'A, B 的梯度',325,290,cl.g,9);
+  txn(x,'✓ 计算并更新',325,305,cl.g,8);
+
+  txn(x,'梯度只流过 requires_grad=True 的参数',240,340,cl.dim,9);
+  txn(x,'W 不存梯度也不存优化器状态 → 大幅省显存',240,360,cl.dim,8);
+
+  // Memory comparison
+  rr(x,470,55,420,325,12,cl.y+'06',cl.y+'15');
+  tx(x,'显存对比',680,78,cl.y,12);
+
+  // Full FT bar
+  txn(x,'全量微调：',510,110,cl.r,9,'left');
+  rr(x,510,120,350,25,4,cl.r+'20',cl.r);
+  txn(x,'56 GB',685,132,cl.r,9);
+
+  // LoRA bar
+  txn(x,'LoRA (r=16)：',510,165,cl.g,9,'left');
+  rr(x,510,175,88,25,4,cl.g+'20',cl.g);
+  txn(x,'14.1 GB',555,187,cl.g,9);
+
+  // Detail
+  rr(x,510,220,350,140,6,'#0d0f14',cl.bd);
+  txn(x,'全量：参数14G + 梯度14G + 优化器28G = 56G',685,245,cl.dim,8);
+  txn(x,'',685,265,cl.dim,8);
+  txn(x,'LoRA：冻结参数14G（只推理）',685,280,cl.dim,8);
+  txn(x,'     + LoRA参数 0.02G',685,298,cl.dim,8);
+  txn(x,'     + LoRA梯度 0.02G',685,316,cl.dim,8);
+  txn(x,'     + LoRA优化器 0.04G',685,334,cl.dim,8);
+  txn(x,'     = ~14.1G',685,352,cl.g,9);
+};
+
+// ── 8: adapter 概念 ──
+drawFns[8]=function(){
+  const x=cv('cv8');if(!x)return;
+  tx(x,'Adapter：可拆卸的小零件',450,25,cl.t,15);
+
+  // Base model (phone)
+  rr(x,50,70,200,300,14,cl.dim+'10',cl.dim);
+  tx(x,'Base 模型',150,100,cl.dim,13);
+  txn(x,'LLaMA-7B',150,125,cl.dim,10);
+  txn(x,'14 GB',150,150,cl.dim,10);
+  txn(x,'（不变）',150,175,cl.dim,9);
+
+  // Adapter 1
+  rr(x,300,70,160,120,10,cl.a+'10',cl.a);
+  tx(x,'Adapter A',380,95,cl.a,11);
+  txn(x,'"聊天"',380,120,cl.a,9);
+  txn(x,'20 MB',380,145,cl.a,10);
+  txn(x,'64个LoRA的A,B',380,170,cl.dim,7);
+
+  // Adapter 2
+  rr(x,300,210,160,120,10,cl.o+'10',cl.o);
+  tx(x,'Adapter B',380,235,cl.o,11);
+  txn(x,'"写代码"',380,260,cl.o,9);
+  txn(x,'20 MB',380,285,cl.o,10);
+  txn(x,'64个LoRA的A,B',380,310,cl.dim,7);
+
+  // Arrows showing plug-in
+  ar(x,255,150,295,130,cl.a);
+  ar(x,255,250,295,270,cl.o);
+
+  // Save to disk
+  rr(x,520,70,360,120,10,cl.g+'06',cl.g+'15');
+  tx(x,'保存到磁盘',700,95,cl.g,12);
+
+  rr(x,545,115,140,25,4,'#0d0f14',cl.bd);
+  txn(x,'adapter_model.safetensors',615,128,cl.g,7);
+  rr(x,545,148,140,25,4,'#0d0f14',cl.bd);
+  txn(x,'adapter_config.json',615,160,cl.p,7);
+
+  txn(x,'权重文件 ~20MB',740,128,cl.dim,8);
+  txn(x,'配置 (r, alpha...)',740,160,cl.dim,8);
+
+  // Merge option
+  rr(x,520,210,360,120,10,cl.y+'06',cl.y+'15');
+  tx(x,'或者 merge（合并）',700,235,cl.y,12);
+
+  txn(x,'W\' = W + (α/r) × B × A',700,268,cl.y,9);
+  txn(x,'合并后变回普通模型 (14 GB)',700,293,cl.dim,9);
+  txn(x,'不再需要 peft 库',700,313,cl.dim,8);
+
+  // Overall annotation
+  rr(x,50,385,830,40,6,cl.p+'06',cl.p+'15');
+  txn(x,'一个 base 模型可以配多个 adapter，每个只需 20MB → 省存储、可切换、易分发',450,405,cl.p,9);
+};
+
+// ── 9: 完整流程 ──
+drawFns[9]=function(){
+  const x=cv('cv9');if(!x)return;
+  tx(x,'LoRA 完整流程鸟瞰',450,25,cl.t,16);
+
+  const steps=[
+    {x:30,y:65,w:160,h:80,label:'① 加载模型',desc:'HuggingFace\n预训练模型 (14GB)',col:cl.dim},
+    {x:30,y:170,w:160,h:80,label:'② 配置 LoRA',desc:'r=16\ntarget: q,v_proj',col:cl.o},
+    {x:30,y:275,w:160,h:80,label:'③ 注入 (peft)',desc:'Linear → lora.Linear\n冻结 W',col:cl.a},
+  ];
+  const steps2=[
+    {x:250,y:65,w:170,h:80,label:'④ 训练',desc:'forward → loss →\nbackward → step',col:cl.g},
+    {x:250,y:170,w:170,h:80,label:'⑤ 保存 adapter',desc:'20 MB 的\nA,B 权重文件',col:cl.p},
+    {x:250,y:275,w:170,h:80,label:'⑥ 部署',desc:'加载 base + adapter\n或 merge 后部署',col:cl.y},
+  ];
+
+  steps.forEach((s,i)=>{
+    rr(x,s.x,s.y,s.w,s.h,10,s.col+'10',s.col,2);
+    tx(x,s.label,s.x+s.w/2,s.y+20,s.col,11);
+    txn(x,s.desc,s.x+s.w/2,s.y+48,cl.t,8);
+    if(i<steps.length-1) ar(x,s.x+s.w/2,s.y+s.h+3,s.x+s.w/2,steps[i+1].y-3,cl.dim);
+  });
+  // Arrow from step 3 to step 4
+  ar(x,195,315,245,105,cl.dim);
+
+  steps2.forEach((s,i)=>{
+    rr(x,s.x,s.y,s.w,s.h,10,s.col+'10',s.col,2);
+    tx(x,s.label,s.x+s.w/2,s.y+20,s.col,11);
+    txn(x,s.desc,s.x+s.w/2,s.y+48,cl.t,8);
+    if(i<steps2.length-1) ar(x,s.x+s.w/2,s.y+s.h+3,s.x+s.w/2,steps2[i+1].y-3,cl.dim);
+  });
+
+  // Summary box
+  rr(x,470,55,410,300,12,cl.a+'06',cl.a+'15');
+  tx(x,'第一轮你学到了',675,80,cl.a,13);
+
+  const items=[
+    {text:'LoRA = 给 Linear 加 A×B 旁路',col:cl.g},
+    {text:'r 控制旁路大小（通常 16）',col:cl.o},
+    {text:'通常只给 q_proj, v_proj 加',col:cl.a},
+    {text:'peft 自动注入 + 冻结 + 包装',col:cl.p},
+    {text:'训练代码写法不变',col:cl.g},
+    {text:'保存的 adapter 只有 ~20MB',col:cl.y},
+    {text:'可以 merge 回普通模型',col:cl.pk},
+  ];
+  items.forEach((it,i)=>{
+    rr(x,495,105+i*33,360,27,4,it.col+'08',it.col+'20');
+    txn(x,'✓ '+it.text,675,118+i*33,it.col,9);
+  });
+
+  rr(x,495,345,360,0,0,null,cl.bd);
+
+  rr(x,495,340,360,0,0,null,null);
+  tx(x,'→ 第二轮',675,340,cl.a,11);
+  txn(x,'LoraConfig、get_peft_model、PeftModel',675,360,cl.dim,9);
+  txn(x,'具体 API 和代码写法',675,378,cl.dim,9);
+
+  // Arrow to r2 hint
+  ar(x,675,390,675,410,cl.a);
+  rr(x,600,415,150,30,6,cl.a+'15',cl.a);
+  txn(x,'开始第二轮 →',675,430,cl.a,9);
+};
+
+buildProgress();render(true);
+</script>
+</body>
+</html>

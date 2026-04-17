@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>从论文 Idea 到代码实现：全局思维框架</title>
+<style>
+  @page { size: A4; margin: 14mm 16mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Noto Sans SC", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    font-size: 10pt; line-height: 1.6; color: #1a1a2e;
+    background: #fff; max-width: 210mm; margin: 0 auto; padding: 12mm 15mm;
+  }
+
+  .header { text-align: center; border-bottom: 2.5px solid #2563eb; padding-bottom: 10px; margin-bottom: 12px; }
+  .header h1 { font-size: 17pt; color: #2563eb; font-weight: 800; }
+  .header .sub { font-size: 9.5pt; color: #636e72; margin-top: 3px; }
+
+  h2 { font-size: 12.5pt; color: #2563eb; border-left: 4px solid #2563eb; padding-left: 8px; margin: 14px 0 7px 0; page-break-after: avoid; }
+  h3 { font-size: 10.5pt; color: #2d3436; margin: 8px 0 4px 0; }
+  p { margin-bottom: 5px; }
+  ul, ol { padding-left: 20px; margin-bottom: 6px; }
+  li { margin-bottom: 3px; }
+  strong { color: #1e3a5f; }
+  code { font-family: "JetBrains Mono", "Fira Code", Consolas, monospace; font-size: 9pt; background: #f1f5f9; padding: 1px 4px; border-radius: 3px; }
+
+  .box { border-radius: 8px; padding: 10px 14px; margin: 8px 0; page-break-inside: avoid; }
+  .box-blue { background: #eff6ff; border: 1.5px solid #93c5fd; }
+  .box-green { background: #f0fdf4; border: 1.5px solid #86efac; }
+  .box-orange { background: #fffbeb; border: 1.5px solid #fcd34d; }
+  .box-purple { background: #f5f3ff; border: 1.5px solid #c4b5fd; }
+  .box-red { background: #fef2f2; border: 1.5px solid #fca5a5; }
+  .box strong { display: block; margin-bottom: 3px; }
+  .box-blue strong { color: #2563eb; }
+  .box-green strong { color: #16a34a; }
+  .box-orange strong { color: #d97706; }
+  .box-purple strong { color: #7c3aed; }
+  .box-red strong { color: #dc2626; }
+
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 9pt; page-break-inside: avoid; }
+  th { background: #2563eb; color: white; padding: 5px 8px; text-align: left; font-weight: 600; font-size: 8.5pt; }
+  td { padding: 4px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) { background: #f8fafc; }
+  .hl { background: #eff6ff !important; font-weight: 600; }
+
+  .pipeline { display: flex; align-items: stretch; gap: 0; margin: 10px 0; page-break-inside: avoid; }
+  .pipe-stage {
+    flex: 1; text-align: center; padding: 8px 6px; font-size: 8.5pt;
+    border: 1.5px solid; border-radius: 8px; position: relative;
+  }
+  .pipe-stage .num { font-size: 16pt; font-weight: 800; line-height: 1; margin-bottom: 2px; }
+  .pipe-stage .name { font-weight: 700; font-size: 9pt; margin-bottom: 2px; }
+  .pipe-stage .desc { font-size: 7.5pt; color: #64748b; }
+  .pipe-arrow {
+    display: flex; align-items: center; font-size: 16pt; color: #94a3b8;
+    padding: 0 2px; flex-shrink: 0;
+  }
+  .s1 { border-color: #60a5fa; background: #eff6ff; color: #2563eb; }
+  .s2 { border-color: #a78bfa; background: #f5f3ff; color: #7c3aed; }
+  .s3 { border-color: #fb923c; background: #fff7ed; color: #ea580c; }
+  .s4 { border-color: #34d399; background: #ecfdf5; color: #059669; }
+  .s5 { border-color: #f87171; background: #fef2f2; color: #dc2626; }
+  .s6 { border-color: #38bdf8; background: #f0f9ff; color: #0284c7; }
+
+  .slot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+  .slot-card { border-radius: 8px; padding: 8px 10px; page-break-inside: avoid; }
+  .slot-card .slot-title { font-weight: 700; font-size: 9.5pt; margin-bottom: 3px; }
+  .slot-card .slot-q { font-style: italic; color: #64748b; font-size: 8.5pt; margin-bottom: 4px; }
+  .slot-card ul { font-size: 8.5pt; padding-left: 16px; margin: 0; }
+
+  .footer { margin-top: 14px; padding-top: 6px; border-top: 1px solid #d1d5db; font-size: 7.5pt; color: #9ca3af; text-align: center; }
+
+  .two-col { display: flex; gap: 12px; }
+  .two-col > div { flex: 1; }
+
+  .flow-box {
+    font-family: Consolas, monospace; font-size: 8.5pt; line-height: 1.7;
+    background: #1e293b; color: #e2e8f0; border-radius: 8px; padding: 10px 14px;
+    white-space: pre; margin: 8px 0; page-break-inside: avoid;
+  }
+  .flow-box .stage { color: #60a5fa; font-weight: 700; }
+  .flow-box .paper { color: #fbbf24; font-weight: 700; }
+  .flow-box .code { color: #34d399; }
+  .flow-box .dim { color: #64748b; }
+
+  @media print {
+    body { padding: 0; max-width: none; }
+    .flow-box { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>从论文 Idea 到代码实现</h1>
+  <div class="sub">一张地图 &middot; 六个阶段 &middot; 五个插槽 &mdash; 你只需要找到 idea 插在哪里</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>你遇到的真正问题</h2>
+
+<div class="box box-orange">
+  <strong>不是"看不懂论文"，而是缺一张地图。</strong>
+  你能看懂 LiLoRA 的公式 &Delta;W = (&alpha;&middot;B&#8320; + (1-&alpha;)&middot;B&#771;&middot;A&#771;)&middot;A，但不知道这个公式<em>放在整个训练系统的哪个位置</em>，所以不知道该写哪个文件、哪个函数、和哪些已有代码对接。<br><br>
+  解决方法：先理解完整的训练流水线有哪些阶段，然后对任何一篇论文，问一个问题：<br>
+  <strong style="color: #ea580c; font-size: 11pt;">"这篇论文改的是流水线的哪个阶段？"</strong>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>完整的 VLM 微调流水线：6 个阶段</h2>
+
+<div class="pipeline">
+  <div class="pipe-stage s1"><div class="num">1</div><div class="name">加载模型</div><div class="desc">from_pretrained<br>+ 量化配置</div></div>
+  <div class="pipe-arrow">&rarr;</div>
+  <div class="pipe-stage s2"><div class="num">2</div><div class="name">改造模型</div><div class="desc">注入适配器<br>冻结/解冻参数</div></div>
+  <div class="pipe-arrow">&rarr;</div>
+  <div class="pipe-stage s3"><div class="num">3</div><div class="name">准备数据</div><div class="desc">加载数据集<br>图文配对 collate</div></div>
+  <div class="pipe-arrow">&rarr;</div>
+  <div class="pipe-stage s4"><div class="num">4</div><div class="name">训练循环</div><div class="desc">forward → loss<br>backward → step</div></div>
+  <div class="pipe-arrow">&rarr;</div>
+  <div class="pipe-stage s5"><div class="num">5</div><div class="name">保存模型</div><div class="desc">checkpoint<br>元信息</div></div>
+  <div class="pipe-arrow">&rarr;</div>
+  <div class="pipe-stage s6"><div class="num">6</div><div class="name">推理评估</div><div class="desc">加载 → 生成<br>计算 metrics</div></div>
+</div>
+
+<div class="box box-blue">
+  <strong>关键认知：论文的 idea 永远只改其中 1-2 个阶段，其他阶段不变。</strong>
+  你不需要从零写一个训练系统。你只需要找到论文改的是哪个阶段，然后只改那个阶段的代码。
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>五个"插槽"：论文 idea 只会插在这些位置</h2>
+
+<div class="slot-grid">
+
+  <div class="slot-card box-purple">
+    <div class="slot-title" style="color:#7c3aed;">插槽 A: 模型架构改造</div>
+    <div class="slot-q">"模型的哪些参数/模块被修改了？"</div>
+    <ul>
+      <li>LoRA: 在 Linear 旁边加 A&middot;B 低秩矩阵</li>
+      <li><strong>LiLoRA: 把 B 拆成共享 B&#8320; + 任务 B&#771;&middot;A&#771;</strong></li>
+      <li>MoReS: 在层输出后加正交干预模块</li>
+      <li>Freeze: 不加模块，只选择解冻哪些层</li>
+    </ul>
+    <div style="font-size:8pt; color:#7c3aed; margin-top:4px;">对应代码: <code>prepare_model()</code> &rarr; 阶段 2</div>
+  </div>
+
+  <div class="slot-card box-green">
+    <div class="slot-title" style="color:#16a34a;">插槽 B: 损失函数</div>
+    <div class="slot-q">"loss 怎么算的？和标准交叉熵有什么不同？"</div>
+    <ul>
+      <li>标准: L = CrossEntropy(logits, labels)</li>
+      <li>MoReS: L = CE + &lambda;&middot;正交罚项</li>
+      <li>L2T: 标准 CE，但改了哪些 token 参与计算</li>
+      <li>对比学习: L = CE + InfoNCE</li>
+    </ul>
+    <div style="font-size:8pt; color:#16a34a; margin-top:4px;">对应代码: <code>compute_loss()</code> &rarr; 阶段 4</div>
+  </div>
+
+  <div class="slot-card box-orange">
+    <div class="slot-title" style="color:#d97706;">插槽 C: 标签/数据处理</div>
+    <div class="slot-q">"数据进模型之前，做了什么特殊预处理？"</div>
+    <ul>
+      <li>标准: 只对 response token 算 loss（instruction 置 -100）</li>
+      <li><strong>L2T: unmask 非模板的 instruction token</strong></li>
+      <li>数据增强: 随机裁剪、混合</li>
+      <li>课程学习: 按难度排序样本</li>
+    </ul>
+    <div style="font-size:8pt; color:#d97706; margin-top:4px;">对应代码: <code>preprocess_labels()</code> / collate &rarr; 阶段 3-4</div>
+  </div>
+
+  <div class="slot-card box-red">
+    <div class="slot-title" style="color:#dc2626;">插槽 D: 优化策略</div>
+    <div class="slot-q">"optimizer/scheduler 有什么特别？"</div>
+    <ul>
+      <li>标准: AdamW + cosine schedule</li>
+      <li>不同参数组不同 LR</li>
+      <li>梯度裁剪策略</li>
+      <li>EMA（指数移动平均）</li>
+    </ul>
+    <div style="font-size:8pt; color:#dc2626; margin-top:4px;">对应代码: optimizer 配置 &rarr; 阶段 4</div>
+  </div>
+
+</div>
+
+<div class="box box-blue" style="text-align: center;">
+  <strong>插槽 E: 保存/加载格式</strong> &mdash; "checkpoint 里存了什么？加载时怎么恢复？"<br>
+  <span style="font-size: 8.5pt;">LoRA 存适配器权重 | LiLoRA 存每层的 LiLoRA state | MoReS 存干预模块 + projector | Full FT 存整个模型</span><br>
+  <span style="font-size: 8pt; color: #2563eb;">对应代码: <code>save_checkpoint()</code> + <code>load_for_inference()</code> &rarr; 阶段 5-6</span>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<div style="page-break-before: always;"></div>
+
+<h2>实战：用这个框架分析我们接触过的每篇论文</h2>
+
+<table>
+  <tr>
+    <th style="width:12%">论文</th>
+    <th style="width:15%">一句话 idea</th>
+    <th style="width:10%; background:#7c3aed;">A 架构</th>
+    <th style="width:10%; background:#16a34a;">B 损失</th>
+    <th style="width:10%; background:#d97706;">C 数据</th>
+    <th style="width:10%; background:#dc2626;">D 优化</th>
+    <th style="width:10%; background:#2563eb;">E 存储</th>
+    <th style="width:23%">关键代码位置</th>
+  </tr>
+  <tr>
+    <td><strong>LoRA</strong></td>
+    <td>低秩 A&middot;B 矩阵旁路</td>
+    <td style="background:#f5f3ff;"><strong>&#10004; 主要</strong></td>
+    <td>-</td>
+    <td>-</td>
+    <td>-</td>
+    <td>&#10004;</td>
+    <td><code>prepare_model()</code> 注入 PeftModel</td>
+  </tr>
+  <tr>
+    <td><strong>LiLoRA</strong></td>
+    <td>共享 A + 分解 B + 正则</td>
+    <td style="background:#f5f3ff;"><strong>&#10004; 主要</strong></td>
+    <td>-</td>
+    <td>-</td>
+    <td>-</td>
+    <td>&#10004;</td>
+    <td><code>LiLoRALinear</code> + hook 注入</td>
+  </tr>
+  <tr>
+    <td><strong>L2T</strong></td>
+    <td>也对 instruction 算 loss</td>
+    <td>-</td>
+    <td>-</td>
+    <td style="background:#fffbeb;"><strong>&#10004; 主要</strong></td>
+    <td>-</td>
+    <td>-</td>
+    <td><code>preprocess_labels()</code> 改 mask</td>
+  </tr>
+  <tr>
+    <td><strong>MoReS</strong></td>
+    <td>正交低秩干预 + 投影器</td>
+    <td style="background:#f5f3ff;"><strong>&#10004;</strong></td>
+    <td style="background:#f0fdf4;"><strong>&#10004;</strong></td>
+    <td>-</td>
+    <td>-</td>
+    <td>&#10004;</td>
+    <td><code>OrthogonalIntervention</code> + 正交罚项</td>
+  </tr>
+  <tr>
+    <td><strong>DoRA</strong></td>
+    <td>分解权重为幅度+方向</td>
+    <td style="background:#f5f3ff;"><strong>&#10004; 主要</strong></td>
+    <td>-</td>
+    <td>-</td>
+    <td>-</td>
+    <td>&#10004;</td>
+    <td>PEFT 库内部实现</td>
+  </tr>
+  <tr>
+    <td><strong>QLoRA</strong></td>
+    <td>4-bit 量化 + LoRA</td>
+    <td>&#10004;</td>
+    <td>-</td>
+    <td>-</td>
+    <td style="background:#fef2f2;">&#10004; NF4</td>
+    <td>&#10004;</td>
+    <td><code>BitsAndBytesConfig</code> + LoRA</td>
+  </tr>
+</table>
+
+<div class="box box-orange">
+  <strong>发现了吗？</strong>
+  大多数论文只动了<strong>一个插槽</strong>。L2T 只改了标签处理（C），LoRA/LiLoRA 只改了模型架构（A），MoReS 改了两个（A+B）。没有一篇论文需要你从零重写整个训练系统。
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>读论文时的 5 个问题清单</h2>
+
+<p>拿到任何一篇 VLM/PEFT 论文，按顺序问自己这 5 个问题：</p>
+
+<table>
+  <tr><th style="width:5%;">#</th><th style="width:30%;">问题</th><th style="width:15%;">对应插槽</th><th style="width:50%;">怎么在论文中找答案</th></tr>
+  <tr class="hl"><td>1</td><td><strong>模型被怎样修改了？</strong><br>加了什么模块？冻结了哪些？</td><td style="color:#7c3aed;">A 架构</td><td>看 "Method" 部分的架构图、公式 &Delta;W = ...。如果有新模块，就是一个 <code>nn.Module</code>。冻结的部分用 <code>requires_grad=False</code>。</td></tr>
+  <tr><td>2</td><td><strong>Loss 和标准 CE 有什么不同？</strong><br>有额外的正则项吗？</td><td style="color:#16a34a;">B 损失</td><td>看 "Training Objective" 或 "Loss Function"。如果只有 L<sub>CE</sub>，则不需要改。如果有 L = L<sub>CE</sub> + &lambda;&middot;L<sub>reg</sub>，则需要写 <code>compute_loss()</code>。</td></tr>
+  <tr class="hl"><td>3</td><td><strong>数据/标签做了什么特殊处理？</strong></td><td style="color:#d97706;">C 数据</td><td>看 "Data Processing" 或 "Label Masking"。如果论文说"也对 instruction 计算 loss"，就是改 labels tensor。</td></tr>
+  <tr><td>4</td><td><strong>优化器/学习率有什么特殊设计？</strong></td><td style="color:#dc2626;">D 优化</td><td>看 "Implementation Details"。大部分论文用标准 AdamW + cosine，这个插槽经常不需要改。</td></tr>
+  <tr class="hl"><td>5</td><td><strong>要保存什么？怎么加载？</strong></td><td style="color:#2563eb;">E 存储</td><td>取决于架构：LoRA 系只存适配器，Full FT 存整个模型，自定义模块存自定义 state_dict。</td></tr>
+</table>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>完整的思维路径：从读论文到写代码</h2>
+
+<div class="flow-box"><span class="stage">【读论文】</span>
+  读 Abstract + Method section
+       |
+       v
+<span class="stage">【定位插槽】</span> 问自己: 这篇论文改了流水线的哪个阶段？
+       |
+  <span class="paper">"模型架构有新模块"</span> ──→ 插槽 A ──→ 写 <span class="code">nn.Module</span> + <span class="code">prepare_model()</span>
+  <span class="paper">"Loss 有额外项"</span>     ──→ 插槽 B ──→ 写 <span class="code">compute_loss()</span>
+  <span class="paper">"标签/数据做了处理"</span> ──→ 插槽 C ──→ 写 <span class="code">preprocess_labels()</span>
+  <span class="paper">"优化策略不同"</span>     ──→ 插槽 D ──→ 改 optimizer/scheduler 配置
+  <span class="paper">"存储格式特殊"</span>     ──→ 插槽 E ──→ 写 <span class="code">save_checkpoint()</span> + <span class="code">load_for_inference()</span>
+       |
+       v
+<span class="stage">【翻译公式】</span> 论文里的每个数学符号，对应一个 PyTorch 操作：
+  <span class="dim">矩阵 W ∈ R^{m×n}</span>  →  <span class="code">nn.Parameter(torch.zeros(m, n))</span>  或  <span class="code">nn.Linear(n, m)</span>
+  <span class="dim">矩阵乘 W·x</span>        →  <span class="code">F.linear(x, W)</span>
+  <span class="dim">sigmoid(z)</span>         →  <span class="code">torch.sigmoid(z)</span>
+  <span class="dim">cos 相似度</span>         →  <span class="code">F.cosine_similarity(a, b)</span>
+  <span class="dim">L2 范数 ||W||²</span>    →  <span class="code">W.pow(2).sum()</span>
+  <span class="dim">可学习标量 α</span>      →  <span class="code">nn.Parameter(torch.tensor(init_val))</span>
+       |
+       v
+<span class="stage">【注入模型】</span> 把新模块挂到已有模型上：
+  <span class="code">register_forward_hook</span>  →  不改原模型，在输出上"加一笔"  <span class="dim">(LiLoRA, MoReS)</span>
+  <span class="code">PeftModel.from_pretrained</span>  →  用 PEFT 库自动注入            <span class="dim">(LoRA, QLoRA, DoRA)</span>
+  直接修改 <span class="code">requires_grad</span>   →  选择性解冻                    <span class="dim">(Freeze Tuning)</span>
+       |
+       v
+<span class="stage">【其他不变】</span> 训练循环、数据加载、评估 —— <strong>大部分代码复用</strong>，只改动了上面定位的插槽</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<div style="page-break-before: always;"></div>
+
+<h2>实例演练：假设你第一次读到 LiLoRA</h2>
+
+<p>模拟你的思考过程，一步步走：</p>
+
+<table>
+  <tr><th style="width:5%;">步骤</th><th style="width:35%;">你的思考</th><th style="width:30%;">找到的答案</th><th style="width:30%;">代码动作</th></tr>
+  <tr class="hl">
+    <td>1</td>
+    <td>读 Abstract："共享 A 矩阵，分解 B 矩阵"</td>
+    <td>这是在修改<strong>模型架构</strong> &rarr; 插槽 A</td>
+    <td>需要写一个新的 <code>nn.Module</code></td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>看公式：&Delta;W = (&alpha;&middot;B&#8320; + (1-&alpha;)&middot;B&#771;&middot;A&#771;)&middot;A</td>
+    <td>5 个可学习参数：A, B&#8320;, &alpha;, B&#771;, A&#771;</td>
+    <td>在 <code>__init__</code> 中声明 5 个 <code>nn.Parameter</code> 或 <code>nn.Linear</code></td>
+  </tr>
+  <tr class="hl">
+    <td>3</td>
+    <td>这个 &Delta;W 加在哪里？</td>
+    <td>"每个目标 Linear 层的输出上"</td>
+    <td>用 <code>register_forward_hook</code> 把 &delta; 加到 base_output 上</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td>Loss 有特殊的吗？</td>
+    <td>有余弦正则化 L<sub>reg</sub>（用于持续学习）</td>
+    <td>单任务场景可先用标准 CE；多任务时再加 <code>compute_loss()</code></td>
+  </tr>
+  <tr class="hl">
+    <td>5</td>
+    <td>数据处理有特殊的吗？</td>
+    <td>没有，标准 VIT 数据格式</td>
+    <td>不需要改数据代码</td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td>要保存什么？</td>
+    <td>只需保存 LiLoRA 模块的参数（基座不变）</td>
+    <td>遍历 <code>self._lilora_modules</code>，每个调 <code>state_dict()</code> 保存</td>
+  </tr>
+  <tr class="hl">
+    <td>7</td>
+    <td>加载推理时呢？</td>
+    <td>加载基座 &rarr; 重建 LiLoRA 结构 &rarr; 填入权重</td>
+    <td><code>prepare_model()</code> 然后 <code>load_state_dict()</code></td>
+  </tr>
+</table>
+
+<div class="box box-green">
+  <strong>总结：LiLoRA 只改了插槽 A（架构）和 E（存储），其余完全复用。</strong>
+  你需要写的代码 = 一个 <code>LiLoRALinear(nn.Module)</code> 约 35 行 + hook 注入约 15 行 + save/load 约 25 行。训练循环、数据加载、评估全部不用动。
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>公式符号 &harr; PyTorch 操作速查表</h2>
+
+<div class="two-col">
+<div>
+<table>
+  <tr><th>论文写法</th><th>PyTorch 代码</th></tr>
+  <tr><td>W &isin; R<sup>m&times;n</sup> 可学习</td><td><code>nn.Parameter(torch.zeros(m, n))</code></td></tr>
+  <tr><td>线性变换 y = Wx + b</td><td><code>nn.Linear(n, m)</code></td></tr>
+  <tr><td>y = Wx（无 bias）</td><td><code>F.linear(x, W)</code></td></tr>
+  <tr><td>&sigma;(z) sigmoid</td><td><code>torch.sigmoid(z)</code></td></tr>
+  <tr><td>||W||<sub>F</sub><sup>2</sup> Frobenius</td><td><code>W.pow(2).sum()</code></td></tr>
+  <tr><td>cos(a, b)</td><td><code>F.cosine_similarity(a, b)</code></td></tr>
+</table>
+</div>
+<div>
+<table>
+  <tr><th>论文写法</th><th>PyTorch 代码</th></tr>
+  <tr><td>ReLU(x)</td><td><code>F.relu(x)</code></td></tr>
+  <tr><td>softmax(x)</td><td><code>F.softmax(x, dim=-1)</code></td></tr>
+  <tr><td>Dropout(p)</td><td><code>nn.Dropout(p)</code></td></tr>
+  <tr><td>Layer Norm</td><td><code>nn.LayerNorm(d)</code></td></tr>
+  <tr><td>R<sup>T</sup> 转置</td><td><code>R.t()</code> 或 <code>R.T</code></td></tr>
+  <tr><td>I (单位矩阵)</td><td><code>torch.eye(n)</code></td></tr>
+</table>
+</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>你的行动清单：下次读论文时</h2>
+
+<div class="box box-blue" style="font-size: 9.5pt;">
+<strong>5 步法：</strong><br>
+<strong>1. 画流水线</strong> &mdash; 在脑中过一遍 6 个阶段：加载 &rarr; 改造 &rarr; 数据 &rarr; 训练 &rarr; 保存 &rarr; 推理<br>
+<strong>2. 定位插槽</strong> &mdash; 论文的核心贡献改了哪个阶段？（多数论文只改 1 个）<br>
+<strong>3. 数公式符号</strong> &mdash; 论文引入了几个新的可学习参数？每个的维度是什么？<br>
+<strong>4. 翻译成 Module</strong> &mdash; 每个参数 = <code>nn.Parameter</code>，每个矩阵乘法 = <code>F.linear</code>，每个激活 = <code>F.xxx</code><br>
+<strong>5. 挂上去</strong> &mdash; 用 hook / PEFT / requires_grad 把新模块连接到已有模型。其他阶段照搬。
+</div>
+
+<div class="footer">
+  mmit project &middot; 从论文到代码的思维框架
+</div>
+
+</body>
+</html>

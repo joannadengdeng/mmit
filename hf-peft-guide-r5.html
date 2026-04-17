@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>peft · 第五轮：数学、变体与工程</title>
+<style>
+:root{--bg:#0f1117;--s:#1a1d27;--s2:#242836;--bd:#2e3347;--t:#e2e8f0;--dim:#8892a8;
+--a:#6c8cff;--pk:#ff6c9a;--g:#4ade80;--o:#fb923c;--p:#a78bfa;--cy:#22d3ee;--y:#facc15;--r:#f87171;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--t);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow-x:hidden;}
+.wrap{max-width:960px;margin:0 auto;padding:28px 24px 120px;}
+h1{color:var(--a);font-size:1.5rem;margin-bottom:4px;font-weight:700;}
+.sub{color:var(--dim);font-size:0.82rem;margin-bottom:28px;}
+.progress{display:flex;gap:4px;margin-bottom:24px;position:sticky;top:0;z-index:100;background:var(--bg);padding:12px 0;}
+.dot{width:100%;height:6px;border-radius:3px;background:var(--s2);cursor:pointer;transition:all .3s;}
+.dot.done{background:var(--a);}.dot.cur{background:var(--g);box-shadow:0 0 8px var(--g);}
+.step{display:none;animation:fadeIn .3s ease;}.step.on{display:block;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+h2{color:var(--a);font-size:1.15rem;margin-bottom:12px;font-weight:700;}
+p{font-size:.88rem;color:var(--dim);line-height:1.85;margin-bottom:10px;}
+strong{color:var(--t);}
+code{color:var(--cy);font-family:'SF Mono','Cascadia Code',monospace;font-size:.82em;}
+canvas{display:block;margin:16px auto;border-radius:12px;background:var(--s);border:1px solid var(--bd);}
+.note{border-radius:10px;padding:16px 20px;margin:12px 0 16px;font-size:.85rem;line-height:1.85;}
+.note-orange{background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.2);}
+.note-orange strong{color:var(--o);}
+.note-blue{background:rgba(108,140,255,.07);border:1px solid rgba(108,140,255,.18);}
+.note-blue strong{color:var(--a);}
+.note-green{background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.18);}
+.note-green strong{color:var(--g);}
+.note-purple{background:rgba(167,139,250,.07);border:1px solid rgba(167,139,250,.18);}
+.note-purple strong{color:var(--p);}
+.note-pink{background:rgba(255,108,154,.07);border:1px solid rgba(255,108,154,.18);}
+.note-pink strong{color:var(--pk);}
+.code-box{background:var(--s2);border:1px solid var(--bd);border-radius:10px;padding:14px 18px;margin:10px 0 14px;overflow-x:auto;font-family:'SF Mono','Cascadia Code',monospace;font-size:.75rem;line-height:1.75;white-space:pre;}
+.kw{color:var(--pk)}.fn{color:var(--a)}.cm{color:var(--dim);font-style:italic}.st{color:var(--g)}.ty{color:var(--cy)}.num{color:var(--o)}.op{color:var(--t)}
+.output{background:#0d0f14;border:1px solid var(--bd);border-radius:10px;padding:14px 18px;margin:10px 0 14px;font-family:'SF Mono','Cascadia Code',monospace;font-size:.72rem;line-height:1.7;color:var(--dim);white-space:pre;overflow-x:auto;}
+.nav{display:flex;justify-content:space-between;margin-top:32px;}
+.btn{background:var(--s);border:1px solid var(--bd);color:var(--dim);padding:12px 28px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:.82rem;transition:all .2s;}
+.btn:hover{border-color:var(--a);color:var(--t);}
+.btn.primary{background:rgba(108,140,255,.12);border-color:var(--a);color:var(--a);}
+.btn:disabled{opacity:.3;cursor:default;}
+.cols{display:flex;gap:16px;margin:12px 0;}.cols>div{flex:1;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>peft · 第五轮：数学、变体与工程</h1>
+<p class="sub">最后一轮：数学分析、LoRA 变体、分布式训练、性能优化。</p>
+<div class="progress" id="prog"></div>
+
+<!-- ═══════════════════ 0: 数学基础 ═══════════════════ -->
+<div class="step on" id="s0">
+<h2>Step 0 — LoRA 的数学基础：为什么低秩有效</h2>
+
+<canvas id="cv0" width="900" height="460"></canvas>
+
+<p>Aghajanyan et al. (2021) 发现：<strong>预训练模型有很低的内在维度（intrinsic dimensionality）</strong>。这意味着 fine-tuning 时的权重更新 ΔW 集中在一个低维子空间里。</p>
+
+<div class="note note-blue">
+<strong>核心数学直觉：</strong><br>
+对权重更新矩阵 ΔW 做 SVD 分解：<code>ΔW = U Σ V^T</code>。<br>
+实验表明，Σ 中<strong>前 k 个奇异值</strong>占据了绝大部分能量（>95%），其中 k 远小于 min(d_in, d_out)。<br><br>
+因此 ΔW 可以近似为：<code>ΔW ≈ U_k Σ_k V_k^T</code>，这是一个秩为 k 的矩阵。<br><br>
+LoRA 直接参数化这个低秩结构：<code>ΔW = B · A</code>，其中 B ∈ R^{d_out × r}，A ∈ R^{r × d_in}，r 就是 rank。
+</div>
+
+<div class="note note-orange">
+<strong>为什么不直接训练 ΔW？</strong><br>
+• ΔW ∈ R^{d_out × d_in}，参数量 = d_out × d_in（例如 4096 × 4096 = 16M）<br>
+• B·A 参数量 = (d_out + d_in) × r（例如 (4096 + 4096) × 16 = 131K）<br>
+• 参数量减少 <strong>122 倍</strong>，显存和计算同步减少<br>
+• 代价：限制了 ΔW 的秩最多为 r，但实验表明这个限制对性能影响很小
+</div>
+</div>
+
+<!-- ═══════════════════ 1: 显存精确计算 ═══════════════════ -->
+<div class="step" id="s1">
+<h2>Step 1 — 显存精确计算</h2>
+
+<canvas id="cv1" width="900" height="480"></canvas>
+
+<p>以 LLaMA-2 7B 为例，精确计算 GPU 显存占用：</p>
+
+<div class="cols">
+<div class="note note-pink">
+<strong>Full Finetune (~56 GB)</strong><br>
+• 参数 (fp16): 7B × 2 bytes = 14 GB<br>
+• 梯度 (fp16): 14 GB<br>
+• AdamW 状态 (fp32 m + v): 7B × 4 × 2 = 56 GB... 不，是 2 × 14 = 28 GB<br>
+• 合计: 14 + 14 + 28 = <strong>~56 GB</strong>
+</div>
+<div class="note note-green">
+<strong>LoRA (~14.1 GB)</strong><br>
+• 冻结参数 (fp16): 14 GB（只存权重，不存梯度/优化器）<br>
+• LoRA 参数 (fp16): ~16 MB<br>
+• LoRA 梯度 (fp16): ~16 MB<br>
+• LoRA AdamW (fp32): ~32 MB<br>
+• 合计: <strong>~14.1 GB</strong>
+</div>
+</div>
+
+<div class="note note-purple">
+<strong>QLoRA (~3.6 GB)</strong><br>
+• 冻结参数 (NF4 4-bit): 7B × 0.5 bytes = 3.5 GB<br>
+• LoRA 参数 (fp16): ~16 MB<br>
+• LoRA 梯度 + 优化器: ~48 MB<br>
+• 合计: <strong>~3.6 GB</strong>
+</div>
+
+<div class="note note-orange">
+<strong>注意：</strong>以上不包含 activations（前向传播中间结果）。Activations 的显存取决于 batch size × sequence length × hidden_size × num_layers，通常是显存的最大部分。gradient_checkpointing 可以用时间换空间来减少 activations 显存。
+</div>
+</div>
+
+<!-- ═══════════════════ 2: 混合精度数值分析 ═══════════════════ -->
+<div class="step" id="s2">
+<h2>Step 2 — 混合精度中的数值分析</h2>
+
+<canvas id="cv2" width="900" height="420"></canvas>
+
+<p>LoRA 的前向计算涉及多种精度的混合运算：</p>
+
+<div class="code-box"><span class="cm"># LoRA forward 的核心逻辑（简化）</span>
+<span class="kw">def</span> <span class="fn">forward</span>(self, x):
+    <span class="cm"># base_layer 在 fp16/bf16</span>
+    result = self.base_layer(x)                       <span class="cm"># W·x (fp16)</span>
+
+    <span class="cm"># LoRA 路径：x 先转到 LoRA 的 dtype</span>
+    lora_x = x.<span class="fn">to</span>(self.lora_A.weight.dtype)           <span class="cm"># 确保 dtype 匹配</span>
+    lora_out = self.<span class="fn">lora_B</span>(self.<span class="fn">lora_A</span>(lora_x))       <span class="cm"># B(A(x)) (fp16)</span>
+    result += self.scaling * lora_out                  <span class="cm"># scaling = alpha/r</span>
+
+    <span class="kw">return</span> result</div>
+
+<div class="note note-blue">
+<strong>scaling = alpha / r 的数值影响：</strong><br>
+• alpha=32, r=16 → scaling = 2.0：LoRA 的输出被放大 2 倍<br>
+• alpha=16, r=16 → scaling = 1.0：不缩放<br>
+• alpha=8, r=16 → scaling = 0.5：LoRA 的输出被缩小<br><br>
+如果 scaling 太大 → LoRA 输出主导结果，训练不稳定<br>
+如果 scaling 太小 → LoRA 的更新效果太弱，学不到东西
+</div>
+
+<div class="note note-orange">
+<strong>QLoRA 的精度链路：</strong><br>
+1. 基础权重存储：NF4 (4-bit) → 前向时反量化到 fp16/bf16<br>
+2. LoRA A, B 参数：fp16/bf16<br>
+3. LoRA 梯度：fp16/bf16<br>
+4. LoRA 优化器状态：fp32（AdamW 的 m 和 v）<br>
+5. 注意：反量化是<strong>逐块（blockwise）</strong>的，引入量化误差，但实验表明影响很小
+</div>
+</div>
+
+<!-- ═══════════════════ 3: DoRA ═══════════════════ -->
+<div class="step" id="s3">
+<h2>Step 3 — LoRA 变体：DoRA</h2>
+
+<canvas id="cv3" width="900" height="460"></canvas>
+
+<p><strong>DoRA (Weight-Decomposed Low-Rank Adaptation)</strong> 将权重分解为大小（magnitude）和方向（direction）两个分量，LoRA 只修改方向：</p>
+
+<div class="note note-blue">
+<strong>DoRA 的数学：</strong><br>
+1. 将预训练权重 W 分解为：<code>W = m · V / ||V||_c</code>（按列归一化）<br>
+   &nbsp;&nbsp;其中 m 是每列的范数（magnitude），V/||V|| 是方向（direction）<br>
+2. 用 LoRA 修改方向：<code>V' = V + B · A</code><br>
+3. magnitude m 作为独立可训练参数<br>
+4. 最终输出：<code>W' · x = m · (V + B·A) / ||V + B·A||_c · x</code>
+</div>
+
+<div class="code-box"><span class="kw">from</span> peft <span class="kw">import</span> <span class="ty">LoraConfig</span>
+
+<span class="cm"># 启用 DoRA — 只需加一个参数</span>
+config = <span class="ty">LoraConfig</span>(
+    r=<span class="num">16</span>,
+    lora_alpha=<span class="num">32</span>,
+    target_modules=[<span class="st">"q_proj"</span>, <span class="st">"v_proj"</span>],
+    use_dora=<span class="kw">True</span>,           <span class="cm"># 启用 DoRA</span>
+)
+<span class="cm"># 其余用法和普通 LoRA 完全一样</span></div>
+
+<div class="note note-green">
+<strong>DoRA 的优势：</strong><br>
+• 解耦了 magnitude 和 direction 的学习，训练更稳定<br>
+• 在相同 rank 下通常比 LoRA 获得更好的性能<br>
+• 额外参数量极小（只多了一个 magnitude 向量 m）<br>
+• 计算开销略高于 LoRA（需要列归一化），但不显著
+</div>
+</div>
+
+<!-- ═══════════════════ 4: rsLoRA, LoRA+, AdaLoRA ═══════════════════ -->
+<div class="step" id="s4">
+<h2>Step 4 — LoRA 变体：rsLoRA, LoRA+, AdaLoRA</h2>
+
+<canvas id="cv4" width="900" height="480"></canvas>
+
+<div class="cols">
+<div class="note note-orange">
+<strong>rsLoRA (Rank-Stabilized)</strong><br>
+缩放因子改为 <code>alpha / sqrt(r)</code><br>
+原始 LoRA 用 <code>alpha / r</code>，当 r 增大时缩放变小 → 效果下降。<br>
+rsLoRA 用 sqrt(r) 使大 rank 也能有效学习。
+</div>
+<div class="note note-blue">
+<strong>LoRA+</strong><br>
+A 和 B 使用不同学习率：B 用更高 lr。<br>
+直觉：B 负责"放大"到输出空间，需要更大步长；<br>
+A 负责"压缩"输入，更新幅度小即可。
+</div>
+</div>
+
+<div class="note note-purple">
+<strong>AdaLoRA (Adaptive LoRA)</strong><br>
+动态调整每层的 rank，基于重要性分数：<br>
+• 用 SVD 参数化 LoRA：ΔW = P Λ Q（而非 B·A）<br>
+• 训练中根据 Λ 中奇异值的大小，修剪不重要的分量<br>
+• 效果：重要层分配更高的 rank，不重要层用更低的 rank<br>
+• 总参数量保持不变，但分配更合理
+</div>
+
+<div class="code-box"><span class="cm"># rsLoRA — 只需一个参数</span>
+config = <span class="ty">LoraConfig</span>(r=<span class="num">64</span>, lora_alpha=<span class="num">64</span>, use_rslora=<span class="kw">True</span>)
+<span class="cm"># scaling = alpha / sqrt(r) = 64 / 8 = 8.0（而非 64/64=1.0）</span>
+
+<span class="cm"># LoRA+ — 通过 optimizer 设置不同 lr</span>
+<span class="cm"># peft 内置支持：loraplus_lr_ratio 参数</span>
+config = <span class="ty">LoraConfig</span>(r=<span class="num">16</span>, lora_alpha=<span class="num">32</span>)
+<span class="cm"># 在 trainer 中: loraplus_lr_ratio=16 → B 的 lr = 16 × A 的 lr</span>
+
+<span class="cm"># AdaLoRA</span>
+<span class="kw">from</span> peft <span class="kw">import</span> <span class="ty">AdaLoraConfig</span>
+config = <span class="ty">AdaLoraConfig</span>(
+    init_r=<span class="num">12</span>,              <span class="cm"># 初始 rank</span>
+    target_r=<span class="num">8</span>,             <span class="cm"># 目标 rank（修剪后）</span>
+    tinit=<span class="num">200</span>,              <span class="cm"># warmup steps（开始修剪前）</span>
+    tfinal=<span class="num">1000</span>,            <span class="cm"># 修剪结束 step</span>
+    deltaT=<span class="num">10</span>,              <span class="cm"># 每隔多少 step 修剪一次</span>
+)</div>
+</div>
+
+<!-- ═══════════════════ 5: 计算开销分析 ═══════════════════ -->
+<div class="step" id="s5">
+<h2>Step 5 — LoRA 的计算开销分析</h2>
+
+<canvas id="cv5" width="900" height="460"></canvas>
+
+<p>LoRA 在 forward 和 backward 中引入的额外计算量：</p>
+
+<div class="note note-blue">
+<strong>Forward FLOPs 分析（per token, per layer）：</strong><br>
+• 基础层：W·x → 2 × d_in × d_out FLOPs = 2 × 4096 × 4096 = <strong>33.5M</strong> FLOPs<br>
+• LoRA 路径：A·x → 2 × d_in × r = 2 × 4096 × 16 = 131K FLOPs<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;B·(Ax) → 2 × r × d_out = 2 × 16 × 4096 = 131K FLOPs<br>
+• LoRA 额外 FLOPs = 262K / 33.5M = <strong>0.8% overhead</strong><br><br>
+即使对所有 attention 层（q, k, v, o）都加 LoRA，额外开销也不到 <strong>3.2%</strong>。
+</div>
+
+<div class="note note-green">
+<strong>Backward 的情况：</strong><br>
+• 梯度只需要计算 A 和 B 的梯度（不需要 W 的梯度）<br>
+• 但仍然需要通过 base_layer 反向传播（因为 x 需要梯度给前面的层）<br>
+• 所以 backward 时间节省主要来自<strong>不需要计算和存储 W 的梯度</strong>
+</div>
+
+<div class="note note-orange">
+<strong>推理延迟影响：</strong><br>
+• 如果<strong>不 merge</strong>：额外延迟 ~1-3%（因为要多算 A·x 和 B·(Ax)）<br>
+• 如果<strong>merge 后</strong>：零额外延迟（LoRA 已合并到 W 中）<br>
+• 所以部署时通常 merge_and_unload 后再部署
+</div>
+</div>
+
+<!-- ═════════════���═════ 6: merge 数学分析 ═══════════════════ -->
+<div class="step" id="s6">
+<h2>Step 6 — merge 的数学分析</h2>
+
+<canvas id="cv6" width="900" height="440"></canvas>
+
+<p>merge_and_unload 的核心操作：<code>W' = W + (alpha/r) × B × A</code></p>
+
+<div class="note note-blue">
+<strong>精度分析：</strong><br>
+• fp32 下：merge 是<strong>精确的</strong>，<code>W' = W + ΔW</code> 无损<br>
+• fp16 下：存在舍入误差。fp16 只有 ~3.3 位十进制精度（尾数 10 位）<br>
+• 误差来源：当 |W| 很大，|ΔW| 很小时，加法发生<strong>灾难性消去（catastrophic cancellation）</strong><br>
+• 例如：W = 100.0 (fp16)，ΔW = 0.001 → W + ΔW 在 fp16 下仍然 = 100.0
+</div>
+
+<div class="note note-green">
+<strong>实际影响：</strong><br>
+• 对于大多数模型，LoRA 的更新量 ΔW 和 W 的量级差别不超过 2-3 个数量级<br>
+• fp16 能正确表示的加法精度足以覆盖大部分情况<br>
+• 实验中，merge 前后的输出差异通常在 1e-6 量级 → <strong>可忽略</strong><br>
+• 如果非常在意精度：先转 fp32 merge，再转回 fp16
+</div>
+
+<div class="code-box"><span class="cm"># 如果担心精度，用 fp32 merge</span>
+model = model.<span class="fn">to</span>(torch.float32)
+merged = model.<span class="fn">merge_and_unload</span>()
+merged = merged.<span class="fn">to</span>(torch.float16)       <span class="cm"># 转回 fp16 做推理</span>
+
+<span class="cm"># 或者用 peft 内置的 safe_merge</span>
+model.<span class="fn">merge_adapter</span>(safe_merge=<span class="kw">True</span>)     <span class="cm"># 会检测数值问题</span></div>
+</div>
+
+<!-- ═══════════════════ 7: 分布式训练集成 ═══════════════════ -->
+<div class="step" id="s7">
+<h2>Step 7 — 与分布式训练的集成</h2>
+
+<canvas id="cv7" width="900" height="480"></canvas>
+
+<p>LoRA 与分布式训练框架的集成要点：</p>
+
+<div class="note note-blue">
+<strong>DeepSpeed ZeRO：</strong><br>
+• <strong>ZeRO-1</strong>：optimizer 状态分片 → LoRA 的 optimizer 状态也被分片，自然兼容<br>
+• <strong>ZeRO-2</strong>：optimizer + gradient 分片 → LoRA 梯度也被分片，自然兼容<br>
+• <strong>ZeRO-3</strong>：param + optimizer + gradient 全分片 → LoRA 参数也被分片到各 GPU<br>
+&nbsp;&nbsp;注意：ZeRO-3 下需要 <code>zero3_init_flag=False</code> 避免 LoRA 参数被过度分片
+</div>
+
+<div class="note note-green">
+<strong>FSDP (Fully Sharded Data Parallel)：</strong><br>
+• LoRA 参数很小（~16MB），分片收益不大<br>
+• 关键是 <code>fsdp_auto_wrap_policy</code> 的设置：应按 transformer 层包装<br>
+• peft 提供了 <code>fsdp_auto_wrap_policy</code> 相关工具函数
+</div>
+
+<div class="code-box"><span class="cm"># DeepSpeed ZeRO-2 + LoRA（最常见组合）</span>
+<span class="cm"># ds_config.json:</span>
+{
+  <span class="st">"bf16"</span>: {<span class="st">"enabled"</span>: <span class="kw">true</span>},
+  <span class="st">"zero_optimization"</span>: {
+    <span class="st">"stage"</span>: <span class="num">2</span>,
+    <span class="st">"offload_optimizer"</span>: {<span class="st">"device"</span>: <span class="st">"cpu"</span>}   <span class="cm">// 可选：把优化器放 CPU</span>
+  },
+  <span class="st">"gradient_checkpointing"</span>: <span class="kw">true</span>              <span class="cm">// 推荐：减少 activation 显存</span>
+}</div>
+
+<div class="note note-orange">
+<strong>常见的高效组合：</strong><br>
+• <code>gradient_checkpointing + LoRA + ZeRO-2</code>：最常用，兼容性最好<br>
+• <code>QLoRA + ZeRO-3</code>：多 GPU 训练大模型的极致省显存方案<br>
+• <code>LoRA + FSDP</code>：PyTorch 原生方案，不需要 DeepSpeed 依赖<br>
+• 注意：gradient_checkpointing 和 LoRA 一起使用时需要 <code>model.enable_input_require_grads()</code>
+</div>
+</div>
+
+<!-- ═══════════════════ 8: 实际性能 Benchmark ═══════════════════ -->
+<div class="step" id="s8">
+<h2>Step 8 — 实际性能 Benchmark</h2>
+
+<canvas id="cv8" width="900" height="500"></canvas>
+
+<p>基于 LLaMA-2 7B 在典型指令微调任务上的对比（数值为典型值，具体因硬件/数据而异）：</p>
+
+<div class="note note-green">
+<strong>关键结论：</strong><br>
+• <strong>性能（准确率/质量）：</strong>LoRA 通常达到 Full FT 的 95-99%，差距很小<br>
+• <strong>训练速度：</strong>LoRA 和 Full FT 的 tokens/sec 相近（LoRA 开销小），QLoRA 慢 ~10-20%（反量化开销）<br>
+• <strong>显存：</strong>LoRA 是 Full FT 的 ~1/4，QLoRA 是 Full FT 的 ~1/15<br>
+• <strong>收敛时间：</strong>LoRA 通常需要稍多的 epochs 才能达到 Full FT 的水平
+</div>
+
+<div class="note note-orange">
+<strong>什么时候 LoRA 可能不够？</strong><br>
+• 任务和预训练数据差异很大（如新语言、全新领域）→ 可能需要更高的 rank 或 full finetune<br>
+• 需要修改模型行为的大面积改动 → LoRA 的低秩约束可能是瓶颈<br>
+• 实践建议：先用 LoRA (r=16-64) 试，如果效果不够再考虑 full finetune
+</div>
+
+<div class="note note-purple">
+<strong>QLoRA 的额外开销来源：</strong><br>
+• 每次 forward 都要对 NF4 权重做 blockwise dequantization → fp16<br>
+• 这是纯内存带宽操作，在 GPU 上不算慢，但不是零开销<br>
+• 典型场景：QLoRA 训练速度是 LoRA 的 80-90%
+</div>
+</div>
+
+<!-- ═══════════════════ 9: 总结与回顾 ═══════════════════ -->
+<div class="step" id="s9">
+<h2>Step 9 — 总结与设计回顾</h2>
+
+<canvas id="cv9" width="900" height="500"></canvas>
+
+<div class="note note-blue">
+<strong>五轮核心 insight：</strong><br>
+1. <strong>低秩假设</strong>在实践中成立：fine-tuning 的权重更新 ΔW 确实近似低秩<br>
+2. <strong>peft 的架构</strong> — BaseTuner → LoraModel → lora.Linear — 是干净的分层设计<br>
+3. <strong>adapter dict 模式</strong>使得多任务复用成为可能，无需模型拷贝<br>
+4. <strong>QLoRA</strong> 使 7B 模型在消费级 GPU (24GB) 上可训练<br>
+5. <strong>merge_and_unload</strong> 连接了训练（需要 LoRA 结构）和部署（只需要普通模型）
+</div>
+
+<div class="note note-green">
+<strong>连接到 mmit：</strong><br>
+mmit 的 <code>PEFTStrategy</code> / <code>LoRAStrategy</code> 封装了 peft，额外处理：<br>
+• 从多模态 Method 中定位 LLM 模块<br>
+• 同时管理 projector 的训练和保存<br>
+• 提供统一的 wrap_model / save_adapter / load_adapter 接口<br>
+• 底层仍然是 peft 的 LoraConfig + get_peft_model + PeftModel
+</div>
+
+<div class="note note-purple" style="font-size:.82rem;">
+<strong>五轮 API 速查：</strong><br><br>
+<code>LoraConfig(r, lora_alpha, target_modules, use_dora, use_rslora, ...)</code> — 配置<br>
+<code>get_peft_model(model, config)</code> — 注入 LoRA<br>
+<code>model.print_trainable_parameters()</code> — 检查参数量<br>
+<code>model.save_pretrained(path)</code> — 保存 adapter<br>
+<code>PeftModel.from_pretrained(base, path)</code> — 加载 adapter<br>
+<code>model.merge_and_unload()</code> — 合并 LoRA 到 W<br>
+<code>model.add_adapter(name, config)</code> — 添加新 adapter<br>
+<code>model.set_adapter(name)</code> — 切换 adapter<br>
+<code>model.disable_adapter()</code> — 临时关闭 adapter<br>
+<code>prepare_model_for_kbit_training(model)</code> — QLoRA 准备
+</div>
+</div>
+
+<div class="nav">
+  <button class="btn" id="btnPrev" onclick="go(-1)" disabled>&larr; 上一步</button>
+  <span id="stepLabel" style="color:var(--dim);font-size:.82rem;"></span>
+  <button class="btn primary" id="btnNext" onclick="go(1)">下一步 &rarr;</button>
+</div>
+</div>
+
+<script>
+const dpr=window.devicePixelRatio||1;
+const TOTAL=10;
+const SKEY='peft-guide-r5-step';
+let cur=Math.min(TOTAL-1,Math.max(0,parseInt(localStorage.getItem(SKEY))||0));
+
+function cv(id){const c=document.getElementById(id);if(!c)return null;const w=+c.getAttribute('width'),h=+c.getAttribute('height');c.width=w*dpr;c.height=h*dpr;c.style.width=w+'px';c.style.height=h+'px';const x=c.getContext('2d');x.scale(dpr,dpr);x.clearRect(0,0,w,h);return x;}
+function rr(x,a,b,w,h,r,f,s,lw=1){x.beginPath();x.roundRect(a,b,w,h,r);if(f){x.fillStyle=f;x.fill();}if(s){x.strokeStyle=s;x.lineWidth=lw;x.stroke();}}
+function tx(x,t,a,b,c,sz=12,al='center'){x.fillStyle=c;x.font=`bold ${sz}px -apple-system,BlinkMacSystemFont,sans-serif`;x.textAlign=al;x.textBaseline='middle';t.split('\n').forEach((l,i)=>x.fillText(l,a,b+i*(sz+5)));}
+function txn(x,t,a,b,c,sz=12,al='center'){x.fillStyle=c;x.font=`${sz}px -apple-system,BlinkMacSystemFont,sans-serif`;x.textAlign=al;x.textBaseline='middle';t.split('\n').forEach((l,i)=>x.fillText(l,a,b+i*(sz+5)));}
+function ar(x,x1,y1,x2,y2,c,lw=2){x.beginPath();x.moveTo(x1,y1);x.lineTo(x2,y2);x.strokeStyle=c;x.lineWidth=lw;x.stroke();const a=Math.atan2(y2-y1,x2-x1),s=8;x.beginPath();x.moveTo(x2,y2);x.lineTo(x2-s*Math.cos(a-.35),y2-s*Math.sin(a-.35));x.lineTo(x2-s*Math.cos(a+.35),y2-s*Math.sin(a+.35));x.closePath();x.fillStyle=c;x.fill();}
+function circle(x,cx,cy,r,f,s,lw=2){x.beginPath();x.arc(cx,cy,r,0,Math.PI*2);if(f){x.fillStyle=f;x.fill();}if(s){x.strokeStyle=s;x.lineWidth=lw;x.stroke();}}
+function dashedLine(x,x1,y1,x2,y2,c,lw=1){x.save();x.setLineDash([5,4]);x.beginPath();x.moveTo(x1,y1);x.lineTo(x2,y2);x.strokeStyle=c;x.lineWidth=lw;x.stroke();x.restore();}
+const cl={a:'#6c8cff',pk:'#ff6c9a',g:'#4ade80',o:'#fb923c',p:'#a78bfa',cy:'#22d3ee',dim:'#5a6078',t:'#c8cfe0',bg:'#1a1d27',bd:'#2e3347',y:'#facc15',r:'#f87171'};
+
+function buildProgress(){const p=document.getElementById('prog');p.innerHTML='';for(let i=0;i<TOTAL;i++){const d=document.createElement('div');d.className='dot'+(i<cur?' done':'')+(i===cur?' cur':'');d.onclick=()=>dotClick(i);p.appendChild(d);}}
+function render(noScroll){document.querySelectorAll('.step').forEach((s,i)=>s.classList.toggle('on',i===cur));buildProgress();document.getElementById('btnPrev').disabled=cur===0;const n=document.getElementById('btnNext');n.textContent=cur===TOTAL-1?'完成！':'下一步 →';n.disabled=cur===TOTAL-1;document.getElementById('stepLabel').textContent=`${cur+1} / ${TOTAL}`;requestAnimationFrame(()=>{try{drawFns[cur]?.();}catch(e){console.error(e);}});if(!noScroll)window.scrollTo({top:0,behavior:'smooth'});}
+function go(d){cur=Math.max(0,Math.min(TOTAL-1,cur+d));localStorage.setItem(SKEY,cur);render();}
+function dotClick(i){cur=i;localStorage.setItem(SKEY,cur);render();}
+
+const drawFns={};
+
+// ── 0: 数学基础 — 奇异值谱 ──
+drawFns[0]=function(){
+  const x=cv('cv0');if(!x)return;
+  tx(x,'LoRA 的数学基础：为什么低秩有效',450,25,cl.t,16);
+
+  // SVD decomposition formula
+  rr(x,30,50,840,55,10,cl.a+'08',cl.a+'20');
+  tx(x,'SVD:  ΔW = U Σ V^T  ≈  U_k Σ_k V_k^T    (k << min(d_in, d_out))',450,78,cl.a,13);
+
+  // Singular value spectrum chart
+  rr(x,30,120,500,310,12,cl.bg+'80',cl.bd);
+  tx(x,'ΔW 的奇异值谱 (singular value spectrum)',280,145,cl.t,12);
+
+  // Y axis
+  ar(x,70,400,70,150,cl.dim);
+  txn(x,'奇异值',50,170,cl.dim,9);
+  txn(x,'σ_i',50,185,cl.dim,9);
+
+  // X axis
+  ar(x,70,400,500,400,cl.dim);
+  txn(x,'index i',300,420,cl.dim,9);
+
+  // Draw exponential decay curve (singular values)
+  x.beginPath();
+  x.moveTo(80,165);
+  const nPts=40;
+  for(let i=0;i<=nPts;i++){
+    const px=80+i*(400/nPts);
+    const val=Math.exp(-i*0.12)*220;
+    x.lineTo(px,395-val);
+  }
+  x.strokeStyle=cl.a;x.lineWidth=3;x.stroke();
+
+  // Shaded area for top-k values (green)
+  x.beginPath();
+  x.moveTo(80,400);
+  const kIdx=8;
+  for(let i=0;i<=kIdx;i++){
+    const px=80+i*(400/nPts);
+    const val=Math.exp(-i*0.12)*220;
+    x.lineTo(px,395-val);
+  }
+  const kPx=80+kIdx*(400/nPts);
+  x.lineTo(kPx,400);
+  x.closePath();
+  x.fillStyle=cl.g+'20';x.fill();
+  x.strokeStyle=cl.g;x.lineWidth=1;x.stroke();
+
+  // Vertical line at k
+  dashedLine(x,kPx,160,kPx,400,cl.g,2);
+  tx(x,'k = r',kPx,415,cl.g,9);
+  txn(x,'(rank)',kPx,430,cl.g,8);
+
+  // Labels on chart
+  txn(x,'>95% 能量',130,350,cl.g,10);
+  txn(x,'<5%',350,350,cl.dim,10);
+
+  // Right side: LoRA parameterization
+  rr(x,555,120,335,310,12,cl.o+'06',cl.o+'18');
+  tx(x,'LoRA 直接参数化低秩',722,148,cl.o,12);
+
+  // ΔW = B · A
+  rr(x,580,175,285,45,8,cl.o+'10',cl.o);
+  tx(x,'ΔW = B · A',722,198,cl.y,14);
+
+  // Matrix dimensions
+  rr(x,590,240,120,80,8,cl.pk+'10',cl.pk);
+  tx(x,'B',650,260,cl.pk,14);
+  txn(x,'d_out × r',650,282,cl.t,9);
+  txn(x,'4096 × 16',650,300,cl.dim,8);
+
+  tx(x,'×',730,270,cl.t,16);
+
+  rr(x,750,240,120,80,8,cl.g+'10',cl.g);
+  tx(x,'A',810,260,cl.g,14);
+  txn(x,'r × d_in',810,282,cl.t,9);
+  txn(x,'16 × 4096',810,300,cl.dim,8);
+
+  // Param count comparison
+  rr(x,580,340,285,75,8,'#ffffff04',cl.bd);
+  txn(x,'ΔW 直接存储: 4096 × 4096 = 16.7M 参数',722,358,cl.dim,9);
+  txn(x,'B · A: (4096 + 4096) × 16 = 131K 参数',722,378,cl.g,9);
+  txn(x,'压缩比: 128×',722,398,cl.o,10);
+};
+
+// ── 1: 显存精确计算 ──
+drawFns[1]=function(){
+  const x=cv('cv1');if(!x)return;
+  tx(x,'GPU 显存精确计算 — LLaMA-2 7B',450,25,cl.t,15);
+
+  // Stacked bar chart
+  const barW=160, barX=[120,380,640], barLabels=['Full Finetune','LoRA','QLoRA'];
+  const maxH=350, baseY=430;
+
+  // Y axis
+  ar(x,60,baseY+5,60,55,cl.dim);
+  txn(x,'显存 (GB)',40,45,cl.dim,9);
+  // Y gridlines
+  [0,10,20,30,40,50,60].forEach(v=>{
+    const yy=baseY-(v/60)*maxH;
+    dashedLine(x,58,yy,830,yy,cl.dim+'30');
+    txn(x,v+'',45,yy,cl.dim,8);
+  });
+
+  // Full FT bar segments
+  const ftSegments=[
+    {h:14/60*maxH,col:cl.pk,label:'参数 14GB'},
+    {h:14/60*maxH,col:cl.r,label:'梯度 14GB'},
+    {h:28/60*maxH,col:cl.o,label:'优化器 28GB'},
+  ];
+  let yOff=baseY;
+  ftSegments.forEach(s=>{
+    yOff-=s.h;
+    rr(x,barX[0]-barW/2,yOff,barW,s.h,0,s.col+'40',s.col);
+    txn(x,s.label,barX[0],yOff+s.h/2,cl.t,8);
+  });
+  tx(x,'~56 GB',barX[0],yOff-15,cl.pk,11);
+  txn(x,'Full Finetune',barX[0],baseY+18,cl.pk,10);
+
+  // LoRA bar segments
+  const loraSegments=[
+    {h:14/60*maxH,col:cl.a,label:'冻结参数 14GB'},
+    {h:0.064/60*maxH<4?4:0.064/60*maxH,col:cl.g,label:'LoRA ~64MB'},
+  ];
+  yOff=baseY;
+  loraSegments.forEach(s=>{
+    yOff-=s.h;
+    rr(x,barX[1]-barW/2,yOff,barW,s.h,0,s.col+'40',s.col);
+    if(s.h>10) txn(x,s.label,barX[1],yOff+s.h/2,cl.t,8);
+  });
+  tx(x,'~14.1 GB',barX[1],yOff-15,cl.g,11);
+  txn(x,'LoRA',barX[1],baseY+18,cl.g,10);
+  // Small label for LoRA params
+  txn(x,'LoRA 参数+梯度',barX[1]+100,baseY-8,cl.g,7,'left');
+  txn(x,'+优化器 ~64MB',barX[1]+100,baseY+5,cl.g,7,'left');
+
+  // QLoRA bar segments
+  const qloraH=3.5/60*maxH;
+  const qloraLoraH=5;
+  yOff=baseY;
+  yOff-=qloraH;
+  rr(x,barX[2]-barW/2,yOff,barW,qloraH,0,cl.p+'40',cl.p);
+  txn(x,'NF4 参数 3.5GB',barX[2],yOff+qloraH/2,cl.t,8);
+  yOff-=qloraLoraH;
+  rr(x,barX[2]-barW/2,yOff,barW,qloraLoraH,0,cl.g+'40',cl.g);
+  tx(x,'~3.6 GB',barX[2],yOff-15,cl.p,11);
+  txn(x,'QLoRA',barX[2],baseY+18,cl.p,10);
+
+  // Ratio annotations
+  rr(x,30,baseY+35,840,35,8,'#ffffff04',cl.bd);
+  txn(x,'对比 Full FT:',130,baseY+52,cl.dim,9);
+  txn(x,'1×',barX[0],baseY+52,cl.pk,10);
+  txn(x,'0.25× (省 75%)',barX[1],baseY+52,cl.g,10);
+  txn(x,'0.06× (省 94%)',barX[2],baseY+52,cl.p,10);
+};
+
+// ── 2: 混合精度数值分析 ──
+drawFns[2]=function(){
+  const x=cv('cv2');if(!x)return;
+  tx(x,'混合精度中的计算流程',450,25,cl.t,15);
+
+  // Flow diagram
+  const flowY=80;
+  // Input x
+  rr(x,30,flowY,100,50,8,cl.dim+'15',cl.dim);
+  tx(x,'x',80,flowY+25,cl.t,13);
+  txn(x,'(fp16)',80,flowY+55,cl.dim,8);
+
+  // Split arrow
+  ar(x,135,flowY+20,195,flowY-15,cl.dim);
+  ar(x,135,flowY+30,195,flowY+75,cl.dim);
+
+  // Base path
+  rr(x,200,flowY-40,200,50,8,cl.pk+'10',cl.pk);
+  tx(x,'W · x',300,flowY-20,cl.pk,12);
+  txn(x,'base_layer (fp16)',300,flowY-2,cl.dim,8);
+
+  // LoRA path
+  rr(x,200,flowY+55,100,50,8,cl.g+'10',cl.g);
+  tx(x,'A · x',250,flowY+75,cl.g,11);
+  txn(x,'(fp16)',250,flowY+110,cl.dim,7);
+
+  ar(x,305,flowY+80,340,flowY+80,cl.g);
+
+  rr(x,345,flowY+55,100,50,8,cl.a+'10',cl.a);
+  tx(x,'B · (Ax)',395,flowY+75,cl.a,11);
+  txn(x,'(fp16)',395,flowY+110,cl.dim,7);
+
+  ar(x,450,flowY+80,490,flowY+80,cl.o);
+
+  rr(x,495,flowY+55,120,50,8,cl.o+'10',cl.o);
+  tx(x,'× scaling',555,flowY+70,cl.o,11);
+  txn(x,'alpha/r',555,flowY+90,cl.o,9);
+
+  // Merge
+  ar(x,405,flowY+5,680,flowY+5,cl.dim);
+  ar(x,620,flowY+80,680,flowY+40,cl.dim);
+
+  // Sum
+  circle(x,700,flowY+20,20,cl.y+'15',cl.y,2);
+  tx(x,'+',700,flowY+20,cl.y,16);
+
+  ar(x,725,flowY+20,780,flowY+20,cl.y);
+
+  rr(x,785,flowY-5,100,50,8,cl.y+'10',cl.y);
+  tx(x,'result',835,flowY+15,cl.y,12);
+  txn(x,'(fp16)',835,flowY+50,cl.dim,8);
+
+  // QLoRA specifics below
+  rr(x,30,200,840,200,12,cl.p+'06',cl.p+'15');
+  tx(x,'QLoRA 的精度链路',450,225,cl.p,13);
+
+  const stages=[
+    {x:60,w:160,label:'存储',detail:'NF4 (4-bit)',col:cl.p,detail2:'7B × 0.5B = 3.5GB'},
+    {x:240,w:160,label:'Forward',detail:'反量化 → fp16',col:cl.o,detail2:'blockwise deq'},
+    {x:420,w:160,label:'LoRA 参数',detail:'fp16 / bf16',col:cl.g,detail2:'A, B 矩阵'},
+    {x:600,w:160,label:'梯度',detail:'fp16 / bf16',col:cl.a,detail2:'只有 LoRA 部分'},
+    {x:780,w:80,label:'优化器',detail:'fp32',col:cl.pk,detail2:'Adam m,v'},
+  ];
+
+  stages.forEach((s,i)=>{
+    rr(x,s.x,250,s.w,45,6,s.col+'10',s.col);
+    tx(x,s.label,s.x+s.w/2,262,s.col,10);
+    txn(x,s.detail,s.x+s.w/2,280,cl.t,8);
+    txn(x,s.detail2,s.x+s.w/2,310,cl.dim,7);
+    if(i<stages.length-1) ar(x,s.x+s.w+3,272,stages[i+1].x-3,272,cl.dim);
+  });
+
+  // Scaling impact
+  rr(x,50,330,380,55,8,cl.r+'08',cl.r+'18');
+  txn(x,'alpha/r 太大 → LoRA 输出主导 → 训练不稳定',240,350,cl.r,9);
+  txn(x,'(例如 alpha=128, r=4 → scaling=32)',240,370,cl.dim,8);
+
+  rr(x,460,330,380,55,8,cl.g+'08',cl.g+'18');
+  txn(x,'alpha/r 太小 → LoRA 更新太弱 → 学不到东西',650,350,cl.r,9);
+  txn(x,'(例如 alpha=1, r=64 → scaling=0.016)',650,370,cl.dim,8);
+};
+
+// ── 3: DoRA ──
+drawFns[3]=function(){
+  const x=cv('cv3');if(!x)return;
+  tx(x,'DoRA: Weight-Decomposed Low-Rank Adaptation',450,25,cl.t,15);
+
+  // Standard LoRA (left)
+  rr(x,20,55,400,180,12,cl.a+'06',cl.a+'20');
+  tx(x,'标准 LoRA',220,80,cl.a,13);
+
+  rr(x,50,105,140,50,8,cl.dim+'15',cl.dim);
+  tx(x,'W',120,125,cl.dim,14);
+  txn(x,'(冻结)',120,143,cl.dim,8);
+
+  tx(x,'+',215,125,cl.t,18);
+
+  rr(x,245,105,150,50,8,cl.g+'15',cl.g);
+  tx(x,'B · A',320,125,cl.g,13);
+  txn(x,'(可训练)',320,143,cl.g,8);
+
+  txn(x,'输出:  (W + α/r · B·A) · x',220,185,cl.t,10);
+  txn(x,'magnitude 和 direction 耦合在一起',220,210,cl.dim,9);
+
+  // DoRA (right)
+  rr(x,440,55,450,180,12,cl.o+'06',cl.o+'20');
+  tx(x,'DoRA',665,80,cl.o,13);
+
+  // Magnitude
+  rr(x,465,105,80,50,8,cl.pk+'15',cl.pk);
+  tx(x,'m',505,120,cl.pk,14);
+  txn(x,'magnitude',505,140,cl.pk,7);
+
+  tx(x,'×',560,125,cl.t,16);
+
+  // Direction fraction
+  rr(x,580,95,290,70,8,cl.g+'08',cl.g+'20');
+
+  rr(x,595,105,100,50,8,cl.dim+'15',cl.dim);
+  tx(x,'V',645,120,cl.dim,12);
+  txn(x,'direction',645,140,cl.dim,7);
+
+  tx(x,'+',710,125,cl.t,14);
+
+  rr(x,730,105,80,50,8,cl.g+'15',cl.g);
+  tx(x,'B·A',770,120,cl.g,11);
+  txn(x,'LoRA',770,140,cl.g,7);
+
+  // Denominator
+  dashedLine(x,585,170,865,170,cl.o);
+  txn(x,'||V + B·A||  (列归一化)',725,185,cl.o,9);
+
+  txn(x,'输出:  m · (V + B·A) / ||V + B·A|| · x',665,215,cl.t,10);
+
+  // Comparison below
+  rr(x,20,250,860,190,12,'#ffffff04',cl.bd);
+  tx(x,'DoRA vs LoRA 的区别',450,275,cl.t,13);
+
+  // Decomposition visualization
+  rr(x,50,295,380,130,8,cl.a+'06',cl.a+'15');
+  tx(x,'LoRA 的更新方式',240,315,cl.a,11);
+  // Arrow representing W
+  ar(x,100,390,280,330,cl.dim,3);
+  txn(x,'W',140,350,cl.dim,10);
+  // Arrow representing ΔW
+  x.save();x.setLineDash([4,3]);
+  x.beginPath();x.moveTo(280,330);x.lineTo(350,370);x.strokeStyle=cl.g;x.lineWidth=2;x.stroke();
+  x.restore();
+  txn(x,'ΔW=B·A',330,345,cl.g,8);
+  // Result
+  ar(x,100,390,350,370,cl.y,2);
+  txn(x,'W\'',260,395,cl.y,9);
+  txn(x,'同时改变 magnitude 和 direction',240,415,cl.dim,8);
+
+  rr(x,450,295,410,130,8,cl.o+'06',cl.o+'15');
+  tx(x,'DoRA 的更新方式',655,315,cl.o,11);
+  // Arrow representing direction only change
+  ar(x,510,390,680,340,cl.dim,3);
+  txn(x,'V (方向)',560,350,cl.dim,9);
+  x.save();x.setLineDash([4,3]);
+  x.beginPath();x.moveTo(680,340);x.lineTo(750,365);x.strokeStyle=cl.g;x.lineWidth=2;x.stroke();
+  x.restore();
+  txn(x,'B·A',730,345,cl.g,8);
+  // magnitude separate
+  circle(x,510,390,5,cl.pk,cl.pk);
+  txn(x,'m (单独可训练)',540,405,cl.pk,8,'left');
+  ar(x,510,390,755,365,cl.y,2);
+  txn(x,'W\'',690,390,cl.y,9);
+  txn(x,'方向和大小分别学习 → 更稳定',655,415,cl.o,8);
+};
+
+// ── 4: rsLoRA, LoRA+, AdaLoRA ──
+drawFns[4]=function(){
+  const x=cv('cv4');if(!x)return;
+  tx(x,'LoRA 变体对比',450,25,cl.t,15);
+
+  // Comparison table
+  const cols=[110,310,510,710];
+  const colW=180;
+  const headers=['','rsLoRA','LoRA+','AdaLoRA'];
+  const headerCols=[cl.dim,cl.o,cl.a,cl.p];
+
+  // Header row
+  rr(x,20,55,860,35,8,cl.dim+'10',cl.bd);
+  headers.forEach((h,i)=>{
+    tx(x,h,cols[i],72,headerCols[i],11);
+  });
+
+  // Rows
+  const rows=[
+    {label:'核心思想',vals:['scaling = α/√r','A, B 用不同 lr','动态调整每层 rank']},
+    {label:'解决问题',vals:['大 rank 时缩放失效','A, B 更新不平衡','rank 分配不合理']},
+    {label:'实现方式',vals:['改 scaling 公式','改 optimizer lr','SVD + 修剪']},
+    {label:'peft 用法',vals:['use_rslora=True','loraplus_lr_ratio','AdaLoraConfig']},
+    {label:'额外开销',vals:['零','零','中等 (SVD 计算)']},
+  ];
+
+  rows.forEach((r,i)=>{
+    const ry=100+i*65;
+    rr(x,20,ry,860,55,0,i%2===0?'#ffffff03':'#ffffff00',cl.bd+'50');
+    tx(x,r.label,cols[0],ry+27,cl.dim,9);
+    r.vals.forEach((v,j)=>{
+      txn(x,v,cols[j+1],ry+27,cl.t,9);
+    });
+  });
+
+  // Scaling formula comparison at bottom
+  rr(x,20,430,420,35,8,cl.o+'08',cl.o+'18');
+  txn(x,'LoRA: scaling = α/r = 64/64 = 1.0',230,448,cl.t,9);
+
+  rr(x,460,430,420,35,8,cl.g+'08',cl.g+'18');
+  txn(x,'rsLoRA: scaling = α/√r = 64/√64 = 8.0',670,448,cl.g,9);
+};
+
+// ── 5: 计算开销分析 ──
+drawFns[5]=function(){
+  const x=cv('cv5');if(!x)return;
+  tx(x,'LoRA 的计算开销 (FLOPs) 分析',450,25,cl.t,15);
+
+  // FLOPs bar chart
+  rr(x,30,55,500,370,12,cl.bg+'80',cl.bd);
+  tx(x,'Forward FLOPs per token per layer',280,80,cl.t,12);
+  txn(x,'(d=4096, r=16)',280,98,cl.dim,9);
+
+  // Y axis
+  ar(x,80,390,80,100,cl.dim);
+
+  // Bars
+  const barData=[
+    {label:'W · x (base)',flops:33554432,col:cl.pk,display:'33.5M'},
+    {label:'A · x',flops:131072,col:cl.g,display:'131K'},
+    {label:'B · (Ax)',flops:131072,col:cl.a,display:'131K'},
+  ];
+
+  const maxF=barData[0].flops;
+  barData.forEach((b,i)=>{
+    const bx=110+i*150;
+    const bh=Math.max((b.flops/maxF)*260,8);
+    const by=385-bh;
+    rr(x,bx,by,120,bh,4,b.col+'40',b.col,2);
+    tx(x,b.display,bx+60,by-15,b.col,10);
+    txn(x,b.label,bx+60,400,b.col,8);
+  });
+
+  // Overhead annotation
+  rr(x,110,100,300,35,6,cl.y+'10',cl.y);
+  txn(x,'LoRA 额外开销: 262K / 33.5M = 0.8%',260,117,cl.y,9);
+
+  // Right side: per-layer breakdown
+  rr(x,555,55,335,370,12,cl.bg+'80',cl.bd);
+  tx(x,'对所有 attention 层加 LoRA',722,80,cl.t,11);
+
+  const layers=[
+    {name:'q_proj',added:true},
+    {name:'k_proj',added:true},
+    {name:'v_proj',added:true},
+    {name:'o_proj',added:true},
+    {name:'gate_proj',added:false},
+    {name:'up_proj',added:false},
+    {name:'down_proj',added:false},
+  ];
+
+  layers.forEach((l,i)=>{
+    const ly=110+i*35;
+    const col=l.added?cl.g:cl.dim;
+    rr(x,580,ly,160,28,4,col+'08',col+'30');
+    txn(x,l.name,660,ly+14,col,9);
+
+    if(l.added){
+      txn(x,'+0.8%',780,ly+14,cl.g,9);
+    } else {
+      txn(x,'--',780,ly+14,cl.dim,9);
+    }
+  });
+
+  // Total
+  rr(x,580,365,285,45,8,cl.y+'10',cl.y);
+  txn(x,'4 层 × 0.8% = 3.2% 额外 FLOPs',722,380,cl.y,10);
+  txn(x,'32 个 decoder layer 都一样',722,398,cl.dim,8);
+
+  // Inference note
+  rr(x,580,280,285,60,8,cl.o+'08',cl.o+'18');
+  txn(x,'推理延迟:',660,296,cl.o,9);
+  txn(x,'不 merge: +1~3%',660,314,cl.dim,9);
+  txn(x,'merge 后: 0% (零开销)',770,314,cl.g,9);
+};
+
+// ── 6: merge 数学分析 ──
+drawFns[6]=function(){
+  const x=cv('cv6');if(!x)return;
+  tx(x,'merge_and_unload 的数学与精度分析',450,25,cl.t,15);
+
+  // Merge formula
+  rr(x,30,55,840,50,10,cl.y+'08',cl.y+'20');
+  tx(x,'W\' = W + (α / r) × B × A',450,80,cl.y,16);
+
+  // fp32 case
+  rr(x,30,120,410,140,12,cl.g+'06',cl.g+'20');
+  tx(x,'fp32 下: 精确',235,148,cl.g,13);
+  txn(x,'float32 有 ~7.2 位十进制精度',235,175,cl.t,9);
+  txn(x,'W 和 ΔW 的量级差通常 < 3 个数量级',235,195,cl.t,9);
+  txn(x,'→ 加法不丢失精度',235,215,cl.g,9);
+  txn(x,'→ merge 后与训练时完全等价',235,235,cl.g,9);
+
+  // fp16 case
+  rr(x,460,120,430,140,12,cl.o+'06',cl.o+'20');
+  tx(x,'fp16 下: 近似',675,148,cl.o,13);
+  txn(x,'float16 只有 ~3.3 位十进制精度（10位尾数）',675,175,cl.t,9);
+  txn(x,'潜在问题: catastrophic cancellation',675,195,cl.r,9);
+  txn(x,'W = 100.0, ΔW = 0.001 → 加后仍 = 100.0',675,215,cl.t,9);
+  txn(x,'实际影响: 通常可忽略 (误差 ~1e-6)',675,235,cl.dim,9);
+
+  // Visualization: number line precision
+  rr(x,30,280,840,140,12,cl.bg+'80',cl.bd);
+  tx(x,'fp16 精度可视化',450,302,cl.t,12);
+
+  // Number line
+  ar(x,80,350,820,350,cl.dim);
+  txn(x,'0',80,368,cl.dim,8);
+  txn(x,'数值量级',450,368,cl.dim,8);
+
+  // W value
+  const wPos=600;
+  rr(x,wPos-30,325,60,20,4,cl.pk+'30',cl.pk);
+  txn(x,'W',wPos,335,cl.pk,9);
+  // ΔW value (very small relative to W)
+  const dwPos=wPos+25;
+  x.beginPath();x.moveTo(dwPos,320);x.lineTo(dwPos,348);x.strokeStyle=cl.g;x.lineWidth=2;x.stroke();
+  txn(x,'ΔW',dwPos+15,315,cl.g,8);
+
+  // fp16 resolution bracket
+  rr(x,wPos-50,380,100,25,4,cl.r+'10',cl.r+'30');
+  txn(x,'fp16 分辨率',wPos,393,cl.r,7);
+
+  // Arrow showing ΔW within resolution
+  txn(x,'如果 ΔW < fp16 分辨率 → 被吞掉',450,395,cl.dim,9);
+
+  // Safe merge tip
+  rr(x,80,290,250,50,6,cl.g+'08',cl.g+'20');
+  txn(x,'安全做法: 先转 fp32 merge',205,308,cl.g,9);
+  txn(x,'再转回 fp16',205,325,cl.g,8);
+};
+
+// ── 7: 分布式训练 ──
+drawFns[7]=function(){
+  const x=cv('cv7');if(!x)return;
+  tx(x,'LoRA 与分布式训练的集成',450,25,cl.t,15);
+
+  // GPU 0
+  rr(x,30,55,200,200,12,cl.a+'08',cl.a+'20');
+  tx(x,'GPU 0',130,78,cl.a,12);
+
+  rr(x,50,95,160,45,6,cl.dim+'10',cl.dim);
+  txn(x,'W (frozen, sharded)',130,112,cl.dim,8);
+  txn(x,'或 NF4 (QLoRA)',130,130,cl.dim,7);
+
+  rr(x,50,150,70,30,4,cl.g+'15',cl.g);
+  txn(x,'LoRA A',85,165,cl.g,7);
+  rr(x,130,150,70,30,4,cl.g+'15',cl.g);
+  txn(x,'LoRA B',165,165,cl.g,7);
+
+  rr(x,50,190,160,20,4,cl.o+'10',cl.o);
+  txn(x,'optimizer shard 0',130,200,cl.o,7);
+
+  rr(x,50,218,160,20,4,cl.p+'10',cl.p);
+  txn(x,'gradient shard 0',130,228,cl.p,7);
+
+  // GPU 1
+  rr(x,250,55,200,200,12,cl.a+'08',cl.a+'20');
+  tx(x,'GPU 1',350,78,cl.a,12);
+
+  rr(x,270,95,160,45,6,cl.dim+'10',cl.dim);
+  txn(x,'W (frozen, sharded)',350,112,cl.dim,8);
+  txn(x,'或 NF4 (QLoRA)',350,130,cl.dim,7);
+
+  rr(x,270,150,70,30,4,cl.g+'15',cl.g);
+  txn(x,'LoRA A',305,165,cl.g,7);
+  rr(x,350,150,70,30,4,cl.g+'15',cl.g);
+  txn(x,'LoRA B',385,165,cl.g,7);
+
+  rr(x,270,190,160,20,4,cl.o+'10',cl.o);
+  txn(x,'optimizer shard 1',350,200,cl.o,7);
+
+  rr(x,270,218,160,20,4,cl.p+'10',cl.p);
+  txn(x,'gradient shard 1',350,228,cl.p,7);
+
+  // GPU N
+  rr(x,470,55,200,200,12,cl.a+'08',cl.a+'20');
+  tx(x,'GPU N',570,78,cl.a,12);
+
+  rr(x,490,95,160,45,6,cl.dim+'10',cl.dim);
+  txn(x,'W (frozen, sharded)',570,112,cl.dim,8);
+  txn(x,'或 NF4 (QLoRA)',570,130,cl.dim,7);
+
+  rr(x,490,150,70,30,4,cl.g+'15',cl.g);
+  txn(x,'LoRA A',525,165,cl.g,7);
+  rr(x,570,150,70,30,4,cl.g+'15',cl.g);
+  txn(x,'LoRA B',605,165,cl.g,7);
+
+  rr(x,490,190,160,20,4,cl.o+'10',cl.o);
+  txn(x,'optimizer shard N',570,200,cl.o,7);
+
+  rr(x,490,218,160,20,4,cl.p+'10',cl.p);
+  txn(x,'gradient shard N',570,228,cl.p,7);
+
+  // Sync arrows
+  ar(x,230,170,250,170,cl.y,2);
+  ar(x,450,170,470,170,cl.y,2);
+
+  // Right side: ZeRO levels
+  rr(x,690,55,200,200,12,'#ffffff04',cl.bd);
+  tx(x,'ZeRO 分片级别',790,78,cl.t,11);
+
+  const levels=[
+    {name:'ZeRO-1',desc:'optimizer 分片',col:cl.o},
+    {name:'ZeRO-2',desc:'+ gradient 分片',col:cl.p},
+    {name:'ZeRO-3',desc:'+ param 分片',col:cl.a},
+  ];
+  levels.forEach((l,i)=>{
+    rr(x,710,100+i*50,160,38,6,l.col+'10',l.col);
+    tx(x,l.name,750,113+i*50,l.col,9,'left');
+    txn(x,l.desc,830,125+i*50,cl.t,8);
+  });
+
+  // Common combos below
+  rr(x,30,275,840,190,12,cl.g+'06',cl.g+'15');
+  tx(x,'常见高效组合',450,300,cl.g,13);
+
+  const combos=[
+    {name:'LoRA + ZeRO-2 + grad_ckpt',desc:'最常用，稳定兼容',col:cl.g,rec:'推荐'},
+    {name:'QLoRA + ZeRO-3',desc:'极致省显存，多卡训练大模型',col:cl.p,rec:'省显存'},
+    {name:'LoRA + FSDP',desc:'PyTorch 原生，不需 DeepSpeed',col:cl.a,rec:'简单'},
+  ];
+
+  combos.forEach((c,i)=>{
+    const cy=325+i*40;
+    rr(x,60,cy,700,32,6,c.col+'08',c.col+'20');
+    tx(x,c.name,250,cy+16,c.col,10,'left');
+    txn(x,c.desc,530,cy+16,cl.t,9,'left');
+    rr(x,770,cy+2,80,28,4,c.col+'20',c.col);
+    txn(x,c.rec,810,cy+16,c.col,8);
+  });
+
+  // Important note
+  txn(x,'注意: gradient_checkpointing + LoRA 需要 model.enable_input_require_grads()',450,450,cl.dim,9);
+};
+
+// ── 8: 实际性能 Benchmark ──
+drawFns[8]=function(){
+  const x=cv('cv8');if(!x)return;
+  tx(x,'实际性能 Benchmark — LLaMA-2 7B 指令微调',450,25,cl.t,14);
+
+  // 4 benchmark charts in 2×2 grid
+  const charts=[
+    {title:'峰值显存 (GB)',x:30,y:55,w:420,h:190,
+     bars:[{label:'Full FT',val:56,max:60,col:cl.pk},{label:'LoRA',val:14.1,max:60,col:cl.g},{label:'QLoRA',val:3.6,max:60,col:cl.p}]},
+    {title:'训练吞吐 (tokens/sec)',x:470,y:55,w:420,h:190,
+     bars:[{label:'Full FT',val:3200,max:4000,col:cl.pk},{label:'LoRA',val:3100,max:4000,col:cl.g},{label:'QLoRA',val:2600,max:4000,col:cl.p}]},
+    {title:'任务准确率 (%)',x:30,y:265,w:420,h:190,
+     bars:[{label:'Full FT',val:82,max:100,col:cl.pk},{label:'LoRA',val:80.5,max:100,col:cl.g},{label:'QLoRA',val:79.8,max:100,col:cl.p}]},
+    {title:'训练时间 (小时)',x:470,y:265,w:420,h:190,
+     bars:[{label:'Full FT',val:12,max:16,col:cl.pk},{label:'LoRA',val:8,max:16,col:cl.g},{label:'QLoRA',val:10,max:16,col:cl.p}]},
+  ];
+
+  charts.forEach(chart=>{
+    rr(x,chart.x,chart.y,chart.w,chart.h,10,cl.bg+'80',cl.bd);
+    tx(x,chart.title,chart.x+chart.w/2,chart.y+22,cl.t,11);
+
+    const barArea={x:chart.x+50,y:chart.y+45,w:chart.w-80,h:chart.h-70};
+
+    chart.bars.forEach((b,i)=>{
+      const bx=barArea.x+i*(barArea.w/3)+10;
+      const bw=barArea.w/3-20;
+      const bh=(b.val/b.max)*barArea.h;
+      const by=barArea.y+barArea.h-bh;
+
+      rr(x,bx,by,bw,bh,4,b.col+'35',b.col);
+      tx(x,String(b.val),bx+bw/2,by-12,b.col,9);
+      txn(x,b.label,bx+bw/2,barArea.y+barArea.h+14,b.col,8);
+    });
+  });
+
+  // Summary
+  rr(x,30,470,840,22,6,cl.y+'08',cl.y+'15');
+  txn(x,'LoRA ≈ Full FT 的 95-99% 性能，25% 显存，更短训练时间  |  QLoRA 进一步压缩到 6% 显存，吞吐降 ~15%',450,481,cl.y,9);
+};
+
+// ── 9: 总结 ──
+drawFns[9]=function(){
+  const x=cv('cv9');if(!x)return;
+  tx(x,'五轮学习的全景回顾',450,25,cl.t,16);
+
+  // 5 rounds as a flow
+  const rounds=[
+    {label:'R1: 概念',desc:'LoRA 做什么\n为什么有效',col:cl.pk,y:65},
+    {label:'R2: API',desc:'peft 怎么用\n三个核心 API',col:cl.o,y:65},
+    {label:'R3: 内部',desc:'注入机制\n源码分析',col:cl.a,y:65},
+    {label:'R4: 源码',desc:'代码级细节\nforward 实现',col:cl.g,y:65},
+    {label:'R5: 数学',desc:'数学分析\n变体与工程',col:cl.p,y:65},
+  ];
+
+  rounds.forEach((r,i)=>{
+    const rx=30+i*178;
+    rr(x,rx,r.y,165,65,8,r.col+'10',r.col);
+    tx(x,r.label,rx+82,r.y+20,r.col,11);
+    txn(x,r.desc,rx+82,r.y+42,cl.t,8);
+    if(i<rounds.length-1) ar(x,rx+168,r.y+32,rx+178,r.y+32,cl.dim);
+  });
+
+  // Key insights
+  rr(x,30,150,840,330,12,'#ffffff04',cl.bd);
+  tx(x,'核心 Insights',450,175,cl.t,14);
+
+  const insights=[
+    {num:'1',text:'低秩假设在实践中成立',detail:'ΔW 的奇异值集中在前 k 个，k << d',col:cl.pk},
+    {num:'2',text:'peft 架构分层清晰',detail:'BaseTuner → LoraModel → lora.Linear，每层职责明确',col:cl.o},
+    {num:'3',text:'adapter dict 支持多任务',detail:'一个 base model + 多套 A/B → 切换无需拷贝模型',col:cl.a},
+    {num:'4',text:'QLoRA 实现消费级训练',detail:'NF4 量化 + LoRA → 7B 模型在 24GB GPU 上可训练',col:cl.g},
+    {num:'5',text:'merge 连接训练与部署',detail:'训练时用 LoRA 结构，部署时 merge 为普通模型',col:cl.p},
+    {num:'6',text:'变体针对不同痛点',detail:'DoRA(稳定性), rsLoRA(大rank), AdaLoRA(自适应rank)',col:cl.y},
+  ];
+
+  insights.forEach((ins,i)=>{
+    const iy=200+i*43;
+    rr(x,55,iy,790,36,6,ins.col+'08',ins.col+'20');
+    circle(x,80,iy+18,12,ins.col+'20',ins.col,2);
+    tx(x,ins.num,80,iy+18,ins.col,10);
+    tx(x,ins.text,220,iy+18,ins.col,10,'left');
+    txn(x,ins.detail,570,iy+18,cl.dim,8,'left');
+  });
+
+  // Connection to mmit
+  rr(x,55,460,790,15,6,cl.cy+'08',cl.cy+'15');
+  txn(x,'mmit PEFTStrategy 封装 peft → 处理多模态场景 (Vision + Projector + LLM)',450,468,cl.cy,9);
+};
+
+buildProgress();render(true);
+</script>
+</body>
+</html>

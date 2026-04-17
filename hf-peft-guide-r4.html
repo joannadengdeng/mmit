@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>peft · 第四轮：读懂 mmit 的训练代码</title>
+<style>
+:root{--bg:#0f1117;--s:#1a1d27;--s2:#242836;--bd:#2e3347;--t:#e2e8f0;--dim:#8892a8;
+--a:#6c8cff;--pk:#ff6c9a;--g:#4ade80;--o:#fb923c;--p:#a78bfa;--cy:#22d3ee;--y:#facc15;--r:#f87171;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--t);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow-x:hidden;}
+.wrap{max-width:960px;margin:0 auto;padding:28px 24px 120px;}
+h1{color:var(--a);font-size:1.5rem;margin-bottom:4px;font-weight:700;}
+.sub{color:var(--dim);font-size:0.82rem;margin-bottom:28px;}
+.progress{display:flex;gap:4px;margin-bottom:24px;position:sticky;top:0;z-index:100;background:var(--bg);padding:12px 0;}
+.dot{width:100%;height:6px;border-radius:3px;background:var(--s2);cursor:pointer;transition:all .3s;}
+.dot.done{background:var(--a);}.dot.cur{background:var(--g);box-shadow:0 0 8px var(--g);}
+.step{display:none;animation:fadeIn .3s ease;}.step.on{display:block;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+h2{color:var(--a);font-size:1.15rem;margin-bottom:12px;font-weight:700;}
+p{font-size:.88rem;color:var(--dim);line-height:1.85;margin-bottom:10px;}
+strong{color:var(--t);}
+code{color:var(--cy);font-family:'SF Mono','Cascadia Code',monospace;font-size:.82em;}
+canvas{display:block;margin:16px auto;border-radius:12px;background:var(--s);border:1px solid var(--bd);}
+.note{border-radius:10px;padding:16px 20px;margin:12px 0 16px;font-size:.85rem;line-height:1.85;}
+.note-orange{background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.2);}
+.note-orange strong{color:var(--o);}
+.note-blue{background:rgba(108,140,255,.07);border:1px solid rgba(108,140,255,.18);}
+.note-blue strong{color:var(--a);}
+.note-green{background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.18);}
+.note-green strong{color:var(--g);}
+.note-purple{background:rgba(167,139,250,.07);border:1px solid rgba(167,139,250,.18);}
+.note-purple strong{color:var(--p);}
+.note-pink{background:rgba(255,108,154,.07);border:1px solid rgba(255,108,154,.18);}
+.note-pink strong{color:var(--pk);}
+.code-box{background:var(--s2);border:1px solid var(--bd);border-radius:10px;padding:14px 18px;margin:10px 0 14px;overflow-x:auto;font-family:'SF Mono','Cascadia Code',monospace;font-size:.75rem;line-height:1.75;white-space:pre;}
+.kw{color:var(--pk)}.fn{color:var(--a)}.cm{color:var(--dim);font-style:italic}.st{color:var(--g)}.ty{color:var(--cy)}.num{color:var(--o)}.op{color:var(--t)}
+.output{background:#0d0f14;border:1px solid var(--bd);border-radius:10px;padding:14px 18px;margin:10px 0 14px;font-family:'SF Mono','Cascadia Code',monospace;font-size:.72rem;line-height:1.7;color:var(--dim);white-space:pre;overflow-x:auto;}
+.nav{display:flex;justify-content:space-between;margin-top:32px;}
+.btn{background:var(--s);border:1px solid var(--bd);color:var(--dim);padding:12px 28px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:.82rem;transition:all .2s;}
+.btn:hover{border-color:var(--a);color:var(--t);}
+.btn.primary{background:rgba(108,140,255,.12);border-color:var(--a);color:var(--a);}
+.btn:disabled{opacity:.3;cursor:default;}
+.cols{display:flex;gap:16px;margin:12px 0;}.cols>div{flex:1;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>peft · 第四轮：读懂 mmit 的训练代码</h1>
+<p class="sub">前三轮你懂了 LoRA 和 peft。这一轮看 mmit 怎么用它们 — 逐行读代码，判断对不对。</p>
+<div class="progress" id="prog"></div>
+
+<!-- ═══════════════════ 0: 全局架构 ═══════════════════ -->
+<div class="step on" id="s0">
+<h2>mmit 的训练系统长什么样？</h2>
+
+<canvas id="cv0" width="900" height="400"></canvas>
+
+<p>mmit 的训练系统设计思路是：<strong>把"怎么训"拆成可插拔的零件</strong>。你不需要改训练循环代码，只需要换零件。</p>
+
+<div class="note note-blue">
+<strong>四个核心角色：</strong><br><br>
+<strong>① Trainer</strong>（trainer.py）— 训练循环的指挥官。它自己不懂 LoRA，但会调用下面三个零件<br>
+<strong>② PEFTStrategy</strong>（peft_strategy.py）— "怎么改模型"。决定冻结什么、注入什么、保存什么<br>
+<strong>③ LossFunction</strong>（loss.py）— "怎么算 loss"。可以换不同的损失函数<br>
+<strong>④ Config</strong>（schema.py）— "参数从哪来"。所有超参数的定义
+</div>
+
+<div class="note note-green">
+<strong>类比理解：</strong><br>
+Trainer 是厨房经理 — 它负责整个做菜流程（备料→烹饪→装盘）。<br>
+PEFTStrategy 是厨师 — 告诉经理"这道菜怎么做"。<br>
+LossFunction 是品控 — 告诉经理"做得好不好"。<br>
+Config 是菜谱 — 记录所有参数。<br><br>
+想换一种训练方法？<strong>换厨师（Strategy）就行</strong>，厨房经理和流程不用改。
+</div>
+
+<div class="note note-orange">
+<strong>涉及的文件：</strong><br>
+<code>mmit/training/peft_strategy.py</code> — PEFTStrategy 基类 + LoRAStrategy 实现<br>
+<code>mmit/training/trainer.py</code> — Trainer 训练循环<br>
+<code>mmit/config/schema.py</code> — PEFTConfig, TrainingConfig 配置<br>
+<code>mmit/examples/lora_in_lora_strategy.py</code> — LoRA-in-LoRA 高级示例
+</div>
+</div>
+
+<!-- ═══════════════════ 1: PEFTStrategy 接口 ═══════════════════ -->
+<div class="step" id="s1">
+<h2>PEFTStrategy — 四个必须实现的方法</h2>
+
+<canvas id="cv1" width="900" height="420"></canvas>
+
+<p><code>PEFTStrategy</code> 是一个<strong>抽象基类</strong>（ABC）。它定义了一个"合同"：任何训练策略都必须实现这四个方法。</p>
+
+<div class="code-box"><span class="kw">class</span> <span class="ty">PEFTStrategy</span>(ABC):
+    <span class="cm"># 必须实现的 4 个方法：</span>
+
+    <span class="kw">def</span> <span class="fn">wrap_model</span>(self, method, config):     <span class="cm"># ① 注入：改模型</span>
+        ...
+    <span class="kw">def</span> <span class="fn">trainable_params</span>(self, method):       <span class="cm"># ② 告知：哪些参数要训练</span>
+        ...
+    <span class="kw">def</span> <span class="fn">save_adapter</span>(self, method, path):     <span class="cm"># ③ 保存：存 adapter</span>
+        ...
+    <span class="kw">def</span> <span class="fn">load_adapter</span>(self, method, path):     <span class="cm"># ④ 加载：读 adapter</span>
+        ...</div>
+
+<div class="note note-blue">
+<strong>每个方法的职责：</strong><br><br>
+<strong>wrap_model(method, config)</strong><br>
+→ 冻结不该训的参数，注入该训的东西（比如 LoRA）<br>
+→ 第二轮你学的 <code>get_peft_model</code> 就是在这里调用的<br><br>
+<strong>trainable_params(method)</strong><br>
+→ 返回 <code>[{"params": [...], "lr": 2e-5}]</code> 给 optimizer<br>
+→ 告诉训练循环"只训这些参数"<br><br>
+<strong>save_adapter(method, path)</strong><br>
+→ 只保存 adapter 权重（不保存完整模型）<br>
+→ 第二轮你学的 <code>model.save_pretrained</code> 就是在这里调用的<br><br>
+<strong>load_adapter(method, path)</strong><br>
+→ 从文件加载 adapter 权重回模型
+</div>
+
+<div class="note note-green">
+<strong>为什么参数是 method 而不是 model？</strong><br>
+因为 mmit 是多模态框架。一个 <code>Method</code> 对象里有<strong>三个子模块</strong>：<br>
+<code>method.vision</code> — 视觉编码器（比如 CLIP）<br>
+<code>method.projector</code> — 投影层（把图像特征映射到语言空间）<br>
+<code>method.llm</code> — 语言模型（比如 Llama）<br><br>
+传 method 进来，让策略可以<strong>自由选择改哪个部分</strong>。<br>
+比如 LoRA 只改 llm，而 projector_only 只改 projector。
+</div>
+
+<div class="note note-orange">
+<strong>还有 2 个可选方法（持续学习用）：</strong><br>
+<code>on_task_start(method, task_id, config)</code> — 新任务开始前调用<br>
+<code>on_task_end(method, task_id, config)</code> — 一个任务训完后调用<br>
+默认是空的（no-op）。只有做持续学习的策略才需要实现它们。
+</div>
+</div>
+
+<!-- ═══════════════════ 2: LoRAStrategy.wrap_model ═══════════════════ -->
+<div class="step" id="s2">
+<h2>LoRAStrategy.wrap_model() — 逐行阅读</h2>
+
+<canvas id="cv2" width="900" height="400"></canvas>
+
+<p><code>LoRAStrategy</code> 是 mmit 内置的 LoRA 实现。它的 <code>wrap_model</code> 就是调用你在第二轮学过的 peft API：</p>
+
+<div class="code-box"><span class="kw">def</span> <span class="fn">wrap_model</span>(self, method, config):
+    <span class="kw">from</span> peft <span class="kw">import</span> <span class="ty">LoraConfig</span>, <span class="fn">get_peft_model</span>
+
+    <span class="cm"># 第一步：找到 LLM</span>
+    llm = self._get_llm(method)            <span class="cm"># 从 method 里取出 llm</span>
+
+    <span class="cm"># 第二步：从 mmit 的 config 构建 peft 的 LoraConfig</span>
+    target = config.target_modules <span class="kw">or</span> [<span class="st">"q_proj"</span>, <span class="st">"v_proj"</span>]
+    lora_cfg = <span class="ty">LoraConfig</span>(
+        r=config.rank,                     <span class="cm"># 从 mmit config 读 rank</span>
+        lora_alpha=config.alpha,            <span class="cm"># 从 mmit config 读 alpha</span>
+        lora_dropout=config.dropout,        <span class="cm"># 从 mmit config 读 dropout</span>
+        target_modules=target,
+        bias=<span class="st">"none"</span>,
+        task_type=<span class="st">"CAUSAL_LM"</span>,
+    )
+
+    <span class="cm"># 第三步：调用 peft 注入 LoRA（第二轮学的！）</span>
+    llm = <span class="fn">get_peft_model</span>(llm, lora_cfg)
+
+    <span class="cm"># 第四步：把改过的 llm 放回 method</span>
+    self._set_llm(method, llm)
+
+    <span class="cm"># 第五步（可选）：如果 config 说要训 projector，就解冻它</span>
+    <span class="kw">if</span> config.extra.get(<span class="st">"train_projector"</span>, <span class="kw">False</span>):
+        <span class="kw">for</span> p <span class="kw">in</span> method.projector.<span class="fn">parameters</span>():
+            p.requires_grad = <span class="kw">True</span></div>
+
+<div class="note note-blue">
+<strong>对应到你学过的知识：</strong><br>
+第一步 — mmit 的 method 有多个子模块，先<strong>找到 llm</strong><br>
+第二步 — 把 mmit 的 <code>PEFTConfig</code> 翻译成 peft 的 <code>LoraConfig</code>（参数搬运）<br>
+第三步 — 你在第二轮学的核心操作：<code>get_peft_model</code>！<br>
+第四步 — peft 返回了一个新的 PeftModel，要<strong>放回去</strong><br>
+第五步 — projector 不走 peft，直接用 <code>requires_grad = True</code> 解冻
+</div>
+
+<div class="note note-green">
+<strong>这段代码对不对？检查清单：</strong><br>
+✓ <code>LoraConfig</code> 的参数和第二轮学的一致（r, alpha, target_modules, dropout）<br>
+✓ <code>bias="none"</code> — 标准做法，不训练偏置<br>
+✓ <code>task_type="CAUSAL_LM"</code> — 因为 llm 是自回归语言模型<br>
+✓ <code>get_peft_model</code> 返回新模型后用 <code>_set_llm</code> 放回 — 正确，因为 peft 返回的是 PeftModel 包装<br>
+✓ projector 直接解冻 — 正确，projector 是小模块，不需要 LoRA
+</div>
+</div>
+
+<!-- ═══════════════════ 3: trainable_params ═══════════════════ -->
+<div class="step" id="s3">
+<h2>trainable_params() — 告诉 optimizer 训练什么</h2>
+
+<canvas id="cv3" width="900" height="380"></canvas>
+
+<p>Trainer 创建 optimizer 时需要知道：<strong>训练哪些参数？学习率是多少？</strong>这就是 <code>trainable_params</code> 的职责。</p>
+
+<div class="code-box"><span class="kw">def</span> <span class="fn">trainable_params</span>(self, method):
+    groups = []
+
+    <span class="cm"># 第一组：LLM 的 LoRA 参数</span>
+    llm = self._get_llm(method)
+    llm_params = [p <span class="kw">for</span> p <span class="kw">in</span> llm.<span class="fn">parameters</span>() <span class="kw">if</span> p.requires_grad]
+    <span class="kw">if</span> llm_params:
+        groups.<span class="fn">append</span>({<span class="st">"params"</span>: llm_params})            <span class="cm"># 用默认 lr</span>
+
+    <span class="cm"># 第二组：Projector 参数（如果被解冻了）</span>
+    proj = <span class="fn">getattr</span>(method, <span class="st">"projector"</span>, <span class="kw">None</span>)
+    <span class="kw">if</span> proj <span class="kw">is not None</span>:
+        proj_params = [p <span class="kw">for</span> p <span class="kw">in</span> proj.<span class="fn">parameters</span>() <span class="kw">if</span> p.requires_grad]
+        <span class="kw">if</span> proj_params:
+            groups.<span class="fn">append</span>({<span class="st">"params"</span>: proj_params, <span class="st">"lr"</span>: <span class="num">1e-3</span>})  <span class="cm"># 独立 lr</span>
+
+    <span class="kw">return</span> groups</div>
+
+<p>返回的是一个<strong>列表</strong>，每个元素是一个 param_group 字典。这是 PyTorch optimizer 的标准格式。</p>
+
+<div class="note note-blue">
+<strong>为什么分两组？</strong><br>
+LoRA 参数（A、B 矩阵）用<strong>小学习率</strong>（2e-5，Trainer 的默认值）<br>
+Projector 参数用<strong>大学习率</strong>（1e-3，写死在代码里）<br><br>
+原因：LoRA 是在预训练模型上做微小调整，学习率要小。<br>
+Projector 是从零训练（或者从一个简单初始化开始），学习率要大。
+</div>
+
+<div class="note note-green">
+<strong>这段代码对不对？检查：</strong><br>
+✓ 用 <code>p.requires_grad</code> 过滤 — 只拿可训练的参数（第二轮讲过，peft 冻结了 W）<br>
+✓ 两个 param_group 用不同 lr — PyTorch optimizer 支持这个，是标准做法<br>
+✓ projector 的 lr=1e-3 比 LoRA 的 lr=2e-5 大 50 倍 — 合理<br>
+✓ 如果 projector 没被解冻，proj_params 为空，不会加进去 — 正确
+</div>
+
+<div class="note note-orange">
+<strong>Trainer 怎么用这个返回值：</strong><br>
+<code>param_groups = self.peft.trainable_params(method)</code><br>
+<code>optimizer = AdamW(param_groups)</code><br><br>
+就是直接传给 optimizer。PyTorch 的 AdamW 接受 param_group 列表。
+</div>
+</div>
+
+<!-- ═══════════════════ 4: save / load ═══════════════════ -->
+<div class="step" id="s4">
+<h2>save_adapter / load_adapter — 保存和加载</h2>
+
+<canvas id="cv4" width="900" height="400"></canvas>
+
+<p>训练完成后保存 adapter，部署时加载回来。两个方法：</p>
+
+<div class="code-box"><span class="cm"># ── 保存 ──</span>
+<span class="kw">def</span> <span class="fn">save_adapter</span>(self, method, path):
+    os.<span class="fn">makedirs</span>(path, exist_ok=<span class="kw">True</span>)
+    llm = self._get_llm(method)
+    llm.<span class="fn">save_pretrained</span>(path)                <span class="cm"># ← 第二轮学的！PeftModel 的方法</span>
+
+    <span class="cm"># 如果 projector 被训练了，也保存它</span>
+    proj = <span class="fn">getattr</span>(method, <span class="st">"projector"</span>, <span class="kw">None</span>)
+    <span class="kw">if</span> proj <span class="kw">is not None</span>:
+        <span class="kw">if</span> <span class="fn">any</span>(p.requires_grad <span class="kw">for</span> p <span class="kw">in</span> proj.<span class="fn">parameters</span>()):
+            torch.<span class="fn">save</span>(proj.<span class="fn">state_dict</span>(), os.path.<span class="fn">join</span>(path, <span class="st">"projector.pt"</span>))
+
+<span class="cm"># ── 加载 ──</span>
+<span class="kw">def</span> <span class="fn">load_adapter</span>(self, method, path):
+    <span class="kw">from</span> peft <span class="kw">import</span> <span class="ty">PeftModel</span>
+
+    llm = self._get_llm(method)
+    llm = <span class="ty">PeftModel</span>.<span class="fn">from_pretrained</span>(llm, path) <span class="cm"># ← 第二轮学的！注入 + 加载权重</span>
+    self._set_llm(method, llm)
+
+    <span class="cm"># 如果有 projector 权重文件，也加载</span>
+    proj_path = os.path.<span class="fn">join</span>(path, <span class="st">"projector.pt"</span>)
+    <span class="kw">if</span> os.path.<span class="fn">exists</span>(proj_path):
+        method.projector.<span class="fn">load_state_dict</span>(torch.<span class="fn">load</span>(proj_path))</div>
+
+<div class="note note-blue">
+<strong>对应到第二轮的知识：</strong><br>
+<code>llm.save_pretrained(path)</code> — 第二轮第 7 步学的。保存 adapter_model.safetensors + adapter_config.json<br>
+<code>PeftModel.from_pretrained(llm, path)</code> — 第二轮第 8 步学的。读配置 → 注入空 LoRA → 加载权重
+</div>
+
+<div class="note note-green">
+<strong>这段代码对不对？检查：</strong><br>
+✓ LLM 部分用 peft 的 save/load — 正确，因为 wrap_model 用了 get_peft_model<br>
+✓ Projector 用 PyTorch 原生的 state_dict — 正确，projector 没有用 peft，是普通模块<br>
+✓ 加载 projector 时先检查文件是否存在 — 正确，因为不一定训了 projector<br>
+✓ load 时要 <code>_set_llm</code> 放回去 — 正确，和 wrap_model 同理
+</div>
+
+<div class="note note-orange">
+<strong>保存后的文件结构：</strong><br>
+<code>my-adapter/</code><br>
+<code>├── adapter_model.safetensors</code> — LoRA 的 A/B 权重（~20MB）<br>
+<code>├── adapter_config.json</code> — LoraConfig 的 JSON 序列化<br>
+<code>└── projector.pt</code> — projector 权重（如果训了的话）
+</div>
+</div>
+
+<!-- ═══════════════════ 5: Trainer 全流程 ═══════════════════ -->
+<div class="step" id="s5">
+<h2>Trainer.train() — 训练循环的全流程</h2>
+
+<canvas id="cv5" width="900" height="440"></canvas>
+
+<p>Trainer 是"指挥官"。它不懂 LoRA 的任何细节，只按顺序调用 strategy 的方法：</p>
+
+<div class="code-box"><span class="kw">def</span> <span class="fn">train</span>(self, dataset):
+    <span class="cm"># 阶段 1：让 strategy 改模型</span>
+    self.peft.<span class="fn">wrap_model</span>(method, config.peft)
+
+    <span class="cm"># 阶段 2：让 strategy 告诉我训哪些参数</span>
+    param_groups = self.peft.<span class="fn">trainable_params</span>(method)
+    optimizer = <span class="ty">AdamW</span>(param_groups)
+
+    <span class="cm"># 阶段 3：创建 DataLoader + 学习率调度器</span>
+    loader = <span class="ty">DataLoader</span>(dataset, batch_size=..., shuffle=<span class="kw">True</span>)
+    scheduler = <span class="fn">cosine_schedule</span>(optimizer, warmup, total_steps)
+
+    <span class="cm"># 阶段 4：训练循环</span>
+    <span class="kw">for</span> epoch <span class="kw">in</span> <span class="fn">range</span>(num_epochs):
+        <span class="kw">for</span> batch <span class="kw">in</span> loader:
+            output = method.<span class="fn">forward_loss</span>(batch)         <span class="cm"># forward</span>
+            loss = self.loss_fn.<span class="fn">compute</span>(output, ...)    <span class="cm"># 算 loss</span>
+            loss.<span class="fn">backward</span>()                              <span class="cm"># backward</span>
+            optimizer.<span class="fn">step</span>()                             <span class="cm"># 更新参数</span>
+
+            <span class="cm"># 每隔 N 步保存 checkpoint</span>
+            <span class="kw">if</span> global_step % save_steps == <span class="num">0</span>:
+                self.peft.<span class="fn">save_adapter</span>(method, ckpt_path)
+
+    <span class="cm"># 阶段 5：训练结束，保存最终 adapter</span>
+    self.peft.<span class="fn">save_adapter</span>(method, <span class="st">"final"</span>)</div>
+
+<div class="note note-blue">
+<strong>Trainer 调用了 strategy 的哪些方法：</strong><br>
+<code>wrap_model</code> — 阶段 1，训练开始前<br>
+<code>trainable_params</code> — 阶段 2，创建 optimizer 时<br>
+<code>save_adapter</code> — 阶段 4/5，中间 checkpoint + 最终保存
+</div>
+
+<div class="note note-green">
+<strong>这就是"可插拔"的意思：</strong><br>
+Trainer 不知道你用的是 LoRA、Prefix-tuning 还是别的方法。<br>
+它只知道：调 <code>wrap_model</code>（你去改模型）→ 调 <code>trainable_params</code>（你告诉我训什么）→ 训练 → 调 <code>save_adapter</code>（你去保存）。<br><br>
+想换成别的方法？<strong>写一个新的 PEFTStrategy 子类就行</strong>，Trainer 代码一行不改。
+</div>
+
+<div class="note note-orange">
+<strong>一些细节（代码里有，这里简化了）：</strong><br>
+• gradient accumulation — 多步梯度累积后再 <code>optimizer.step</code><br>
+• gradient clipping — <code>clip_grad_norm_</code> 防止梯度爆炸<br>
+• cosine schedule — 余弦学习率调度 + warmup<br>
+• step_callback — 外部回调（比如 dashboard 更新进度条）
+</div>
+</div>
+
+<!-- ═══════════════════ 6: Config 数据流 ═══════════════════ -->
+<div class="step" id="s6">
+<h2>Config — 参数从哪来，流到哪去</h2>
+
+<canvas id="cv6" width="900" height="400"></canvas>
+
+<p>mmit 的配置用 <code>@dataclass</code> 定义。两个和训练相关的：</p>
+
+<div class="code-box"><span class="cm"># PEFTConfig — 给 strategy 用</span>
+@dataclass
+<span class="kw">class</span> <span class="ty">PEFTConfig</span>:
+    name: <span class="ty">str</span> = <span class="st">"lora"</span>                <span class="cm"># 用哪个 strategy（从注册表找）</span>
+    target_modules: <span class="ty">List</span>[<span class="ty">str</span>] = <span class="kw">None</span>  <span class="cm"># 给哪些层加 LoRA</span>
+    rank: <span class="ty">int</span> = <span class="num">16</span>                    <span class="cm"># r（你在第一轮学的 rank）</span>
+    alpha: <span class="ty">int</span> = <span class="num">32</span>                   <span class="cm"># lora_alpha（第二轮的"音量旋钮"）</span>
+    dropout: <span class="ty">float</span> = <span class="num">0.05</span>             <span class="cm"># lora_dropout</span>
+    extra: <span class="ty">Dict</span> = {}                  <span class="cm"># 策略专属参数（比如 inner_rank）</span>
+
+<span class="cm"># TrainingConfig — 给 Trainer 用</span>
+@dataclass
+<span class="kw">class</span> <span class="ty">TrainingConfig</span>:
+    peft: <span class="ty">PEFTConfig</span> = PEFTConfig()   <span class="cm"># 嵌套的 PEFT 配置</span>
+    loss: <span class="ty">str</span> = <span class="st">"causal_lm"</span>           <span class="cm"># 损失函数</span>
+    learning_rate: <span class="ty">float</span> = <span class="num">2e-5</span>      <span class="cm"># 默认学习率</span>
+    num_epochs: <span class="ty">int</span> = <span class="num">3</span>
+    per_device_batch_size: <span class="ty">int</span> = <span class="num">4</span>
+    gradient_accumulation_steps: <span class="ty">int</span> = <span class="num">4</span>
+    warmup_ratio: <span class="ty">float</span> = <span class="num">0.03</span>
+    save_steps: <span class="ty">int</span> = <span class="num">500</span>
+    ...</div>
+
+<div class="note note-blue">
+<strong>参数的流向：</strong><br>
+YAML 文件 → <code>TrainingConfig</code> → Trainer 读取训练参数<br>
+<code>TrainingConfig.peft</code> → <code>PEFTConfig</code> → Strategy 读取 LoRA 参数<br><br>
+具体来说：<br>
+<code>config.peft.rank</code> → Strategy 里变成 <code>LoraConfig(r=config.rank)</code><br>
+<code>config.peft.alpha</code> → 变成 <code>LoraConfig(lora_alpha=config.alpha)</code><br>
+<code>config.learning_rate</code> → Trainer 里变成 <code>AdamW(..., lr=config.learning_rate)</code>
+</div>
+
+<div class="note note-green">
+<strong>extra 字典的用途：</strong><br>
+框架定义的参数（rank, alpha, dropout）有专门的字段。<br>
+但每个策略可能有自己独特的参数。比如 LoRA-in-LoRA 需要 <code>inner_rank</code>。<br><br>
+这些放在 <code>extra</code> 字典里：<code>config.extra["inner_rank"]</code><br>
+框架不需要懂它们，由策略自己解析。
+</div>
+</div>
+
+<!-- ═══════════════════ 7: 注册表 ═══════════════════ -->
+<div class="step" id="s7">
+<h2>注册表 — Trainer 怎么找到 strategy</h2>
+
+<canvas id="cv7" width="900" height="380"></canvas>
+
+<p>你在 config 里写 <code>name="lora"</code>，Trainer 怎么知道用 <code>LoRAStrategy</code>？答案是<strong>注册表（registry）</strong>。</p>
+
+<div class="code-box"><span class="cm"># 在某个地方，LoRAStrategy 被注册了：</span>
+<span class="kw">from</span> mmit <span class="kw">import</span> registry
+registry.<span class="fn">register</span>(<span class="st">"peft"</span>, <span class="st">"lora"</span>, LoRAStrategy)
+
+<span class="cm"># Trainer.from_config 内部：</span>
+<span class="kw">def</span> <span class="fn">from_config</span>(cls, method, config):
+    <span class="cm"># config.peft.name = "lora"</span>
+    peft_strategy = registry.<span class="fn">build</span>(<span class="st">"peft"</span>, config.peft.name)
+    <span class="cm"># → registry 里找 "peft" 类别下 "lora" 这个名字</span>
+    <span class="cm"># → 找到 LoRAStrategy 类</span>
+    <span class="cm"># → 调用 LoRAStrategy() 创建实例</span>
+    <span class="cm"># → 返回</span>
+
+    loss_fn = registry.<span class="fn">build</span>(<span class="st">"loss"</span>, config.loss)
+    <span class="kw">return</span> cls(method, peft_strategy, loss_fn, config)</div>
+
+<div class="note note-blue">
+<strong>注册表就是一个字典的字典：</strong><br>
+<code>registry = {</code><br>
+<code>  "peft": {"lora": LoRAStrategy, "lora-in-lora": LoRAInLoRAStrategy, ...},</code><br>
+<code>  "loss": {"causal_lm": CausalLMLoss, ...},</code><br>
+<code>  "method": {"llava-v1.5": LLaVAv15Method, ...},</code><br>
+<code>}</code><br><br>
+<code>register("peft", "lora", LoRAStrategy)</code> — 把类注册到字典里<br>
+<code>build("peft", "lora")</code> — 从字典里取出类，创建实例
+</div>
+
+<div class="note note-green">
+<strong>这个设计的好处：</strong><br>
+你写了一个新的策略类（比如 <code>MyMoReSStrategy</code>），只需要：<br><br>
+1. 继承 <code>PEFTStrategy</code>，实现四个方法<br>
+2. <code>registry.register("peft", "mores", MyMoReSStrategy)</code><br>
+3. YAML 里写 <code>name: mores</code><br><br>
+<strong>不需要改 Trainer 的任何代码。</strong>
+</div>
+</div>
+
+<!-- ═══════════════════ 8: LoRA-in-LoRA ═══════════════════ -->
+<div class="step" id="s8">
+<h2>LoRA-in-LoRA — 读懂一个高级策略</h2>
+
+<canvas id="cv8" width="900" height="440"></canvas>
+
+<p>现在用你学到的知识，来读一个复杂的例子：<code>LoRAInLoRAStrategy</code>。它不用 peft 库，而是<strong>手写了双层 LoRA</strong>。</p>
+
+<div class="note note-blue">
+<strong>它的思路（持续学习）：</strong><br>
+每个目标层有<strong>两个 LoRA</strong>：<br>
+<code>y = W·x + B_outer·A_outer·x + B_inner·A_inner·x</code><br><br>
+<strong>外层（outer）</strong>：长期记忆。积累所有任务的知识，学习率小<br>
+<strong>内层（inner）</strong>：工作记忆。只学当前任务，学习率大<br><br>
+每个任务训完后：inner 合并进 outer → inner 重置为零 → 开始下一个任务
+</div>
+
+<div class="code-box"><span class="cm"># LoRALinear — 手写的双层 LoRA 模块（不用 peft 库）</span>
+<span class="kw">class</span> <span class="ty">LoRALinear</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, original, rank, alpha):
+        self.original = original                  <span class="cm"># 原始 nn.Linear（冻结）</span>
+        self.lora_A_outer = nn.<span class="ty">Linear</span>(in_d, rank)  <span class="cm"># 外层 A</span>
+        self.lora_B_outer = nn.<span class="ty">Linear</span>(rank, out_d)  <span class="cm"># 外层 B（初始为零）</span>
+        self.lora_A_inner = nn.<span class="ty">Linear</span>(in_d, rank)  <span class="cm"># 内层 A</span>
+        self.lora_B_inner = nn.<span class="ty">Linear</span>(rank, out_d)  <span class="cm"># 内层 B（初始为零）</span>
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        base = self.original(x)                    <span class="cm"># W·x</span>
+        outer = self.lora_B_outer(self.lora_A_outer(x)) * scaling
+        inner = self.lora_B_inner(self.lora_A_inner(x)) * scaling
+        <span class="kw">return</span> base + outer + inner                <span class="cm"># 三路相加</span></div>
+
+<div class="note note-green">
+<strong>验证这段代码 — 用你学过的知识：</strong><br>
+✓ <code>self.original</code> 被冻结，相当于 peft 的 <code>base_layer</code> — 第三轮学的<br>
+✓ B 初始化为零（<code>nn.init.zeros_</code>）— 第三轮第 7 步学的，保证训练开始时输出不变<br>
+✓ A 用 kaiming 初始化 — 第三轮第 7 步学的，保证梯度流动<br>
+✓ forward 里三路相加 — 和 peft 的 <code>result += B(A(x)) * scaling</code> 原理一样<br>
+✓ <code>* scaling</code>（alpha/r）— 第二轮学的"音量旋钮"
+</div>
+
+<div class="note note-orange">
+<strong>和 peft 的 LoRAStrategy 的区别：</strong><br>
+<code>LoRAStrategy</code> 调用 peft 库的 <code>get_peft_model</code> — 自动处理注入、保存、加载<br>
+<code>LoRAInLoRAStrategy</code> <strong>手写</strong>了模块替换 — 因为 peft 不支持双层 LoRA<br><br>
+手写时，它用了第三轮学的技巧：<br>
+<code>name.endswith(target)</code> — 字符串匹配找目标层<br>
+<code>setattr(parent, child_name, lora_module)</code> — 替换 parent 的子模块<br>
+和 peft 内部的 <code>parent._modules[name] = new_module</code> 本质上是同一件事。
+</div>
+</div>
+
+<!-- ═══════════════════ 9: 总结 ═══════════════════ -->
+<div class="step" id="s9">
+<h2>持续学习 hook + 第四轮总结</h2>
+
+<canvas id="cv9" width="900" height="420"></canvas>
+
+<p>LoRA-in-LoRA 的核心在于两个 hook —— 它们让 Trainer 在任务之间自动执行"合并→重置"：</p>
+
+<div class="code-box"><span class="kw">def</span> <span class="fn">on_task_start</span>(self, method, task_id, config):
+    <span class="kw">if</span> task_id == <span class="num">0</span>:
+        <span class="kw">return</span>                        <span class="cm"># 第一个任务不用动，wrap_model 已经初始化好</span>
+    <span class="cm"># 后续任务：重置 inner → B=0，准备学新东西</span>
+    <span class="kw">for</span> m <span class="kw">in</span> self._adapted_modules:
+        m.<span class="fn">reinit_inner</span>()               <span class="cm"># A=kaiming, B=0</span>
+
+<span class="kw">def</span> <span class="fn">on_task_end</span>(self, method, task_id, config):
+    <span class="cm"># 任务结束：inner 的知识合并进 outer，然后重置 inner</span>
+    <span class="kw">for</span> m <span class="kw">in</span> self._adapted_modules:
+        m.<span class="fn">merge_inner_to_outer</span>()       <span class="cm"># SVD 合并 + inner 归零</span></div>
+
+<div class="note note-blue">
+<strong>Trainer 调用顺序（train_continual）：</strong><br>
+<code>for task_id, dataset in enumerate(tasks):</code><br>
+<code>    peft.on_task_start(method, task_id, config)</code>  ← inner 重置为零<br>
+<code>    trainer.train(dataset)</code>  ← 训练当前任务<br>
+<code>    peft.on_task_end(method, task_id, config)</code>  ← inner 合并进 outer<br><br>
+Trainer 不知道"合并"和"重置"的细节，它只按合同调 hook。
+</div>
+
+<div class="note note-green">
+<strong>第四轮总结 — 你现在能看懂的代码：</strong><br><br>
+<strong>① PEFTStrategy 抽象基类</strong> — 4 个必须方法 + 2 个可选 hook<br>
+<strong>② LoRAStrategy.wrap_model</strong> — 怎么把 mmit config 翻译成 peft 调用<br>
+<strong>③ trainable_params</strong> — 怎么分 param_group 给 optimizer<br>
+<strong>④ save/load_adapter</strong> — LoRA 用 peft 的 save/load，projector 用 PyTorch 原生<br>
+<strong>⑤ Trainer.train</strong> — 五个阶段，调用 strategy 的方法<br>
+<strong>⑥ Config 数据流</strong> — PEFTConfig → LoraConfig 的参数搬运<br>
+<strong>⑦ 注册表</strong> — 名字到类的映射，实现可插拔<br>
+<strong>⑧ LoRA-in-LoRA</strong> — 手写双层 LoRA + 持续学习 hook
+</div>
+
+<div class="note note-purple">
+<strong>现在你有能力判断代码对不对：</strong><br>
+• 看到 <code>get_peft_model</code> → 你知道它会冻结+注入+包装（第二轮/第三轮）<br>
+• 看到 <code>B=0</code> 初始化 → 你知道这是保证训练开始时模型不变（第三轮）<br>
+• 看到 <code>requires_grad</code> 过滤 → 你知道只训 A/B（第二轮）<br>
+• 看到 <code>parent._modules[name] = new</code> 或 <code>setattr</code> → 你知道这是模块替换（第三轮）<br>
+• 看到 <code>save_pretrained</code> / <code>from_pretrained</code> → 你知道存的是什么文件（第二轮）
+</div>
+</div>
+
+<div class="nav">
+  <button class="btn" id="btnPrev" onclick="go(-1)" disabled>← 上一步</button>
+  <span id="stepLabel" style="color:var(--dim);font-size:.82rem;"></span>
+  <button class="btn primary" id="btnNext" onclick="go(1)">下一步 →</button>
+</div>
+</div>
+
+<script>
+const dpr=window.devicePixelRatio||1;
+const TOTAL=10;
+const SKEY='peft-guide-r4-step';
+let cur=Math.min(TOTAL-1,Math.max(0,parseInt(localStorage.getItem(SKEY))||0));
+
+function cv(id){const c=document.getElementById(id);if(!c)return null;const w=+c.getAttribute('width'),h=+c.getAttribute('height');c.width=w*dpr;c.height=h*dpr;c.style.width=w+'px';c.style.height=h+'px';const x=c.getContext('2d');x.scale(dpr,dpr);x.clearRect(0,0,w,h);return x;}
+function rr(x,a,b,w,h,r,f,s,lw=1){x.beginPath();x.roundRect(a,b,w,h,r);if(f){x.fillStyle=f;x.fill();}if(s){x.strokeStyle=s;x.lineWidth=lw;x.stroke();}}
+function tx(x,t,a,b,c,sz=12,al='center'){x.fillStyle=c;x.font=`bold ${sz}px -apple-system,BlinkMacSystemFont,sans-serif`;x.textAlign=al;x.textBaseline='middle';t.split('\n').forEach((l,i)=>x.fillText(l,a,b+i*(sz+5)));}
+function txn(x,t,a,b,c,sz=12,al='center'){x.fillStyle=c;x.font=`${sz}px -apple-system,BlinkMacSystemFont,sans-serif`;x.textAlign=al;x.textBaseline='middle';t.split('\n').forEach((l,i)=>x.fillText(l,a,b+i*(sz+5)));}
+function ar(x,x1,y1,x2,y2,c,lw=2){x.beginPath();x.moveTo(x1,y1);x.lineTo(x2,y2);x.strokeStyle=c;x.lineWidth=lw;x.stroke();const a=Math.atan2(y2-y1,x2-x1),s=8;x.beginPath();x.moveTo(x2,y2);x.lineTo(x2-s*Math.cos(a-.35),y2-s*Math.sin(a-.35));x.lineTo(x2-s*Math.cos(a+.35),y2-s*Math.sin(a+.35));x.closePath();x.fillStyle=c;x.fill();}
+function circle(x,cx,cy,r,f,s,lw=2){x.beginPath();x.arc(cx,cy,r,0,Math.PI*2);if(f){x.fillStyle=f;x.fill();}if(s){x.strokeStyle=s;x.lineWidth=lw;x.stroke();}}
+function dashedLine(x,x1,y1,x2,y2,c,lw=1){x.save();x.setLineDash([5,4]);x.beginPath();x.moveTo(x1,y1);x.lineTo(x2,y2);x.strokeStyle=c;x.lineWidth=lw;x.stroke();x.restore();}
+const cl={a:'#6c8cff',pk:'#ff6c9a',g:'#4ade80',o:'#fb923c',p:'#a78bfa',cy:'#22d3ee',dim:'#5a6078',t:'#c8cfe0',bg:'#1a1d27',bd:'#2e3347',y:'#facc15',r:'#f87171'};
+
+function buildProgress(){const p=document.getElementById('prog');p.innerHTML='';for(let i=0;i<TOTAL;i++){const d=document.createElement('div');d.className='dot'+(i<cur?' done':'')+(i===cur?' cur':'');d.onclick=()=>dotClick(i);p.appendChild(d);}}
+function render(noScroll){document.querySelectorAll('.step').forEach((s,i)=>s.classList.toggle('on',i===cur));buildProgress();document.getElementById('btnPrev').disabled=cur===0;const n=document.getElementById('btnNext');n.textContent=cur===TOTAL-1?'完成！':'下一步 →';n.disabled=cur===TOTAL-1;document.getElementById('stepLabel').textContent=`${cur+1} / ${TOTAL}`;requestAnimationFrame(()=>{try{drawFns[cur]?.();}catch(e){console.error(e);}});if(!noScroll)window.scrollTo({top:0,behavior:'smooth'});}
+function go(d){cur=Math.max(0,Math.min(TOTAL-1,cur+d));localStorage.setItem(SKEY,cur);render();}
+function dotClick(i){cur=i;localStorage.setItem(SKEY,cur);render();}
+
+const drawFns={};
+
+// ── 0: 全局架构 ──
+drawFns[0]=function(){
+  const x=cv('cv0');if(!x)return;
+  tx(x,'mmit 训练系统：四个可插拔零件',450,25,cl.t,15);
+
+  // Trainer (center)
+  rr(x,300,60,300,80,12,cl.a+'10',cl.a);
+  tx(x,'Trainer',450,90,cl.a,16);
+  txn(x,'训练循环的"指挥官"',450,115,cl.dim,9);
+
+  // PEFTStrategy
+  rr(x,30,200,240,130,10,cl.g+'10',cl.g);
+  tx(x,'PEFTStrategy',150,225,cl.g,13);
+  txn(x,'"怎么改模型"',150,248,cl.dim,9);
+  txn(x,'wrap_model()',110,275,cl.g,8,'left');
+  txn(x,'trainable_params()',110,293,cl.g,8,'left');
+  txn(x,'save/load_adapter()',110,311,cl.g,8,'left');
+
+  // LossFunction
+  rr(x,330,200,240,130,10,cl.pk+'10',cl.pk);
+  tx(x,'LossFunction',450,225,cl.pk,13);
+  txn(x,'"怎么算 loss"',450,248,cl.dim,9);
+  txn(x,'compute(logits, labels)',450,278,cl.pk,8);
+
+  // Config
+  rr(x,630,200,240,130,10,cl.o+'10',cl.o);
+  tx(x,'Config',750,225,cl.o,13);
+  txn(x,'"参数从哪来"',750,248,cl.dim,9);
+  txn(x,'PEFTConfig',710,275,cl.o,8,'left');
+  txn(x,'TrainingConfig',710,293,cl.o,8,'left');
+
+  // Arrows from Trainer to components
+  ar(x,380,140,150,200,cl.g);
+  ar(x,450,140,450,200,cl.pk);
+  ar(x,520,140,750,200,cl.o);
+
+  // Method (top)
+  rr(x,660,60,220,80,10,cl.cy+'10',cl.cy);
+  tx(x,'Method',770,90,cl.cy,13);
+  txn(x,'method.llm / .projector / .vision',770,115,cl.cy,7);
+  ar(x,660,100,600,100,cl.dim);
+
+  // Bottom: implementations
+  rr(x,30,360,240,30,6,cl.g+'08',cl.g+'20');
+  txn(x,'LoRAStrategy | LoRA-in-LoRA | ProjectorOnly',150,375,cl.g,7);
+};
+
+// ── 1: PEFTStrategy 接口 ──
+drawFns[1]=function(){
+  const x=cv('cv1');if(!x)return;
+  tx(x,'PEFTStrategy — 抽象基类的"合同"',450,25,cl.t,15);
+
+  // ABC box
+  rr(x,30,55,840,340,14,cl.g+'05',cl.g+'20');
+  tx(x,'class PEFTStrategy(ABC)',450,82,cl.g,14);
+  dashedLine(x,50,98,860,98,cl.g+'30');
+
+  // 4 required methods
+  const methods=[
+    {name:'wrap_model(method, config)',desc:'注入：冻结参数 + 注入 LoRA + 改模型',
+     detail:'对应 get_peft_model',col:cl.a},
+    {name:'trainable_params(method)',desc:'告知：返回 param_groups 给 optimizer',
+     detail:'对应 model.parameters()',col:cl.o},
+    {name:'save_adapter(method, path)',desc:'保存：只存 adapter 权重',
+     detail:'对应 save_pretrained',col:cl.p},
+    {name:'load_adapter(method, path)',desc:'加载：从文件读回 adapter',
+     detail:'对应 from_pretrained',col:cl.pk},
+  ];
+
+  methods.forEach((m,i)=>{
+    const ly=110+i*55;
+    rr(x,55,ly,780,48,6,m.col+'08',m.col+'20');
+    tx(x,m.name,240,ly+16,m.col,10,'left');
+    txn(x,m.desc,240,ly+36,cl.t,8,'left');
+    txn(x,m.detail,740,ly+26,cl.dim,7);
+    txn(x,`${i+1}`,75,ly+24,m.col,12);
+  });
+
+  // Optional hooks
+  rr(x,55,340,780,42,6,cl.dim+'06',cl.dim+'15');
+  txn(x,'可选 hook:  on_task_start()  /  on_task_end()  — 持续学习时用',450,361,cl.dim,9);
+
+  txn(x,'所有方法第一个参数都是 method（不是 model）— 因为多模态有 llm + projector + vision',450,400,cl.y,8);
+};
+
+// ── 2: LoRAStrategy.wrap_model ──
+drawFns[2]=function(){
+  const x=cv('cv2');if(!x)return;
+  tx(x,'LoRAStrategy.wrap_model() 逐行',450,25,cl.t,15);
+
+  const lines=[
+    {code:'llm = self._get_llm(method)',note:'从 method 取出 llm',col:cl.cy},
+    {code:'target = config.target_modules or [...]',note:'读 config，有默认值',col:cl.o},
+    {code:'lora_cfg = LoraConfig(r=config.rank,...)',note:'mmit config → peft config',col:cl.o},
+    {code:'llm = get_peft_model(llm, lora_cfg)',note:'第二轮学的！冻结+注入+包装',col:cl.g},
+    {code:'self._set_llm(method, llm)',note:'把 PeftModel 放回 method',col:cl.a},
+    {code:'if train_projector: requires_grad=True',note:'可选：解冻 projector',col:cl.p},
+  ];
+
+  lines.forEach((l,i)=>{
+    const ly=60+i*52;
+    rr(x,30,ly,520,42,6,l.col+'08',l.col+'20');
+    txn(x,l.code,280,ly+14,cl.t,8);
+    txn(x,'→',560,ly+21,cl.dim,10);
+    rr(x,580,ly,300,42,6,l.col+'06',l.col+'12');
+    txn(x,l.note,730,ly+21,l.col,9);
+  });
+
+  rr(x,30,378,850,12,0,cl.y+'06',null);
+  txn(x,'核心就一行：get_peft_model(llm, lora_cfg) — 其他都是参数搬运和对象传递',450,395,cl.y,10);
+};
+
+// ── 3: trainable_params ──
+drawFns[3]=function(){
+  const x=cv('cv3');if(!x)return;
+  tx(x,'trainable_params() — 分组给 optimizer',450,25,cl.t,15);
+
+  // Two groups
+  rr(x,30,60,400,130,10,cl.a+'08',cl.a+'25');
+  tx(x,'第一组: LLM LoRA 参数',230,85,cl.a,12);
+  txn(x,'[p for p in llm.parameters() if p.requires_grad]',230,115,cl.t,8);
+  txn(x,'→ 只有 A 和 B 矩阵（W 被冻结了）',230,140,cl.dim,8);
+  txn(x,'lr = 2e-5（Trainer 默认）',230,160,cl.a,8);
+
+  rr(x,30,210,400,130,10,cl.p+'08',cl.p+'25');
+  tx(x,'第二组: Projector 参数',230,235,cl.p,12);
+  txn(x,'[p for p in proj.parameters() if p.requires_grad]',230,265,cl.t,8);
+  txn(x,'→ 只在 train_projector=True 时才有',230,290,cl.dim,8);
+  txn(x,'lr = 1e-3（比 LoRA 大 50 倍）',230,310,cl.p,8);
+
+  // Return format
+  rr(x,470,60,400,280,10,cl.y+'06',cl.y+'15');
+  tx(x,'返回给 Trainer',670,85,cl.y,12);
+
+  rr(x,495,110,350,70,6,'#0d0f14',cl.bd);
+  txn(x,'[',510,125,cl.t,9,'left');
+  txn(x,'  {"params": [A,B矩阵们]},',510,145,cl.a,8,'left');
+  txn(x,'  {"params": [proj参数], "lr": 1e-3}',510,165,cl.p,8,'left');
+
+  ar(x,670,190,670,215,cl.dim);
+  rr(x,530,220,280,35,6,cl.o+'08',cl.o+'25');
+  txn(x,'optimizer = AdamW(param_groups)',670,237,cl.o,9);
+
+  rr(x,495,280,350,45,6,cl.g+'06',cl.g+'15');
+  txn(x,'LoRA 微调 → lr 小 | Projector 从零训 → lr 大',670,302,cl.dim,8);
+};
+
+// ── 4: save / load ──
+drawFns[4]=function(){
+  const x=cv('cv4');if(!x)return;
+  tx(x,'save_adapter / load_adapter',450,25,cl.t,15);
+
+  // Save
+  rr(x,30,55,420,150,12,cl.g+'08',cl.g+'20');
+  tx(x,'save_adapter(method, path)',240,80,cl.g,12);
+
+  rr(x,55,100,370,35,6,cl.a+'08',cl.a+'20');
+  txn(x,'llm.save_pretrained(path)',240,117,cl.a,9);
+  rr(x,55,143,370,35,6,cl.p+'08',cl.p+'20');
+  txn(x,'torch.save(proj.state_dict(), "projector.pt")',240,160,cl.p,8);
+
+  // Load
+  rr(x,470,55,410,150,12,cl.o+'08',cl.o+'20');
+  tx(x,'load_adapter(method, path)',675,80,cl.o,12);
+
+  rr(x,495,100,360,35,6,cl.a+'08',cl.a+'20');
+  txn(x,'PeftModel.from_pretrained(llm, path)',675,117,cl.a,9);
+  rr(x,495,143,360,35,6,cl.p+'08',cl.p+'20');
+  txn(x,'proj.load_state_dict(torch.load(...))',675,160,cl.p,8);
+
+  // Files
+  rr(x,30,230,850,150,10,cl.y+'06',cl.y+'15');
+  tx(x,'保存后的文件结构',455,255,cl.y,12);
+
+  const files=[
+    {name:'adapter_model.safetensors',desc:'LoRA A/B 权重 (~20MB)',src:'peft 生成',col:cl.g},
+    {name:'adapter_config.json',desc:'LoraConfig 序列化 (~1KB)',src:'peft 生成',col:cl.a},
+    {name:'projector.pt',desc:'projector 权重（可选）',src:'mmit 自己存',col:cl.p},
+  ];
+  files.forEach((f,i)=>{
+    rr(x,100,280+i*32,350,26,4,'#0d0f14',cl.bd);
+    txn(x,f.name,275,293+i*32,f.col,8);
+    txn(x,f.desc,560,293+i*32,cl.dim,8);
+    txn(x,f.src,770,293+i*32,cl.dim,7);
+  });
+};
+
+// ── 5: Trainer 全流程 ──
+drawFns[5]=function(){
+  const x=cv('cv5');if(!x)return;
+  tx(x,'Trainer.train() — 五个阶段',450,25,cl.t,15);
+
+  const phases=[
+    {label:'阶段 1',name:'wrap_model()',desc:'strategy 注入 LoRA',col:cl.g,who:'Strategy'},
+    {label:'阶段 2',name:'trainable_params() → optimizer',desc:'创建 optimizer + scheduler',col:cl.o,who:'Strategy'},
+    {label:'阶段 3',name:'DataLoader + Scheduler',desc:'创建数据加载器和调度器',col:cl.cy,who:'Trainer'},
+    {label:'阶段 4',name:'for epoch: forward → backward → step',desc:'训练循环 + 中间 checkpoint',col:cl.a,who:'Trainer'},
+    {label:'阶段 5',name:'save_adapter("final")',desc:'保存最终 adapter',col:cl.p,who:'Strategy'},
+  ];
+
+  phases.forEach((p,i)=>{
+    const ly=60+i*72;
+    rr(x,30,ly,560,62,8,p.col+'08',p.col+'20');
+    tx(x,p.label,85,ly+18,p.col,10);
+    tx(x,p.name,320,ly+18,cl.t,10);
+    txn(x,p.desc,320,ly+42,cl.dim,8);
+
+    const wc = p.who==='Strategy'?cl.g:cl.a;
+    rr(x,620,ly+5,250,52,6,wc+'08',wc+'20');
+    txn(x,p.who+' 负责',745,ly+31,wc,10);
+
+    if(i<4) ar(x,300,ly+62,300,ly+72,cl.dim);
+  });
+
+  txn(x,'Trainer 不懂 LoRA，只按合同调 Strategy 的方法',450,430,cl.y,10);
+};
+
+// ── 6: Config 数据流 ──
+drawFns[6]=function(){
+  const x=cv('cv6');if(!x)return;
+  tx(x,'Config 参数流向',450,25,cl.t,15);
+
+  // YAML
+  rr(x,30,60,200,130,10,cl.dim+'10',cl.dim);
+  tx(x,'YAML 配置',130,85,cl.dim,11);
+  txn(x,'peft:',60,112,cl.o,8,'left');
+  txn(x,'  rank: 16',60,130,cl.t,8,'left');
+  txn(x,'  alpha: 32',60,148,cl.t,8,'left');
+  txn(x,'learning_rate: 2e-5',60,166,cl.t,8,'left');
+
+  ar(x,235,125,285,125,cl.dim);
+
+  // TrainingConfig
+  rr(x,290,55,250,140,10,cl.o+'08',cl.o+'25');
+  tx(x,'TrainingConfig',415,80,cl.o,11);
+  rr(x,310,100,210,30,4,cl.g+'08',cl.g+'20');
+  txn(x,'peft: PEFTConfig',415,115,cl.g,8);
+  rr(x,310,138,210,30,4,cl.o+'06',cl.o+'15');
+  txn(x,'learning_rate: 2e-5',415,153,cl.o,8);
+
+  ar(x,415,135,415,215,cl.g);
+
+  // PEFTConfig
+  rr(x,290,220,250,140,10,cl.g+'08',cl.g+'25');
+  tx(x,'PEFTConfig',415,243,cl.g,11);
+  txn(x,'rank=16, alpha=32',415,268,cl.t,8);
+  txn(x,'dropout=0.05',415,288,cl.t,8);
+  txn(x,'extra={}',415,308,cl.dim,8);
+
+  ar(x,545,290,600,290,cl.y);
+  txn(x,'翻译',573,275,cl.y,8);
+
+  // peft LoraConfig
+  rr(x,605,220,270,140,10,cl.a+'08',cl.a+'25');
+  tx(x,'peft LoraConfig',740,243,cl.a,11);
+  txn(x,'r=16, lora_alpha=32',740,268,cl.t,8);
+  txn(x,'lora_dropout=0.05',740,288,cl.t,8);
+  txn(x,'target_modules=[...]',740,308,cl.t,8);
+
+  // Labels
+  rr(x,290,380,250,10,0,cl.g+'15',null);
+  txn(x,'mmit 的配置',415,395,cl.g,9);
+  rr(x,605,380,270,10,0,cl.a+'15',null);
+  txn(x,'peft 的配置',740,395,cl.a,9);
+};
+
+// ── 7: 注册表 ──
+drawFns[7]=function(){
+  const x=cv('cv7');if(!x)return;
+  tx(x,'注册表：名字 → 类',450,25,cl.t,15);
+
+  // Registry
+  rr(x,30,60,500,290,12,cl.a+'06',cl.a+'15');
+  tx(x,'registry = { }',280,85,cl.a,13);
+
+  // peft
+  rr(x,55,110,450,80,8,cl.g+'08',cl.g+'25');
+  tx(x,'"peft":',90,135,cl.g,10,'left');
+  rr(x,160,118,150,25,4,cl.g+'10',cl.g);
+  txn(x,'"lora" → LoRAStrategy',235,130,cl.t,8);
+  rr(x,160,148,150,25,4,cl.g+'10',cl.g);
+  txn(x,'"lora-in-lora" → LoRAInLoRA…',235,160,cl.t,8);
+
+  rr(x,55,200,450,42,8,cl.pk+'08',cl.pk+'25');
+  tx(x,'"loss":',90,221,cl.pk,10,'left');
+  rr(x,160,208,150,25,4,cl.pk+'10',cl.pk);
+  txn(x,'"causal_lm" → CausalLMLoss',235,220,cl.t,8);
+
+  rr(x,55,252,450,42,8,cl.cy+'08',cl.cy+'25');
+  tx(x,'"method":',90,273,cl.cy,10,'left');
+  rr(x,160,260,150,25,4,cl.cy+'10',cl.cy);
+  txn(x,'"llava-v1.5" → LLaVAv15Method',235,272,cl.t,8);
+
+  // Usage
+  rr(x,560,60,310,130,10,cl.y+'06',cl.y+'15');
+  tx(x,'Trainer.from_config 内部',715,85,cl.y,11);
+
+  rr(x,585,110,260,28,4,cl.g+'08',cl.g+'20');
+  txn(x,'registry.build("peft", "lora")',715,124,cl.g,8);
+  ar(x,715,142,715,155,cl.dim);
+  rr(x,585,158,260,28,4,cl.g+'10',cl.g);
+  txn(x,'→ LoRAStrategy()',715,172,cl.g,9);
+
+  // Add new strategy
+  rr(x,560,210,310,140,10,cl.o+'06',cl.o+'15');
+  tx(x,'加新策略只需 3 步',715,235,cl.o,11);
+  txn(x,'1. 继承 PEFTStrategy',625,262,cl.t,8,'left');
+  txn(x,'2. register("peft","mine",MyS)',625,282,cl.t,8,'left');
+  txn(x,'3. YAML: name: mine',625,302,cl.t,8,'left');
+  txn(x,'Trainer 代码不用改！',715,330,cl.g,9);
+};
+
+// ── 8: LoRA-in-LoRA ──
+drawFns[8]=function(){
+  const x=cv('cv8');if(!x)return;
+  tx(x,'LoRA-in-LoRA — 手写双层 LoRA',450,25,cl.t,15);
+
+  // Formula
+  rr(x,30,55,840,50,8,cl.a+'06',cl.a+'15');
+  txn(x,'y =',65,80,cl.t,10,'left');
+  txn(x,'W·x',110,80,cl.dim,10);
+  txn(x,'+',165,80,cl.t,10);
+  txn(x,'B_outer·A_outer·x',260,80,cl.o,10);
+  txn(x,'+',370,80,cl.t,10);
+  txn(x,'B_inner·A_inner·x',480,80,cl.pk,10);
+  txn(x,'原始',110,95,cl.dim,7);
+  txn(x,'外层（长期记忆，lr小）',260,95,cl.o,7);
+  txn(x,'内层（工作记忆，lr大）',480,95,cl.pk,7);
+
+  // Lifecycle
+  rr(x,30,120,840,150,10,cl.y+'06',cl.y+'15');
+  tx(x,'持续学习生命周期',450,142,cl.y,12);
+
+  const steps=[
+    {text:'Task 0 开始',detail:'wrap_model 注入双 LoRA',col:cl.g},
+    {text:'Task 0 训练',detail:'outer+inner 同时训',col:cl.a},
+    {text:'Task 0 结束',detail:'inner 合并进 outer\ninner 归零',col:cl.o},
+    {text:'Task 1 开始',detail:'inner 已清零\nouter 记着 Task0',col:cl.g},
+    {text:'Task 1 训练',detail:'outer 慢学\ninner 快学 Task1',col:cl.a},
+    {text:'Task 1 结束',detail:'再合并\nouter=T0+T1',col:cl.o},
+  ];
+  steps.forEach((s,i)=>{
+    const lx=55+i*137;
+    rr(x,lx,165,128,48,4,s.col+'10',s.col+'25');
+    txn(x,s.text,lx+64,178,s.col,7);
+    txn(x,s.detail,lx+64,198,cl.dim,5.5);
+    if(i<5) ar(x,lx+130,185,lx+137,185,cl.dim);
+  });
+
+  txn(x,'on_task_start → inner 重置  |  on_task_end → inner 合并进 outer',450,230,cl.dim,8);
+
+  // Verification
+  rr(x,30,280,840,140,10,cl.g+'06',cl.g+'15');
+  tx(x,'你能用学过的知识验证',450,305,cl.g,12);
+
+  const checks=[
+    {text:'B=0 初始化 → LoRA 初始输出为零',ref:'第三轮 Step 7'},
+    {text:'A=kaiming → 保证梯度流动',ref:'第三轮 Step 7'},
+    {text:'forward: base + outer + inner 三路相加',ref:'第三轮 Step 6'},
+    {text:'setattr(parent, name, module) → 模块替换',ref:'第三轮 Step 4'},
+    {text:'name.endswith(target) → 字符串匹配找目标',ref:'第二轮 Step 3'},
+  ];
+  checks.forEach((c,i)=>{
+    rr(x,55,325+i*18,520,15,2,cl.g+'06',cl.g+'12');
+    txn(x,'✓ '+c.text,315,332+i*18,cl.t,7);
+    txn(x,c.ref,750,332+i*18,cl.dim,7);
+  });
+};
+
+// ── 9: 总结 ──
+drawFns[9]=function(){
+  const x=cv('cv9');if(!x)return;
+  tx(x,'第四轮总结',450,25,cl.t,15);
+
+  // Files you can read
+  rr(x,30,55,840,90,12,cl.g+'06',cl.g+'20');
+  tx(x,'你现在能看懂的 mmit 文件',450,78,cl.g,13);
+
+  const files=[
+    {name:'peft_strategy.py',col:cl.g},
+    {name:'trainer.py',col:cl.a},
+    {name:'schema.py',col:cl.o},
+    {name:'lora_in_lora_strategy.py',col:cl.pk},
+  ];
+  files.forEach((f,i)=>{
+    rr(x,55+i*210,100,195,30,4,f.col+'08',f.col+'20');
+    txn(x,f.name,55+i*210+97,115,f.col,8);
+  });
+
+  // 4 rounds
+  rr(x,30,160,840,75,10,cl.y+'06',cl.y+'15');
+  tx(x,'四轮知识全景',450,180,cl.y,12);
+
+  const rounds=[
+    {r:'R1 概念',desc:'W + B·A',col:cl.dim},
+    {r:'R2 API',desc:'LoraConfig, get_peft_model',col:cl.a},
+    {r:'R3 内部',desc:'调用链, forward, 初始化',col:cl.g},
+    {r:'R4 mmit',desc:'Strategy, Trainer, Config',col:cl.pk},
+  ];
+  rounds.forEach((r,i)=>{
+    rr(x,55+i*210,200,200,25,4,r.col+'10',r.col+'25');
+    txn(x,r.r+': '+r.desc,55+i*210+100,212,r.col,7);
+    if(i<3) ar(x,55+i*210+203,212,55+(i+1)*210,212,cl.dim);
+  });
+
+  // Skills
+  rr(x,30,250,840,155,10,cl.p+'06',cl.p+'15');
+  tx(x,'你现在能判断代码对不对',450,273,cl.p,13);
+
+  const skills=[
+    'get_peft_model 参数对不对（r, alpha, target_modules）',
+    'B=0 初始化有没有（训练开始时模型不变）',
+    'requires_grad 过滤对不对（只训 A/B）',
+    'save/load 用对了没有（peft vs PyTorch 原生）',
+    '模块替换写法对不对（setattr / _modules）',
+    'param_group 分组和 lr 合不合理',
+  ];
+  skills.forEach((s,i)=>{
+    const col=i%2===0?0:1;
+    const row=Math.floor(i/2);
+    txn(x,'✓ '+s,55+col*420,300+row*28,cl.t,8,'left');
+  });
+};
+
+buildProgress();render(true);
+</script>
+</body>
+</html>

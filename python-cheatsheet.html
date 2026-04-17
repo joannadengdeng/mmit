@@ -1,0 +1,1370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Python Cheatsheet</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --heading: #f0f6fc;
+    --accent: #58a6ff;
+    --accent2: #7ee787;
+    --accent3: #d2a8ff;
+    --accent4: #ffa657;
+    --accent5: #ff7b72;
+    --accent6: #79c0ff;
+    --code-bg: #0d1117;
+    --kw: #ff7b72;
+    --str: #a5d6ff;
+    --func: #d2a8ff;
+    --num: #79c0ff;
+    --comment: #8b949e;
+    --builtin: #ffa657;
+    --op: #ff7b72;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 20px;
+  }
+
+  .header {
+    text-align: center;
+    padding: 40px 20px 30px;
+    margin-bottom: 30px;
+    border-bottom: 1px solid var(--border);
+  }
+  .header h1 {
+    font-size: 2.8em;
+    color: var(--heading);
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+  .header h1 span { color: var(--accent3); }
+  .header p { color: var(--comment); font-size: 1.1em; }
+
+  .toc {
+    max-width: 900px;
+    margin: 0 auto 40px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+  }
+  .toc a {
+    color: var(--accent);
+    text-decoration: none;
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 0.85em;
+    transition: all 0.2s;
+  }
+  .toc a:hover {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .section {
+    margin-bottom: 50px;
+  }
+  .section-title {
+    font-size: 1.6em;
+    color: var(--heading);
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title .badge {
+    font-size: 0.5em;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-weight: 400;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 16px;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 10px 16px;
+    font-weight: 600;
+    font-size: 0.95em;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-header .tag {
+    font-size: 0.7em;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 400;
+  }
+
+  pre {
+    background: var(--code-bg);
+    padding: 14px 16px;
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+    font-size: 0.82em;
+    line-height: 1.65;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .note {
+    padding: 10px 16px;
+    font-size: 0.82em;
+    color: var(--comment);
+    border-top: 1px solid var(--border);
+    background: rgba(88,166,255,0.03);
+  }
+  .note strong { color: var(--accent); }
+
+  .wide { grid-column: 1 / -1; }
+
+  .k { color: var(--kw); }
+  .s { color: var(--str); }
+  .f { color: var(--func); }
+  .n { color: var(--num); }
+  .c { color: var(--comment); font-style: italic; }
+  .b { color: var(--builtin); }
+  .o { color: var(--op); }
+  .v { color: var(--text); }
+  .cls { color: var(--accent2); }
+
+  .t1 { color: var(--accent); border-color: var(--accent); }
+  .t2 { color: var(--accent2); border-color: var(--accent2); }
+  .t3 { color: var(--accent3); border-color: var(--accent3); }
+  .t4 { color: var(--accent4); border-color: var(--accent4); }
+  .t5 { color: var(--accent5); border-color: var(--accent5); }
+  .t6 { color: var(--accent6); border-color: var(--accent6); }
+  .bg1 { background: rgba(88,166,255,0.1); }
+  .bg2 { background: rgba(126,231,135,0.1); }
+  .bg3 { background: rgba(210,168,255,0.1); }
+  .bg4 { background: rgba(255,166,87,0.1); }
+  .bg5 { background: rgba(255,123,114,0.1); }
+  .bg6 { background: rgba(121,192,255,0.1); }
+
+  .table-wrap { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85em;
+  }
+  th, td {
+    padding: 8px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  th { color: var(--accent); font-weight: 600; background: rgba(88,166,255,0.05); }
+  td code {
+    font-family: 'SF Mono', monospace;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.95em;
+    color: var(--accent4);
+  }
+
+  @media (max-width: 800px) {
+    .grid { grid-template-columns: 1fr; }
+    .header h1 { font-size: 2em; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>Python</span> Cheatsheet</h1>
+  <p>Quick reference for Python 3 syntax, data structures, and common patterns</p>
+</div>
+
+<div class="toc">
+  <a href="#basics">Basics</a>
+  <a href="#strings">Strings</a>
+  <a href="#lists">Lists</a>
+  <a href="#dicts">Dicts</a>
+  <a href="#sets">Sets</a>
+  <a href="#tuples">Tuples</a>
+  <a href="#control">Control Flow</a>
+  <a href="#functions">Functions</a>
+  <a href="#comprehensions">Comprehensions</a>
+  <a href="#classes">Classes</a>
+  <a href="#exceptions">Exceptions</a>
+  <a href="#files">File I/O</a>
+  <a href="#itertools">Itertools</a>
+  <a href="#regex">Regex</a>
+  <a href="#typing">Type Hints</a>
+  <a href="#decorators">Decorators</a>
+  <a href="#dataclasses">Dataclasses</a>
+  <a href="#pathlib">Pathlib</a>
+  <a href="#oneliners">One-Liners</a>
+</div>
+
+<div class="container">
+
+<!-- ==================== BASICS ==================== -->
+<div class="section" id="basics">
+  <div class="section-title">Variables &amp; Data Types <span class="badge bg1 t1">Basics</span></div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-header bg1 t1">Variables &amp; Assignment</div>
+<pre>
+<span class="v">x</span> <span class="o">=</span> <span class="n">10</span>                  <span class="c"># int</span>
+<span class="v">pi</span> <span class="o">=</span> <span class="n">3.14</span>               <span class="c"># float</span>
+<span class="v">name</span> <span class="o">=</span> <span class="s">"Alice"</span>           <span class="c"># str</span>
+<span class="v">flag</span> <span class="o">=</span> <span class="k">True</span>              <span class="c"># bool</span>
+<span class="v">nothing</span> <span class="o">=</span> <span class="k">None</span>           <span class="c"># NoneType</span>
+
+<span class="c"># Multiple assignment</span>
+<span class="v">a</span>, <span class="v">b</span>, <span class="v">c</span> <span class="o">=</span> <span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>
+<span class="v">a</span> <span class="o">=</span> <span class="v">b</span> <span class="o">=</span> <span class="v">c</span> <span class="o">=</span> <span class="n">0</span>           <span class="c"># all same value</span>
+<span class="v">a</span>, <span class="v">b</span> <span class="o">=</span> <span class="v">b</span>, <span class="v">a</span>             <span class="c"># swap</span>
+
+<span class="c"># Augmented assignment</span>
+<span class="v">x</span> <span class="o">+=</span> <span class="n">1</span>   <span class="c"># x = x + 1</span>
+<span class="v">x</span> <span class="o">*=</span> <span class="n">2</span>   <span class="c"># x = x * 2</span>
+<span class="v">x</span> <span class="o">//=</span> <span class="n">3</span>  <span class="c"># x = x // 3</span>
+<span class="v">x</span> <span class="o">**=</span> <span class="n">2</span>  <span class="c"># x = x ** 2</span>
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg1 t1">Type Conversion</div>
+<pre>
+<span class="b">int</span>(<span class="s">"42"</span>)        <span class="c"># 42</span>
+<span class="b">float</span>(<span class="s">"3.14"</span>)    <span class="c"># 3.14</span>
+<span class="b">str</span>(<span class="n">42</span>)          <span class="c"># "42"</span>
+<span class="b">bool</span>(<span class="n">0</span>)          <span class="c"># False</span>
+<span class="b">bool</span>(<span class="s">""</span>)         <span class="c"># False</span>
+<span class="b">bool</span>(<span class="s">"hello"</span>)    <span class="c"># True</span>
+<span class="b">list</span>(<span class="s">"abc"</span>)      <span class="c"># ['a', 'b', 'c']</span>
+<span class="b">tuple</span>([<span class="n">1</span>,<span class="n">2</span>])     <span class="c"># (1, 2)</span>
+<span class="b">set</span>([<span class="n">1</span>,<span class="n">1</span>,<span class="n">2</span>])     <span class="c"># {1, 2}</span>
+<span class="b">dict</span>([(<span class="s">"a"</span>,<span class="n">1</span>)])  <span class="c"># {"a": 1}</span>
+
+<span class="c"># Check type</span>
+<span class="b">type</span>(<span class="v">x</span>)                <span class="c"># &lt;class 'int'&gt;</span>
+<span class="b">isinstance</span>(<span class="v">x</span>, <span class="b">int</span>)    <span class="c"># True</span>
+<span class="b">isinstance</span>(<span class="v">x</span>, (<span class="b">int</span>, <span class="b">float</span>))  <span class="c"># multi-check</span>
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg1 t1">Operators</div>
+<pre>
+<span class="c"># Arithmetic</span>
+<span class="n">7</span> <span class="o">/</span> <span class="n">2</span>    <span class="c"># 3.5    true division</span>
+<span class="n">7</span> <span class="o">//</span> <span class="n">2</span>   <span class="c"># 3      floor division</span>
+<span class="n">7</span> <span class="o">%</span> <span class="n">2</span>    <span class="c"># 1      modulo</span>
+<span class="n">2</span> <span class="o">**</span> <span class="n">10</span>  <span class="c"># 1024   power</span>
+
+<span class="c"># Comparison</span>
+<span class="o">==  !=  &lt;  &gt;  &lt;=  &gt;=</span>
+<span class="n">1</span> <span class="o">&lt;</span> <span class="v">x</span> <span class="o">&lt;</span> <span class="n">10</span>     <span class="c"># chained comparison</span>
+
+<span class="c"># Logical</span>
+<span class="k">and</span>  <span class="k">or</span>  <span class="k">not</span>
+
+<span class="c"># Identity &amp; Membership</span>
+<span class="v">x</span> <span class="k">is</span> <span class="k">None</span>         <span class="c"># identity check</span>
+<span class="v">x</span> <span class="k">is not</span> <span class="k">None</span>
+<span class="s">"a"</span> <span class="k">in</span> <span class="s">"abc"</span>       <span class="c"># True</span>
+<span class="n">3</span> <span class="k">not in</span> [<span class="n">1</span>,<span class="n">2</span>]    <span class="c"># True</span>
+
+<span class="c"># Walrus operator (3.8+)</span>
+<span class="k">if</span> (<span class="v">n</span> <span class="o">:=</span> <span class="b">len</span>(<span class="v">data</span>)) <span class="o">&gt;</span> <span class="n">10</span>:
+    <span class="b">print</span>(<span class="v">n</span>)
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg1 t1">Numbers</div>
+<pre>
+<span class="c"># Useful built-ins</span>
+<span class="b">abs</span>(<span class="o">-</span><span class="n">5</span>)            <span class="c"># 5</span>
+<span class="b">round</span>(<span class="n">3.7</span>)         <span class="c"># 4</span>
+<span class="b">round</span>(<span class="n">3.14159</span>, <span class="n">2</span>)  <span class="c"># 3.14</span>
+<span class="b">min</span>(<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>)       <span class="c"># 1</span>
+<span class="b">max</span>(<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>)       <span class="c"># 3</span>
+<span class="b">sum</span>([<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>])    <span class="c"># 6</span>
+<span class="b">divmod</span>(<span class="n">17</span>, <span class="n">5</span>)      <span class="c"># (3, 2)  quotient, remainder</span>
+<span class="b">pow</span>(<span class="n">2</span>, <span class="n">10</span>)          <span class="c"># 1024</span>
+
+<span class="c"># Number formats</span>
+<span class="n">0b1010</span>    <span class="c"># 10  binary</span>
+<span class="n">0o17</span>      <span class="c"># 15  octal</span>
+<span class="n">0xff</span>      <span class="c"># 255 hex</span>
+<span class="n">1_000_000</span> <span class="c"># underscores for readability</span>
+
+<span class="c"># Convert to string representations</span>
+<span class="b">bin</span>(<span class="n">10</span>)   <span class="c"># '0b1010'</span>
+<span class="b">oct</span>(<span class="n">15</span>)   <span class="c"># '0o17'</span>
+<span class="b">hex</span>(<span class="n">255</span>)  <span class="c"># '0xff'</span>
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== STRINGS ==================== -->
+<div class="section" id="strings">
+  <div class="section-title">Strings <span class="badge bg2 t2">str</span></div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-header bg2 t2">Creation &amp; Formatting</div>
+<pre>
+<span class="c"># f-strings (3.6+)</span>
+<span class="v">name</span> <span class="o">=</span> <span class="s">"World"</span>
+<span class="s">f"Hello, </span>{<span class="v">name</span>}<span class="s">!"</span>        <span class="c"># "Hello, World!"</span>
+<span class="s">f"</span>{<span class="n">3.14159</span><span class="s">:.2f}"</span>         <span class="c"># "3.14"</span>
+<span class="s">f"</span>{<span class="n">42</span><span class="s">:08b}"</span>              <span class="c"># "00101010"</span>
+<span class="s">f"</span>{<span class="n">1000000</span><span class="s">:,}"</span>           <span class="c"># "1,000,000"</span>
+<span class="s">f"</span>{<span class="s">'hi'</span><span class="s">:&gt;10}"</span>            <span class="c"># "        hi"</span>
+<span class="s">f"</span>{<span class="s">'hi'</span><span class="s">:^10}"</span>            <span class="c"># "    hi    "</span>
+<span class="s">f"</span>{<span class="v">x</span> <span class="o">=</span>}<span class="s">"</span>                 <span class="c"># "x = 42" (3.8+ debug)</span>
+
+<span class="c"># Multi-line</span>
+<span class="v">s</span> <span class="o">=</span> <span class="s">"""line 1
+line 2
+line 3"""</span>
+
+<span class="c"># Raw string (no escapes)</span>
+<span class="v">path</span> <span class="o">=</span> <span class="s">r"C:\Users\name"</span>
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg2 t2">Common Methods</div>
+<pre>
+<span class="v">s</span> <span class="o">=</span> <span class="s">"  Hello, World!  "</span>
+
+<span class="v">s</span>.<span class="f">strip</span>()          <span class="c"># "Hello, World!"</span>
+<span class="v">s</span>.<span class="f">lstrip</span>()         <span class="c"># "Hello, World!  "</span>
+<span class="v">s</span>.<span class="f">rstrip</span>()         <span class="c"># "  Hello, World!"</span>
+
+<span class="v">s</span>.<span class="f">lower</span>()           <span class="c"># "  hello, world!  "</span>
+<span class="v">s</span>.<span class="f">upper</span>()           <span class="c"># "  HELLO, WORLD!  "</span>
+<span class="v">s</span>.<span class="f">title</span>()           <span class="c"># "  Hello, World!  "</span>
+<span class="v">s</span>.<span class="f">capitalize</span>()
+
+<span class="v">s</span>.<span class="f">replace</span>(<span class="s">"World"</span>, <span class="s">"Python"</span>)
+<span class="v">s</span>.<span class="f">startswith</span>(<span class="s">"  H"</span>) <span class="c"># True</span>
+<span class="v">s</span>.<span class="f">endswith</span>(<span class="s">"!  "</span>)   <span class="c"># True</span>
+<span class="v">s</span>.<span class="f">find</span>(<span class="s">"World"</span>)     <span class="c"># 8   (-1 if not found)</span>
+<span class="v">s</span>.<span class="f">index</span>(<span class="s">"World"</span>)    <span class="c"># 8   (ValueError if not)</span>
+<span class="v">s</span>.<span class="f">count</span>(<span class="s">"l"</span>)        <span class="c"># 3</span>
+
+<span class="s">"hello"</span>.<span class="f">isalpha</span>()   <span class="c"># True</span>
+<span class="s">"123"</span>.<span class="f">isdigit</span>()     <span class="c"># True</span>
+<span class="s">"abc123"</span>.<span class="f">isalnum</span>()  <span class="c"># True</span>
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg2 t2">Split &amp; Join</div>
+<pre>
+<span class="c"># Split</span>
+<span class="s">"a,b,c"</span>.<span class="f">split</span>(<span class="s">","</span>)        <span class="c"># ['a', 'b', 'c']</span>
+<span class="s">"a b  c"</span>.<span class="f">split</span>()          <span class="c"># ['a', 'b', 'c']</span>
+<span class="s">"a,b,c"</span>.<span class="f">split</span>(<span class="s">","</span>, <span class="n">1</span>)     <span class="c"># ['a', 'b,c']</span>
+<span class="s">"a\nb\nc"</span>.<span class="f">splitlines</span>()    <span class="c"># ['a', 'b', 'c']</span>
+
+<span class="c"># Join</span>
+<span class="s">", "</span>.<span class="f">join</span>([<span class="s">"a"</span>, <span class="s">"b"</span>, <span class="s">"c"</span>])  <span class="c"># "a, b, c"</span>
+<span class="s">"\n"</span>.<span class="f">join</span>(<span class="v">lines</span>)
+
+<span class="c"># Partition</span>
+<span class="s">"key=value"</span>.<span class="f">partition</span>(<span class="s">"="</span>)
+<span class="c"># ('key', '=', 'value')</span>
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg2 t2">Slicing</div>
+<pre>
+<span class="v">s</span> <span class="o">=</span> <span class="s">"Python"</span>
+<span class="v">s</span>[<span class="n">0</span>]      <span class="c"># 'P'</span>
+<span class="v">s</span>[<span class="o">-</span><span class="n">1</span>]     <span class="c"># 'n'</span>
+<span class="v">s</span>[<span class="n">1</span>:<span class="n">4</span>]    <span class="c"># 'yth'</span>
+<span class="v">s</span>[:<span class="n">3</span>]     <span class="c"># 'Pyt'</span>
+<span class="v">s</span>[<span class="n">3</span>:]     <span class="c"># 'hon'</span>
+<span class="v">s</span>[::<span class="n">2</span>]    <span class="c"># 'Pto'     every 2nd char</span>
+<span class="v">s</span>[::<span class="o">-</span><span class="n">1</span>]   <span class="c"># 'nohtyP'  reverse</span>
+
+<span class="c"># Works the same for lists!</span>
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== LISTS ==================== -->
+<div class="section" id="lists">
+  <div class="section-title">Lists <span class="badge bg3 t3">list</span></div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-header bg3 t3">Create &amp; Modify</div>
+<pre>
+<span class="v">a</span> <span class="o">=</span> [<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>]
+<span class="v">b</span> <span class="o">=</span> <span class="b">list</span>(<span class="b">range</span>(<span class="n">5</span>))   <span class="c"># [0, 1, 2, 3, 4]</span>
+<span class="v">c</span> <span class="o">=</span> [<span class="n">0</span>] <span class="o">*</span> <span class="n">5</span>           <span class="c"># [0, 0, 0, 0, 0]</span>
+
+<span class="c"># Modify</span>
+<span class="v">a</span>.<span class="f">append</span>(<span class="n">4</span>)           <span class="c"># [1, 2, 3, 4]</span>
+<span class="v">a</span>.<span class="f">extend</span>([<span class="n">5</span>, <span class="n">6</span>])     <span class="c"># [1, 2, 3, 4, 5, 6]</span>
+<span class="v">a</span>.<span class="f">insert</span>(<span class="n">0</span>, <span class="n">0</span>)       <span class="c"># [0, 1, 2, 3, 4, 5, 6]</span>
+<span class="v">a</span>.<span class="f">pop</span>()               <span class="c"># removes &amp; returns last</span>
+<span class="v">a</span>.<span class="f">pop</span>(<span class="n">0</span>)              <span class="c"># removes &amp; returns first</span>
+<span class="v">a</span>.<span class="f">remove</span>(<span class="n">3</span>)           <span class="c"># removes first occurrence</span>
+<span class="k">del</span> <span class="v">a</span>[<span class="n">1</span>]              <span class="c"># delete by index</span>
+<span class="v">a</span>.<span class="f">clear</span>()             <span class="c"># remove all</span>
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg3 t3">Search &amp; Sort</div>
+<pre>
+<span class="v">a</span> <span class="o">=</span> [<span class="n">3</span>, <span class="n">1</span>, <span class="n">4</span>, <span class="n">1</span>, <span class="n">5</span>, <span class="n">9</span>]
+
+<span class="v">a</span>.<span class="f">index</span>(<span class="n">4</span>)       <span class="c"># 2     first occurrence</span>
+<span class="v">a</span>.<span class="f">count</span>(<span class="n">1</span>)       <span class="c"># 2</span>
+<span class="n">4</span> <span class="k">in</span> <span class="v">a</span>           <span class="c"># True</span>
+
+<span class="c"># Sort in-place</span>
+<span class="v">a</span>.<span class="f">sort</span>()                      <span class="c"># ascending</span>
+<span class="v">a</span>.<span class="f">sort</span>(<span class="v">reverse</span><span class="o">=</span><span class="k">True</span>)         <span class="c"># descending</span>
+<span class="v">a</span>.<span class="f">sort</span>(<span class="v">key</span><span class="o">=</span><span class="b">abs</span>)               <span class="c"># custom key</span>
+
+<span class="c"># Return new sorted list</span>
+<span class="b">sorted</span>(<span class="v">a</span>)
+<span class="b">sorted</span>(<span class="v">a</span>, <span class="v">key</span><span class="o">=</span><span class="k">lambda</span> <span class="v">x</span>: <span class="v">x</span>[<span class="n">1</span>])
+
+<span class="v">a</span>.<span class="f">reverse</span>()      <span class="c"># in-place</span>
+<span class="b">reversed</span>(<span class="v">a</span>)      <span class="c"># returns iterator</span>
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg3 t3">Useful Patterns</div>
+<pre>
+<span class="c"># Unpack</span>
+<span class="v">first</span>, <span class="o">*</span><span class="v">rest</span> <span class="o">=</span> [<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>, <span class="n">4</span>]
+<span class="c"># first=1, rest=[2, 3, 4]</span>
+
+<span class="v">first</span>, <span class="o">*</span><span class="v">mid</span>, <span class="v">last</span> <span class="o">=</span> [<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>, <span class="n">4</span>]
+<span class="c"># first=1, mid=[2, 3], last=4</span>
+
+<span class="c"># Enumerate</span>
+<span class="k">for</span> <span class="v">i</span>, <span class="v">val</span> <span class="k">in</span> <span class="b">enumerate</span>(<span class="v">lst</span>):
+    <span class="b">print</span>(<span class="v">i</span>, <span class="v">val</span>)
+
+<span class="c"># Zip</span>
+<span class="k">for</span> <span class="v">a</span>, <span class="v">b</span> <span class="k">in</span> <span class="b">zip</span>(<span class="v">list1</span>, <span class="v">list2</span>):
+    <span class="b">print</span>(<span class="v">a</span>, <span class="v">b</span>)
+
+<span class="c"># Flatten</span>
+<span class="v">nested</span> <span class="o">=</span> [[<span class="n">1</span>,<span class="n">2</span>], [<span class="n">3</span>,<span class="n">4</span>], [<span class="n">5</span>]]
+<span class="v">flat</span> <span class="o">=</span> [<span class="v">x</span> <span class="k">for</span> <span class="v">sub</span> <span class="k">in</span> <span class="v">nested</span> <span class="k">for</span> <span class="v">x</span> <span class="k">in</span> <span class="v">sub</span>]
+<span class="c"># [1, 2, 3, 4, 5]</span>
+
+<span class="c"># Copy (shallow)</span>
+<span class="v">b</span> <span class="o">=</span> <span class="v">a</span>[:]        <span class="c"># or a.copy() or list(a)</span>
+
+<span class="c"># Deep copy</span>
+<span class="k">import</span> <span class="v">copy</span>
+<span class="v">b</span> <span class="o">=</span> <span class="v">copy</span>.<span class="f">deepcopy</span>(<span class="v">a</span>)
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg3 t3">Functional Style</div>
+<pre>
+<span class="v">nums</span> <span class="o">=</span> [<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>, <span class="n">4</span>, <span class="n">5</span>]
+
+<span class="c"># map</span>
+<span class="b">list</span>(<span class="b">map</span>(<span class="k">lambda</span> <span class="v">x</span>: <span class="v">x</span><span class="o">**</span><span class="n">2</span>, <span class="v">nums</span>))
+<span class="c"># [1, 4, 9, 16, 25]</span>
+
+<span class="c"># filter</span>
+<span class="b">list</span>(<span class="b">filter</span>(<span class="k">lambda</span> <span class="v">x</span>: <span class="v">x</span> <span class="o">%</span> <span class="n">2</span> <span class="o">==</span> <span class="n">0</span>, <span class="v">nums</span>))
+<span class="c"># [2, 4]</span>
+
+<span class="c"># reduce</span>
+<span class="k">from</span> <span class="v">functools</span> <span class="k">import</span> <span class="v">reduce</span>
+<span class="b">reduce</span>(<span class="k">lambda</span> <span class="v">a</span>, <span class="v">b</span>: <span class="v">a</span> <span class="o">+</span> <span class="v">b</span>, <span class="v">nums</span>)
+<span class="c"># 15</span>
+
+<span class="c"># any / all</span>
+<span class="b">any</span>(<span class="v">x</span> <span class="o">&gt;</span> <span class="n">3</span> <span class="k">for</span> <span class="v">x</span> <span class="k">in</span> <span class="v">nums</span>)  <span class="c"># True</span>
+<span class="b">all</span>(<span class="v">x</span> <span class="o">&gt;</span> <span class="n">0</span> <span class="k">for</span> <span class="v">x</span> <span class="k">in</span> <span class="v">nums</span>)  <span class="c"># True</span>
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== DICTS ==================== -->
+<div class="section" id="dicts">
+  <div class="section-title">Dictionaries <span class="badge bg4 t4">dict</span></div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-header bg4 t4">Create &amp; Access</div>
+<pre>
+<span class="v">d</span> <span class="o">=</span> {<span class="s">"name"</span>: <span class="s">"Alice"</span>, <span class="s">"age"</span>: <span class="n">30</span>}
+<span class="v">d</span> <span class="o">=</span> <span class="b">dict</span>(<span class="v">name</span><span class="o">=</span><span class="s">"Alice"</span>, <span class="v">age</span><span class="o">=</span><span class="n">30</span>)
+<span class="v">d</span> <span class="o">=</span> <span class="b">dict</span>.<span class="f">fromkeys</span>([<span class="s">"a"</span>,<span class="s">"b"</span>], <span class="n">0</span>)  <span class="c"># {"a":0,"b":0}</span>
+
+<span class="c"># Access</span>
+<span class="v">d</span>[<span class="s">"name"</span>]              <span class="c"># "Alice" (KeyError if missing)</span>
+<span class="v">d</span>.<span class="f">get</span>(<span class="s">"name"</span>)           <span class="c"># "Alice" (None if missing)</span>
+<span class="v">d</span>.<span class="f">get</span>(<span class="s">"email"</span>, <span class="s">"N/A"</span>)  <span class="c"># "N/A"  default</span>
+
+<span class="c"># Modify</span>
+<span class="v">d</span>[<span class="s">"email"</span>] <span class="o">=</span> <span class="s">"a@b.c"</span>   <span class="c"># add / update</span>
+<span class="v">d</span>.<span class="f">update</span>({<span class="s">"age"</span>: <span class="n">31</span>})   <span class="c"># merge</span>
+<span class="v">d</span> <span class="o">|=</span> {<span class="s">"age"</span>: <span class="n">31</span>}        <span class="c"># merge (3.9+)</span>
+<span class="v">merged</span> <span class="o">=</span> <span class="v">d1</span> <span class="o">|</span> <span class="v">d2</span>       <span class="c"># new merged dict (3.9+)</span>
+
+<span class="c"># Remove</span>
+<span class="k">del</span> <span class="v">d</span>[<span class="s">"email"</span>]
+<span class="v">d</span>.<span class="f">pop</span>(<span class="s">"age"</span>)            <span class="c"># returns 31</span>
+<span class="v">d</span>.<span class="f">pop</span>(<span class="s">"x"</span>, <span class="k">None</span>)        <span class="c"># safe pop</span>
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg4 t4">Iterate &amp; Views</div>
+<pre>
+<span class="v">d</span> <span class="o">=</span> {<span class="s">"a"</span>: <span class="n">1</span>, <span class="s">"b"</span>: <span class="n">2</span>, <span class="s">"c"</span>: <span class="n">3</span>}
+
+<span class="k">for</span> <span class="v">key</span> <span class="k">in</span> <span class="v">d</span>:               <span class="c"># keys</span>
+<span class="k">for</span> <span class="v">val</span> <span class="k">in</span> <span class="v">d</span>.<span class="f">values</span>():     <span class="c"># values</span>
+<span class="k">for</span> <span class="v">k</span>, <span class="v">v</span> <span class="k">in</span> <span class="v">d</span>.<span class="f">items</span>():     <span class="c"># key-value pairs</span>
+
+<span class="c"># Check membership</span>
+<span class="s">"a"</span> <span class="k">in</span> <span class="v">d</span>                    <span class="c"># True (checks keys)</span>
+
+<span class="c"># setdefault: get or insert</span>
+<span class="v">d</span>.<span class="f">setdefault</span>(<span class="s">"d"</span>, []).<span class="f">append</span>(<span class="n">1</span>)
+
+<span class="c"># defaultdict</span>
+<span class="k">from</span> <span class="v">collections</span> <span class="k">import</span> <span class="v">defaultdict</span>
+<span class="v">dd</span> <span class="o">=</span> <span class="b">defaultdict</span>(<span class="b">list</span>)
+<span class="v">dd</span>[<span class="s">"key"</span>].<span class="f">append</span>(<span class="n">1</span>)       <span class="c"># auto-creates list</span>
+
+<span class="c"># Counter</span>
+<span class="k">from</span> <span class="v">collections</span> <span class="k">import</span> <span class="v">Counter</span>
+<span class="b">Counter</span>(<span class="s">"abracadabra"</span>)
+<span class="c"># Counter({'a':5,'b':2,'r':2,'c':1,'d':1})</span>
+<span class="b">Counter</span>(<span class="v">words</span>).<span class="f">most_common</span>(<span class="n">3</span>)
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SETS ==================== -->
+<div class="section" id="sets">
+  <div class="section-title">Sets <span class="badge bg5 t5">set</span></div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-header bg5 t5">Create &amp; Modify</div>
+<pre>
+<span class="v">s</span> <span class="o">=</span> {<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>}
+<span class="v">s</span> <span class="o">=</span> <span class="b">set</span>([<span class="n">1</span>, <span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>])   <span class="c"># {1, 2, 3}</span>
+<span class="v">empty</span> <span class="o">=</span> <span class="b">set</span>()            <span class="c"># NOT {} (that's a dict)</span>
+
+<span class="v">s</span>.<span class="f">add</span>(<span class="n">4</span>)
+<span class="v">s</span>.<span class="f">discard</span>(<span class="n">2</span>)   <span class="c"># no error if missing</span>
+<span class="v">s</span>.<span class="f">remove</span>(<span class="n">3</span>)    <span class="c"># KeyError if missing</span>
+<span class="v">s</span>.<span class="f">pop</span>()         <span class="c"># remove arbitrary element</span>
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg5 t5">Set Operations</div>
+<pre>
+<span class="v">a</span> <span class="o">=</span> {<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>}
+<span class="v">b</span> <span class="o">=</span> {<span class="n">2</span>, <span class="n">3</span>, <span class="n">4</span>}
+
+<span class="v">a</span> <span class="o">|</span> <span class="v">b</span>    <span class="c"># {1, 2, 3, 4}    union</span>
+<span class="v">a</span> <span class="o">&amp;</span> <span class="v">b</span>    <span class="c"># {2, 3}          intersection</span>
+<span class="v">a</span> <span class="o">-</span> <span class="v">b</span>    <span class="c"># {1}             difference</span>
+<span class="v">a</span> <span class="o">^</span> <span class="v">b</span>    <span class="c"># {1, 4}          symmetric diff</span>
+
+<span class="v">a</span>.<span class="f">issubset</span>(<span class="v">b</span>)      <span class="c"># False</span>
+<span class="v">a</span>.<span class="f">issuperset</span>(<span class="v">b</span>)    <span class="c"># False</span>
+<span class="v">a</span>.<span class="f">isdisjoint</span>(<span class="v">b</span>)    <span class="c"># False</span>
+
+<span class="c"># frozenset: immutable, hashable set</span>
+<span class="v">fs</span> <span class="o">=</span> <span class="b">frozenset</span>([<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>])
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== TUPLES ==================== -->
+<div class="section" id="tuples">
+  <div class="section-title">Tuples <span class="badge bg6 t6">tuple</span></div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-header bg6 t6">Tuples &amp; Named Tuples</div>
+<pre>
+<span class="c"># Tuples are immutable</span>
+<span class="v">t</span> <span class="o">=</span> (<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>)
+<span class="v">t</span> <span class="o">=</span> <span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>          <span class="c"># parentheses optional</span>
+<span class="v">single</span> <span class="o">=</span> (<span class="n">42</span>,)       <span class="c"># trailing comma needed!</span>
+
+<span class="v">t</span>[<span class="n">0</span>]                  <span class="c"># 1</span>
+<span class="v">a</span>, <span class="v">b</span>, <span class="v">c</span> <span class="o">=</span> <span class="v">t</span>          <span class="c"># unpack</span>
+
+<span class="c"># Named tuples</span>
+<span class="k">from</span> <span class="v">collections</span> <span class="k">import</span> <span class="v">namedtuple</span>
+<span class="v">Point</span> <span class="o">=</span> <span class="b">namedtuple</span>(<span class="s">"Point"</span>, [<span class="s">"x"</span>, <span class="s">"y"</span>])
+<span class="v">p</span> <span class="o">=</span> <span class="v">Point</span>(<span class="n">3</span>, <span class="n">4</span>)
+<span class="v">p</span>.<span class="v">x</span>                   <span class="c"># 3</span>
+<span class="v">p</span>.<span class="v">y</span>                   <span class="c"># 4</span>
+
+<span class="c"># typing.NamedTuple (modern way)</span>
+<span class="k">from</span> <span class="v">typing</span> <span class="k">import</span> <span class="v">NamedTuple</span>
+<span class="k">class</span> <span class="cls">Point</span>(<span class="v">NamedTuple</span>):
+    <span class="v">x</span>: <span class="b">float</span>
+    <span class="v">y</span>: <span class="b">float</span>
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== CONTROL FLOW ==================== -->
+<div class="section" id="control">
+  <div class="section-title">Control Flow <span class="badge bg1 t1">Flow</span></div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-header bg1 t1">if / elif / else</div>
+<pre>
+<span class="k">if</span> <span class="v">x</span> <span class="o">&gt;</span> <span class="n">0</span>:
+    <span class="b">print</span>(<span class="s">"positive"</span>)
+<span class="k">elif</span> <span class="v">x</span> <span class="o">==</span> <span class="n">0</span>:
+    <span class="b">print</span>(<span class="s">"zero"</span>)
+<span class="k">else</span>:
+    <span class="b">print</span>(<span class="s">"negative"</span>)
+
+<span class="c"># Ternary</span>
+<span class="v">result</span> <span class="o">=</span> <span class="s">"even"</span> <span class="k">if</span> <span class="v">x</span> <span class="o">%</span> <span class="n">2</span> <span class="o">==</span> <span class="n">0</span> <span class="k">else</span> <span class="s">"odd"</span>
+
+<span class="c"># Match statement (3.10+)</span>
+<span class="k">match</span> <span class="v">command</span>:
+    <span class="k">case</span> <span class="s">"quit"</span>:
+        <span class="v">sys</span>.<span class="f">exit</span>()
+    <span class="k">case</span> <span class="s">"greet"</span> | <span class="s">"hello"</span>:
+        <span class="b">print</span>(<span class="s">"Hi!"</span>)
+    <span class="k">case</span> <span class="v">_</span>:
+        <span class="b">print</span>(<span class="s">"unknown"</span>)
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg1 t1">Loops</div>
+<pre>
+<span class="c"># for loop</span>
+<span class="k">for</span> <span class="v">i</span> <span class="k">in</span> <span class="b">range</span>(<span class="n">5</span>):          <span class="c"># 0,1,2,3,4</span>
+<span class="k">for</span> <span class="v">i</span> <span class="k">in</span> <span class="b">range</span>(<span class="n">2</span>, <span class="n">10</span>, <span class="n">2</span>):  <span class="c"># 2,4,6,8</span>
+<span class="k">for</span> <span class="v">ch</span> <span class="k">in</span> <span class="s">"hello"</span>:         <span class="c"># iterate chars</span>
+<span class="k">for</span> <span class="v">item</span> <span class="k">in</span> <span class="v">my_list</span>:       <span class="c"># iterate list</span>
+<span class="k">for</span> <span class="v">k</span>, <span class="v">v</span> <span class="k">in</span> <span class="v">d</span>.<span class="f">items</span>():     <span class="c"># iterate dict</span>
+
+<span class="c"># while loop</span>
+<span class="k">while</span> <span class="v">x</span> <span class="o">&gt;</span> <span class="n">0</span>:
+    <span class="v">x</span> <span class="o">-=</span> <span class="n">1</span>
+
+<span class="c"># Loop control</span>
+<span class="k">break</span>       <span class="c"># exit loop</span>
+<span class="k">continue</span>    <span class="c"># skip to next iteration</span>
+
+<span class="c"># for-else: else runs if no break</span>
+<span class="k">for</span> <span class="v">item</span> <span class="k">in</span> <span class="v">items</span>:
+    <span class="k">if</span> <span class="v">item</span> <span class="o">==</span> <span class="v">target</span>:
+        <span class="k">break</span>
+<span class="k">else</span>:
+    <span class="b">print</span>(<span class="s">"not found"</span>)
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== FUNCTIONS ==================== -->
+<div class="section" id="functions">
+  <div class="section-title">Functions <span class="badge bg3 t3">def</span></div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-header bg3 t3">Definition &amp; Arguments</div>
+<pre>
+<span class="k">def</span> <span class="f">greet</span>(<span class="v">name</span>, <span class="v">greeting</span><span class="o">=</span><span class="s">"Hello"</span>):
+    <span class="s">"""Docstring goes here."""</span>
+    <span class="k">return</span> <span class="s">f"</span>{<span class="v">greeting</span>}<span class="s">, </span>{<span class="v">name</span>}<span class="s">!"</span>
+
+<span class="c"># Positional-only (3.8+) &amp; keyword-only</span>
+<span class="k">def</span> <span class="f">func</span>(<span class="v">pos_only</span>, <span class="o">/</span>, <span class="v">normal</span>, <span class="o">*</span>, <span class="v">kw_only</span>):
+    ...
+
+<span class="c"># *args and **kwargs</span>
+<span class="k">def</span> <span class="f">func</span>(<span class="o">*</span><span class="v">args</span>, <span class="o">**</span><span class="v">kwargs</span>):
+    <span class="b">print</span>(<span class="v">args</span>)     <span class="c"># tuple of positional args</span>
+    <span class="b">print</span>(<span class="v">kwargs</span>)   <span class="c"># dict of keyword args</span>
+
+<span class="c"># Unpack when calling</span>
+<span class="v">args</span> <span class="o">=</span> [<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>]
+<span class="f">func</span>(<span class="o">*</span><span class="v">args</span>)         <span class="c"># func(1, 2, 3)</span>
+<span class="v">kwargs</span> <span class="o">=</span> {<span class="s">"a"</span>: <span class="n">1</span>}
+<span class="f">func</span>(<span class="o">**</span><span class="v">kwargs</span>)      <span class="c"># func(a=1)</span>
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg3 t3">Lambda &amp; Closures</div>
+<pre>
+<span class="c"># Lambda (anonymous function)</span>
+<span class="v">square</span> <span class="o">=</span> <span class="k">lambda</span> <span class="v">x</span>: <span class="v">x</span> <span class="o">**</span> <span class="n">2</span>
+<span class="b">sorted</span>(<span class="v">items</span>, <span class="v">key</span><span class="o">=</span><span class="k">lambda</span> <span class="v">x</span>: <span class="v">x</span>[<span class="n">1</span>])
+
+<span class="c"># Closure</span>
+<span class="k">def</span> <span class="f">make_adder</span>(<span class="v">n</span>):
+    <span class="k">def</span> <span class="f">adder</span>(<span class="v">x</span>):
+        <span class="k">return</span> <span class="v">x</span> <span class="o">+</span> <span class="v">n</span>
+    <span class="k">return</span> <span class="v">adder</span>
+
+<span class="v">add5</span> <span class="o">=</span> <span class="f">make_adder</span>(<span class="n">5</span>)
+<span class="f">add5</span>(<span class="n">10</span>)  <span class="c"># 15</span>
+
+<span class="c"># Generator function</span>
+<span class="k">def</span> <span class="f">fibonacci</span>():
+    <span class="v">a</span>, <span class="v">b</span> <span class="o">=</span> <span class="n">0</span>, <span class="n">1</span>
+    <span class="k">while</span> <span class="k">True</span>:
+        <span class="k">yield</span> <span class="v">a</span>
+        <span class="v">a</span>, <span class="v">b</span> <span class="o">=</span> <span class="v">b</span>, <span class="v">a</span> <span class="o">+</span> <span class="v">b</span>
+
+<span class="v">gen</span> <span class="o">=</span> <span class="f">fibonacci</span>()
+<span class="b">next</span>(<span class="v">gen</span>)  <span class="c"># 0</span>
+<span class="b">next</span>(<span class="v">gen</span>)  <span class="c"># 1</span>
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== COMPREHENSIONS ==================== -->
+<div class="section" id="comprehensions">
+  <div class="section-title">Comprehensions <span class="badge bg2 t2">Pythonic</span></div>
+  <div class="grid">
+    <div class="card wide">
+      <div class="card-header bg2 t2">List / Dict / Set / Generator Comprehensions</div>
+<pre>
+<span class="c"># List comprehension</span>
+<span class="v">squares</span> <span class="o">=</span> [<span class="v">x</span><span class="o">**</span><span class="n">2</span> <span class="k">for</span> <span class="v">x</span> <span class="k">in</span> <span class="b">range</span>(<span class="n">10</span>)]                        <span class="c"># [0, 1, 4, 9, ...]</span>
+<span class="v">evens</span>   <span class="o">=</span> [<span class="v">x</span> <span class="k">for</span> <span class="v">x</span> <span class="k">in</span> <span class="b">range</span>(<span class="n">20</span>) <span class="k">if</span> <span class="v">x</span> <span class="o">%</span> <span class="n">2</span> <span class="o">==</span> <span class="n">0</span>]              <span class="c"># with filter</span>
+<span class="v">pairs</span>   <span class="o">=</span> [(<span class="v">x</span>,<span class="v">y</span>) <span class="k">for</span> <span class="v">x</span> <span class="k">in</span> <span class="v">a</span> <span class="k">for</span> <span class="v">y</span> <span class="k">in</span> <span class="v">b</span>]                   <span class="c"># nested</span>
+<span class="v">flat</span>    <span class="o">=</span> [<span class="v">x</span> <span class="k">for</span> <span class="v">row</span> <span class="k">in</span> <span class="v">matrix</span> <span class="k">for</span> <span class="v">x</span> <span class="k">in</span> <span class="v">row</span>]               <span class="c"># flatten</span>
+
+<span class="c"># Dict comprehension</span>
+<span class="v">sq_map</span> <span class="o">=</span> {<span class="v">x</span>: <span class="v">x</span><span class="o">**</span><span class="n">2</span> <span class="k">for</span> <span class="v">x</span> <span class="k">in</span> <span class="b">range</span>(<span class="n">5</span>)}                      <span class="c"># {0:0, 1:1, 2:4, ...}</span>
+<span class="v">inv</span>    <span class="o">=</span> {<span class="v">v</span>: <span class="v">k</span> <span class="k">for</span> <span class="v">k</span>, <span class="v">v</span> <span class="k">in</span> <span class="v">d</span>.<span class="f">items</span>()}                      <span class="c"># invert dict</span>
+
+<span class="c"># Set comprehension</span>
+<span class="v">unique_len</span> <span class="o">=</span> {<span class="b">len</span>(<span class="v">w</span>) <span class="k">for</span> <span class="v">w</span> <span class="k">in</span> <span class="v">words</span>}
+
+<span class="c"># Generator expression (lazy, memory-efficient)</span>
+<span class="v">total</span> <span class="o">=</span> <span class="b">sum</span>(<span class="v">x</span><span class="o">**</span><span class="n">2</span> <span class="k">for</span> <span class="v">x</span> <span class="k">in</span> <span class="b">range</span>(<span class="n">1000000</span>))               <span class="c"># no list created</span>
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== CLASSES ==================== -->
+<div class="section" id="classes">
+  <div class="section-title">Classes <span class="badge bg4 t4">OOP</span></div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-header bg4 t4">Class Definition</div>
+<pre>
+<span class="k">class</span> <span class="cls">Dog</span>:
+    <span class="v">species</span> <span class="o">=</span> <span class="s">"Canis"</span>    <span class="c"># class attribute</span>
+
+    <span class="k">def</span> <span class="f">__init__</span>(<span class="v">self</span>, <span class="v">name</span>, <span class="v">age</span>):
+        <span class="v">self</span>.<span class="v">name</span> <span class="o">=</span> <span class="v">name</span>   <span class="c"># instance attr</span>
+        <span class="v">self</span>.<span class="v">age</span> <span class="o">=</span> <span class="v">age</span>
+
+    <span class="k">def</span> <span class="f">bark</span>(<span class="v">self</span>):
+        <span class="k">return</span> <span class="s">f"</span>{<span class="v">self</span>.<span class="v">name</span>}<span class="s"> says woof!"</span>
+
+    <span class="k">def</span> <span class="f">__repr__</span>(<span class="v">self</span>):
+        <span class="k">return</span> <span class="s">f"Dog(</span>{<span class="v">self</span>.<span class="v">name</span>!r}<span class="s">, </span>{<span class="v">self</span>.<span class="v">age</span>}<span class="s">)"</span>
+
+    <span class="k">def</span> <span class="f">__str__</span>(<span class="v">self</span>):
+        <span class="k">return</span> <span class="v">self</span>.<span class="v">name</span>
+
+    <span class="b">@classmethod</span>
+    <span class="k">def</span> <span class="f">from_dict</span>(<span class="v">cls</span>, <span class="v">data</span>):
+        <span class="k">return</span> <span class="v">cls</span>(<span class="v">data</span>[<span class="s">"name"</span>], <span class="v">data</span>[<span class="s">"age"</span>])
+
+    <span class="b">@staticmethod</span>
+    <span class="k">def</span> <span class="f">is_valid_age</span>(<span class="v">age</span>):
+        <span class="k">return</span> <span class="n">0</span> <span class="o">&lt;</span> <span class="v">age</span> <span class="o">&lt;</span> <span class="n">30</span>
+
+    <span class="b">@property</span>
+    <span class="k">def</span> <span class="f">human_years</span>(<span class="v">self</span>):
+        <span class="k">return</span> <span class="v">self</span>.<span class="v">age</span> <span class="o">*</span> <span class="n">7</span>
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg4 t4">Inheritance &amp; Dunder Methods</div>
+<pre>
+<span class="k">class</span> <span class="cls">Puppy</span>(<span class="cls">Dog</span>):
+    <span class="k">def</span> <span class="f">__init__</span>(<span class="v">self</span>, <span class="v">name</span>, <span class="v">age</span>, <span class="v">toy</span>):
+        <span class="b">super</span>().<span class="f">__init__</span>(<span class="v">name</span>, <span class="v">age</span>)
+        <span class="v">self</span>.<span class="v">toy</span> <span class="o">=</span> <span class="v">toy</span>
+
+    <span class="k">def</span> <span class="f">bark</span>(<span class="v">self</span>):       <span class="c"># override</span>
+        <span class="k">return</span> <span class="s">"yip!"</span>
+
+<span class="c"># Common dunder methods</span>
+<span class="f">__len__</span>       <span class="c"># len(obj)</span>
+<span class="f">__getitem__</span>   <span class="c"># obj[key]</span>
+<span class="f">__setitem__</span>   <span class="c"># obj[key] = val</span>
+<span class="f">__contains__</span>  <span class="c"># item in obj</span>
+<span class="f">__iter__</span>      <span class="c"># for x in obj</span>
+<span class="f">__eq__</span>        <span class="c"># obj == other</span>
+<span class="f">__lt__</span>        <span class="c"># obj &lt; other</span>
+<span class="f">__hash__</span>      <span class="c"># hash(obj)</span>
+<span class="f">__call__</span>      <span class="c"># obj()</span>
+<span class="f">__enter__</span>     <span class="c"># with obj:</span>
+<span class="f">__exit__</span>      <span class="c">#   (context manager)</span>
+<span class="f">__add__</span>       <span class="c"># obj + other</span>
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== EXCEPTIONS ==================== -->
+<div class="section" id="exceptions">
+  <div class="section-title">Exceptions <span class="badge bg5 t5">Error Handling</span></div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-header bg5 t5">try / except / finally</div>
+<pre>
+<span class="k">try</span>:
+    <span class="v">result</span> <span class="o">=</span> <span class="n">10</span> <span class="o">/</span> <span class="v">x</span>
+<span class="k">except</span> <span class="cls">ZeroDivisionError</span>:
+    <span class="b">print</span>(<span class="s">"division by zero"</span>)
+<span class="k">except</span> (<span class="cls">TypeError</span>, <span class="cls">ValueError</span>) <span class="k">as</span> <span class="v">e</span>:
+    <span class="b">print</span>(<span class="s">f"error: </span>{<span class="v">e</span>}<span class="s">"</span>)
+<span class="k">except</span> <span class="cls">Exception</span> <span class="k">as</span> <span class="v">e</span>:
+    <span class="b">print</span>(<span class="s">f"unexpected: </span>{<span class="v">e</span>}<span class="s">"</span>)
+    <span class="k">raise</span>                  <span class="c"># re-raise</span>
+<span class="k">else</span>:
+    <span class="b">print</span>(<span class="s">"no error"</span>)       <span class="c"># runs if no exception</span>
+<span class="k">finally</span>:
+    <span class="b">print</span>(<span class="s">"always runs"</span>)
+
+<span class="c"># Raise</span>
+<span class="k">raise</span> <span class="cls">ValueError</span>(<span class="s">"bad value"</span>)
+
+<span class="c"># Custom exception</span>
+<span class="k">class</span> <span class="cls">MyError</span>(<span class="cls">Exception</span>):
+    <span class="k">pass</span>
+
+<span class="c"># Assert (debugging, disabled with -O)</span>
+<span class="k">assert</span> <span class="v">x</span> <span class="o">&gt;</span> <span class="n">0</span>, <span class="s">"x must be positive"</span>
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg5 t5">Common Exceptions</div>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Exception</th><th>When</th></tr>
+          <tr><td><code>ValueError</code></td><td>Wrong value (e.g. int("abc"))</td></tr>
+          <tr><td><code>TypeError</code></td><td>Wrong type (e.g. "a" + 1)</td></tr>
+          <tr><td><code>KeyError</code></td><td>Dict key not found</td></tr>
+          <tr><td><code>IndexError</code></td><td>List index out of range</td></tr>
+          <tr><td><code>AttributeError</code></td><td>Attribute doesn't exist</td></tr>
+          <tr><td><code>FileNotFoundError</code></td><td>File doesn't exist</td></tr>
+          <tr><td><code>ImportError</code></td><td>Module not found</td></tr>
+          <tr><td><code>StopIteration</code></td><td>Iterator exhausted</td></tr>
+          <tr><td><code>RuntimeError</code></td><td>Generic runtime error</td></tr>
+          <tr><td><code>NotImplementedError</code></td><td>Abstract method stub</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== FILE I/O ==================== -->
+<div class="section" id="files">
+  <div class="section-title">File I/O <span class="badge bg6 t6">Files</span></div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-header bg6 t6">Read &amp; Write</div>
+<pre>
+<span class="c"># Read entire file</span>
+<span class="k">with</span> <span class="b">open</span>(<span class="s">"file.txt"</span>, <span class="s">"r"</span>) <span class="k">as</span> <span class="v">f</span>:
+    <span class="v">content</span> <span class="o">=</span> <span class="v">f</span>.<span class="f">read</span>()
+
+<span class="c"># Read lines</span>
+<span class="k">with</span> <span class="b">open</span>(<span class="s">"file.txt"</span>) <span class="k">as</span> <span class="v">f</span>:
+    <span class="v">lines</span> <span class="o">=</span> <span class="v">f</span>.<span class="f">readlines</span>()       <span class="c"># list of lines</span>
+
+<span class="c"># Iterate lines (memory efficient)</span>
+<span class="k">with</span> <span class="b">open</span>(<span class="s">"file.txt"</span>) <span class="k">as</span> <span class="v">f</span>:
+    <span class="k">for</span> <span class="v">line</span> <span class="k">in</span> <span class="v">f</span>:
+        <span class="b">print</span>(<span class="v">line</span>.<span class="f">strip</span>())
+
+<span class="c"># Write</span>
+<span class="k">with</span> <span class="b">open</span>(<span class="s">"out.txt"</span>, <span class="s">"w"</span>) <span class="k">as</span> <span class="v">f</span>:
+    <span class="v">f</span>.<span class="f">write</span>(<span class="s">"hello\n"</span>)
+
+<span class="c"># Append</span>
+<span class="k">with</span> <span class="b">open</span>(<span class="s">"out.txt"</span>, <span class="s">"a"</span>) <span class="k">as</span> <span class="v">f</span>:
+    <span class="v">f</span>.<span class="f">write</span>(<span class="s">"more\n"</span>)
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg6 t6">JSON &amp; CSV</div>
+<pre>
+<span class="c"># JSON</span>
+<span class="k">import</span> <span class="v">json</span>
+
+<span class="c"># Read</span>
+<span class="k">with</span> <span class="b">open</span>(<span class="s">"data.json"</span>) <span class="k">as</span> <span class="v">f</span>:
+    <span class="v">data</span> <span class="o">=</span> <span class="v">json</span>.<span class="f">load</span>(<span class="v">f</span>)
+
+<span class="c"># Write</span>
+<span class="k">with</span> <span class="b">open</span>(<span class="s">"data.json"</span>, <span class="s">"w"</span>) <span class="k">as</span> <span class="v">f</span>:
+    <span class="v">json</span>.<span class="f">dump</span>(<span class="v">data</span>, <span class="v">f</span>, <span class="v">indent</span><span class="o">=</span><span class="n">2</span>)
+
+<span class="c"># String conversion</span>
+<span class="v">s</span> <span class="o">=</span> <span class="v">json</span>.<span class="f">dumps</span>(<span class="v">data</span>)
+<span class="v">data</span> <span class="o">=</span> <span class="v">json</span>.<span class="f">loads</span>(<span class="v">s</span>)
+
+<span class="c"># CSV</span>
+<span class="k">import</span> <span class="v">csv</span>
+<span class="k">with</span> <span class="b">open</span>(<span class="s">"data.csv"</span>) <span class="k">as</span> <span class="v">f</span>:
+    <span class="v">reader</span> <span class="o">=</span> <span class="v">csv</span>.<span class="f">DictReader</span>(<span class="v">f</span>)
+    <span class="k">for</span> <span class="v">row</span> <span class="k">in</span> <span class="v">reader</span>:
+        <span class="b">print</span>(<span class="v">row</span>[<span class="s">"name"</span>])
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== ITERTOOLS ==================== -->
+<div class="section" id="itertools">
+  <div class="section-title">Itertools &amp; Collections <span class="badge bg1 t1">Stdlib</span></div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-header bg1 t1">itertools highlights</div>
+<pre>
+<span class="k">from</span> <span class="v">itertools</span> <span class="k">import</span> <span class="o">*</span>
+
+<span class="c"># Chain multiple iterables</span>
+<span class="b">list</span>(<span class="f">chain</span>([<span class="n">1</span>,<span class="n">2</span>], [<span class="n">3</span>,<span class="n">4</span>]))    <span class="c"># [1,2,3,4]</span>
+
+<span class="c"># Accumulate (running total)</span>
+<span class="b">list</span>(<span class="f">accumulate</span>([<span class="n">1</span>,<span class="n">2</span>,<span class="n">3</span>,<span class="n">4</span>]))  <span class="c"># [1,3,6,10]</span>
+
+<span class="c"># Product (cartesian product)</span>
+<span class="b">list</span>(<span class="f">product</span>(<span class="s">"AB"</span>, <span class="s">"12"</span>))
+<span class="c"># [('A','1'),('A','2'),('B','1'),('B','2')]</span>
+
+<span class="c"># Permutations &amp; combinations</span>
+<span class="b">list</span>(<span class="f">permutations</span>(<span class="s">"ABC"</span>, <span class="n">2</span>))
+<span class="b">list</span>(<span class="f">combinations</span>(<span class="s">"ABC"</span>, <span class="n">2</span>))
+
+<span class="c"># Group by (data must be sorted first!)</span>
+<span class="k">for</span> <span class="v">key</span>, <span class="v">group</span> <span class="k">in</span> <span class="f">groupby</span>(<span class="v">data</span>, <span class="v">key</span><span class="o">=</span><span class="v">keyfunc</span>):
+    <span class="b">print</span>(<span class="v">key</span>, <span class="b">list</span>(<span class="v">group</span>))
+
+<span class="c"># Repeat / Cycle / Count</span>
+<span class="b">list</span>(<span class="f">repeat</span>(<span class="s">"x"</span>, <span class="n">3</span>))    <span class="c"># ['x','x','x']</span>
+<span class="c"># cycle([1,2,3]) → 1,2,3,1,2,3,... (infinite)</span>
+<span class="c"># count(10, 2) → 10,12,14,... (infinite)</span>
+
+<span class="c"># islice (slice an iterator)</span>
+<span class="b">list</span>(<span class="f">islice</span>(<span class="f">count</span>(), <span class="n">5</span>))  <span class="c"># [0,1,2,3,4]</span>
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg1 t1">collections highlights</div>
+<pre>
+<span class="k">from</span> <span class="v">collections</span> <span class="k">import</span> <span class="o">*</span>
+
+<span class="c"># Counter</span>
+<span class="v">c</span> <span class="o">=</span> <span class="b">Counter</span>(<span class="s">"abracadabra"</span>)
+<span class="v">c</span>.<span class="f">most_common</span>(<span class="n">2</span>)   <span class="c"># [('a',5), ('b',2)]</span>
+<span class="v">c</span>[<span class="s">"a"</span>]              <span class="c"># 5</span>
+
+<span class="c"># defaultdict</span>
+<span class="v">dd</span> <span class="o">=</span> <span class="b">defaultdict</span>(<span class="b">list</span>)
+<span class="v">dd</span>[<span class="s">"key"</span>].<span class="f">append</span>(<span class="n">1</span>)
+
+<span class="c"># deque (fast append/pop both ends)</span>
+<span class="v">dq</span> <span class="o">=</span> <span class="b">deque</span>([<span class="n">1</span>,<span class="n">2</span>,<span class="n">3</span>], <span class="v">maxlen</span><span class="o">=</span><span class="n">5</span>)
+<span class="v">dq</span>.<span class="f">appendleft</span>(<span class="n">0</span>)
+<span class="v">dq</span>.<span class="f">pop</span>()
+<span class="v">dq</span>.<span class="f">popleft</span>()
+<span class="v">dq</span>.<span class="f">rotate</span>(<span class="n">1</span>)       <span class="c"># rotate right</span>
+
+<span class="c"># OrderedDict (preserves insertion order)</span>
+<span class="c"># (regular dict is ordered since 3.7)</span>
+<span class="v">od</span> <span class="o">=</span> <span class="b">OrderedDict</span>()
+<span class="v">od</span>.<span class="f">move_to_end</span>(<span class="s">"key"</span>)
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== REGEX ==================== -->
+<div class="section" id="regex">
+  <div class="section-title">Regular Expressions <span class="badge bg3 t3">re</span></div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-header bg3 t3">re module</div>
+<pre>
+<span class="k">import</span> <span class="v">re</span>
+
+<span class="c"># Search (first match)</span>
+<span class="v">m</span> <span class="o">=</span> <span class="v">re</span>.<span class="f">search</span>(<span class="s">r"\d+"</span>, <span class="s">"age: 25"</span>)
+<span class="v">m</span>.<span class="f">group</span>()         <span class="c"># "25"</span>
+
+<span class="c"># Match (start of string)</span>
+<span class="v">re</span>.<span class="f">match</span>(<span class="s">r"\d+"</span>, <span class="s">"123abc"</span>)  <span class="c"># match</span>
+<span class="v">re</span>.<span class="f">match</span>(<span class="s">r"\d+"</span>, <span class="s">"abc123"</span>)  <span class="c"># None</span>
+
+<span class="c"># Find all</span>
+<span class="v">re</span>.<span class="f">findall</span>(<span class="s">r"\d+"</span>, <span class="s">"a1 b2 c3"</span>)
+<span class="c"># ['1', '2', '3']</span>
+
+<span class="c"># Sub (replace)</span>
+<span class="v">re</span>.<span class="f">sub</span>(<span class="s">r"\d+"</span>, <span class="s">"#"</span>, <span class="s">"a1b2"</span>)  <span class="c"># "a#b#"</span>
+
+<span class="c"># Split</span>
+<span class="v">re</span>.<span class="f">split</span>(<span class="s">r"[,;]"</span>, <span class="s">"a,b;c"</span>)   <span class="c"># ['a','b','c']</span>
+
+<span class="c"># Groups</span>
+<span class="v">m</span> <span class="o">=</span> <span class="v">re</span>.<span class="f">search</span>(<span class="s">r"(\w+)@(\w+)"</span>, <span class="s">"user@host"</span>)
+<span class="v">m</span>.<span class="f">group</span>(<span class="n">1</span>)   <span class="c"># "user"</span>
+<span class="v">m</span>.<span class="f">group</span>(<span class="n">2</span>)   <span class="c"># "host"</span>
+<span class="v">m</span>.<span class="f">groups</span>()   <span class="c"># ("user", "host")</span>
+
+<span class="c"># Compile for reuse</span>
+<span class="v">pattern</span> <span class="o">=</span> <span class="v">re</span>.<span class="f">compile</span>(<span class="s">r"\d{3}-\d{4}"</span>)
+<span class="v">pattern</span>.<span class="f">findall</span>(<span class="v">text</span>)
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg3 t3">Pattern Quick Reference</div>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Pattern</th><th>Meaning</th></tr>
+          <tr><td><code>.</code></td><td>Any char (except \n)</td></tr>
+          <tr><td><code>\d  \D</code></td><td>Digit / Non-digit</td></tr>
+          <tr><td><code>\w  \W</code></td><td>Word char / Non-word</td></tr>
+          <tr><td><code>\s  \S</code></td><td>Whitespace / Non-whitespace</td></tr>
+          <tr><td><code>^  $</code></td><td>Start / End of string</td></tr>
+          <tr><td><code>*  +  ?</code></td><td>0+, 1+, 0 or 1</td></tr>
+          <tr><td><code>{n,m}</code></td><td>n to m repetitions</td></tr>
+          <tr><td><code>[abc]</code></td><td>Character class</td></tr>
+          <tr><td><code>[^abc]</code></td><td>Negated class</td></tr>
+          <tr><td><code>(...)  (?:...)</code></td><td>Group / Non-capturing group</td></tr>
+          <tr><td><code>a|b</code></td><td>a or b</td></tr>
+          <tr><td><code>(?P&lt;name&gt;...)</code></td><td>Named group</td></tr>
+          <tr><td><code>\b</code></td><td>Word boundary</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== TYPE HINTS ==================== -->
+<div class="section" id="typing">
+  <div class="section-title">Type Hints <span class="badge bg2 t2">typing</span></div>
+  <div class="grid">
+    <div class="card wide">
+      <div class="card-header bg2 t2">Type Annotations</div>
+<pre>
+<span class="c"># Basic (3.9+ built-in generics, earlier needs typing imports)</span>
+<span class="v">name</span>: <span class="b">str</span> <span class="o">=</span> <span class="s">"Alice"</span>
+<span class="v">age</span>: <span class="b">int</span> <span class="o">=</span> <span class="n">30</span>
+<span class="v">scores</span>: <span class="b">list</span>[<span class="b">int</span>] <span class="o">=</span> [<span class="n">90</span>, <span class="n">85</span>]          <span class="c"># list[int] (3.9+) or List[int]</span>
+<span class="v">lookup</span>: <span class="b">dict</span>[<span class="b">str</span>, <span class="b">int</span>] <span class="o">=</span> {<span class="s">"a"</span>: <span class="n">1</span>}     <span class="c"># dict[str, int]</span>
+<span class="v">coords</span>: <span class="b">tuple</span>[<span class="b">float</span>, <span class="b">float</span>] <span class="o">=</span> (<span class="n">1.0</span>, <span class="n">2.0</span>)
+<span class="v">maybe</span>: <span class="b">int</span> <span class="o">|</span> <span class="k">None</span> <span class="o">=</span> <span class="k">None</span>              <span class="c"># 3.10+ union syntax, or Optional[int]</span>
+
+<span class="c"># Function annotations</span>
+<span class="k">def</span> <span class="f">greet</span>(<span class="v">name</span>: <span class="b">str</span>, <span class="v">times</span>: <span class="b">int</span> <span class="o">=</span> <span class="n">1</span>) <span class="o">-&gt;</span> <span class="b">str</span>:
+    <span class="k">return</span> <span class="v">name</span> <span class="o">*</span> <span class="v">times</span>
+
+<span class="c"># From typing module</span>
+<span class="k">from</span> <span class="v">typing</span> <span class="k">import</span> <span class="v">Any</span>, <span class="v">Callable</span>, <span class="v">Iterator</span>, <span class="v">TypeVar</span>, <span class="v">Protocol</span>
+
+<span class="v">callback</span>: <span class="v">Callable</span>[[<span class="b">int</span>, <span class="b">str</span>], <span class="b">bool</span>]   <span class="c"># function type</span>
+<span class="v">T</span> <span class="o">=</span> <span class="v">TypeVar</span>(<span class="s">"T"</span>)                        <span class="c"># generic type variable</span>
+
+<span class="k">def</span> <span class="f">first</span>(<span class="v">items</span>: <span class="b">list</span>[<span class="v">T</span>]) <span class="o">-&gt;</span> <span class="v">T</span>:
+    <span class="k">return</span> <span class="v">items</span>[<span class="n">0</span>]
+
+<span class="c"># TypeAlias (3.10+)</span>
+<span class="k">type</span> <span class="v">Vector</span> <span class="o">=</span> <span class="b">list</span>[<span class="b">float</span>]               <span class="c"># 3.12+ syntax</span>
+<span class="v">Vector</span>: <span class="v">TypeAlias</span> <span class="o">=</span> <span class="b">list</span>[<span class="b">float</span>]         <span class="c"># 3.10+ syntax</span>
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== DECORATORS ==================== -->
+<div class="section" id="decorators">
+  <div class="section-title">Decorators <span class="badge bg4 t4">@</span></div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-header bg4 t4">Built-in &amp; Custom Decorators</div>
+<pre>
+<span class="c"># Custom decorator</span>
+<span class="k">import</span> <span class="v">functools</span>
+
+<span class="k">def</span> <span class="f">timer</span>(<span class="v">func</span>):
+    <span class="b">@functools.wraps</span>(<span class="v">func</span>)
+    <span class="k">def</span> <span class="f">wrapper</span>(<span class="o">*</span><span class="v">args</span>, <span class="o">**</span><span class="v">kwargs</span>):
+        <span class="k">import</span> <span class="v">time</span>
+        <span class="v">start</span> <span class="o">=</span> <span class="v">time</span>.<span class="f">time</span>()
+        <span class="v">result</span> <span class="o">=</span> <span class="f">func</span>(<span class="o">*</span><span class="v">args</span>, <span class="o">**</span><span class="v">kwargs</span>)
+        <span class="b">print</span>(<span class="s">f"</span>{<span class="v">func</span>.<span class="v">__name__</span>}<span class="s">: </span>{<span class="v">time</span>.<span class="f">time</span>()<span class="o">-</span><span class="v">start</span>}<span class="s">s"</span>)
+        <span class="k">return</span> <span class="v">result</span>
+    <span class="k">return</span> <span class="v">wrapper</span>
+
+<span class="b">@timer</span>
+<span class="k">def</span> <span class="f">slow_fn</span>():
+    ...
+
+<span class="c"># Useful built-in decorators</span>
+<span class="b">@property</span>             <span class="c"># getter</span>
+<span class="b">@x.setter</span>             <span class="c"># setter</span>
+<span class="b">@staticmethod</span>         <span class="c"># no self</span>
+<span class="b">@classmethod</span>          <span class="c"># cls instead of self</span>
+<span class="b">@functools.lru_cache</span>  <span class="c"># memoization</span>
+<span class="b">@functools.cache</span>      <span class="c"># simpler cache (3.9+)</span>
+<span class="b">@functools.total_ordering</span>  <span class="c"># fill in comparison ops</span>
+<span class="b">@abc.abstractmethod</span>   <span class="c"># abstract base class</span>
+</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg4 t4">Decorator with Arguments</div>
+<pre>
+<span class="k">def</span> <span class="f">retry</span>(<span class="v">max_attempts</span><span class="o">=</span><span class="n">3</span>):
+    <span class="k">def</span> <span class="f">decorator</span>(<span class="v">func</span>):
+        <span class="b">@functools.wraps</span>(<span class="v">func</span>)
+        <span class="k">def</span> <span class="f">wrapper</span>(<span class="o">*</span><span class="v">args</span>, <span class="o">**</span><span class="v">kwargs</span>):
+            <span class="k">for</span> <span class="v">i</span> <span class="k">in</span> <span class="b">range</span>(<span class="v">max_attempts</span>):
+                <span class="k">try</span>:
+                    <span class="k">return</span> <span class="f">func</span>(<span class="o">*</span><span class="v">args</span>, <span class="o">**</span><span class="v">kwargs</span>)
+                <span class="k">except</span> <span class="cls">Exception</span>:
+                    <span class="k">if</span> <span class="v">i</span> <span class="o">==</span> <span class="v">max_attempts</span> <span class="o">-</span> <span class="n">1</span>:
+                        <span class="k">raise</span>
+        <span class="k">return</span> <span class="v">wrapper</span>
+    <span class="k">return</span> <span class="v">decorator</span>
+
+<span class="b">@retry</span>(<span class="v">max_attempts</span><span class="o">=</span><span class="n">5</span>)
+<span class="k">def</span> <span class="f">flaky_call</span>():
+    ...
+
+<span class="c"># Stack decorators (applied bottom-up)</span>
+<span class="b">@decorator_a</span>
+<span class="b">@decorator_b</span>
+<span class="k">def</span> <span class="f">func</span>():       <span class="c"># = decorator_a(decorator_b(func))</span>
+    ...
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== DATACLASSES ==================== -->
+<div class="section" id="dataclasses">
+  <div class="section-title">Dataclasses <span class="badge bg5 t5">3.7+</span></div>
+  <div class="grid">
+    <div class="card wide">
+      <div class="card-header bg5 t5">dataclasses</div>
+<pre>
+<span class="k">from</span> <span class="v">dataclasses</span> <span class="k">import</span> <span class="v">dataclass</span>, <span class="v">field</span>, <span class="v">asdict</span>, <span class="v">astuple</span>
+
+<span class="b">@dataclass</span>
+<span class="k">class</span> <span class="cls">Point</span>:
+    <span class="v">x</span>: <span class="b">float</span>
+    <span class="v">y</span>: <span class="b">float</span>
+    <span class="v">label</span>: <span class="b">str</span> <span class="o">=</span> <span class="s">"origin"</span>             <span class="c"># default value</span>
+    <span class="v">tags</span>: <span class="b">list</span>[<span class="b">str</span>] <span class="o">=</span> <span class="f">field</span>(<span class="v">default_factory</span><span class="o">=</span><span class="b">list</span>)   <span class="c"># mutable default</span>
+
+<span class="v">p</span> <span class="o">=</span> <span class="cls">Point</span>(<span class="n">1.0</span>, <span class="n">2.0</span>)
+<span class="b">print</span>(<span class="v">p</span>)             <span class="c"># Point(x=1.0, y=2.0, label='origin', tags=[])</span>
+<span class="f">asdict</span>(<span class="v">p</span>)            <span class="c"># {'x': 1.0, 'y': 2.0, 'label': 'origin', 'tags': []}</span>
+
+<span class="b">@dataclass</span>(<span class="v">frozen</span><span class="o">=</span><span class="k">True</span>)    <span class="c"># immutable (hashable)</span>
+<span class="k">class</span> <span class="cls">Color</span>:
+    <span class="v">r</span>: <span class="b">int</span>
+    <span class="v">g</span>: <span class="b">int</span>
+    <span class="v">b</span>: <span class="b">int</span>
+
+<span class="b">@dataclass</span>(<span class="v">order</span><span class="o">=</span><span class="k">True</span>)     <span class="c"># enables &lt;, &gt;, etc.</span>
+<span class="k">class</span> <span class="cls">Version</span>:
+    <span class="v">major</span>: <span class="b">int</span>
+    <span class="v">minor</span>: <span class="b">int</span>
+    <span class="v">patch</span>: <span class="b">int</span>
+
+<span class="b">@dataclass</span>(<span class="v">slots</span><span class="o">=</span><span class="k">True</span>)     <span class="c"># 3.10+, memory efficient</span>
+<span class="k">class</span> <span class="cls">Compact</span>:
+    <span class="v">x</span>: <span class="b">int</span>
+    <span class="v">y</span>: <span class="b">int</span>
+
+<span class="c"># Post-init processing</span>
+<span class="b">@dataclass</span>
+<span class="k">class</span> <span class="cls">Circle</span>:
+    <span class="v">radius</span>: <span class="b">float</span>
+    <span class="v">area</span>: <span class="b">float</span> <span class="o">=</span> <span class="f">field</span>(<span class="v">init</span><span class="o">=</span><span class="k">False</span>)
+    <span class="k">def</span> <span class="f">__post_init__</span>(<span class="v">self</span>):
+        <span class="v">self</span>.<span class="v">area</span> <span class="o">=</span> <span class="n">3.14159</span> <span class="o">*</span> <span class="v">self</span>.<span class="v">radius</span> <span class="o">**</span> <span class="n">2</span>
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== PATHLIB ==================== -->
+<div class="section" id="pathlib">
+  <div class="section-title">Pathlib <span class="badge bg6 t6">Path</span></div>
+  <div class="grid">
+    <div class="card wide">
+      <div class="card-header bg6 t6">pathlib.Path</div>
+<pre>
+<span class="k">from</span> <span class="v">pathlib</span> <span class="k">import</span> <span class="v">Path</span>
+
+<span class="v">p</span> <span class="o">=</span> <span class="v">Path</span>(<span class="s">"src/main.py"</span>)
+<span class="v">p</span> <span class="o">=</span> <span class="v">Path</span>.<span class="f">cwd</span>() <span class="o">/</span> <span class="s">"src"</span> <span class="o">/</span> <span class="s">"main.py"</span>   <span class="c"># / operator for joining</span>
+<span class="v">p</span> <span class="o">=</span> <span class="v">Path</span>.<span class="f">home</span>() <span class="o">/</span> <span class="s">".config"</span>
+
+<span class="c"># Properties</span>
+<span class="v">p</span>.<span class="v">name</span>       <span class="c"># "main.py"</span>
+<span class="v">p</span>.<span class="v">stem</span>       <span class="c"># "main"</span>
+<span class="v">p</span>.<span class="v">suffix</span>     <span class="c"># ".py"</span>
+<span class="v">p</span>.<span class="v">parent</span>     <span class="c"># Path("src")</span>
+<span class="v">p</span>.<span class="v">parts</span>      <span class="c"># ('src', 'main.py')</span>
+
+<span class="c"># Check</span>
+<span class="v">p</span>.<span class="f">exists</span>()   <span class="v">p</span>.<span class="f">is_file</span>()   <span class="v">p</span>.<span class="f">is_dir</span>()
+
+<span class="c"># Read &amp; Write (one-liners!)</span>
+<span class="v">text</span> <span class="o">=</span> <span class="v">p</span>.<span class="f">read_text</span>()
+<span class="v">data</span> <span class="o">=</span> <span class="v">p</span>.<span class="f">read_bytes</span>()
+<span class="v">p</span>.<span class="f">write_text</span>(<span class="s">"hello"</span>)
+
+<span class="c"># Glob</span>
+<span class="b">list</span>(<span class="v">Path</span>(<span class="s">"src"</span>).<span class="f">glob</span>(<span class="s">"*.py"</span>))       <span class="c"># .py files in src/</span>
+<span class="b">list</span>(<span class="v">Path</span>(<span class="s">"src"</span>).<span class="f">rglob</span>(<span class="s">"*.py"</span>))      <span class="c"># recursive</span>
+
+<span class="c"># Create / Remove</span>
+<span class="v">p</span>.<span class="f">mkdir</span>(<span class="v">parents</span><span class="o">=</span><span class="k">True</span>, <span class="v">exist_ok</span><span class="o">=</span><span class="k">True</span>)
+<span class="v">p</span>.<span class="f">unlink</span>()       <span class="c"># delete file</span>
+<span class="v">p</span>.<span class="f">rename</span>(<span class="s">"new.py"</span>)
+</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== ONE-LINERS ==================== -->
+<div class="section" id="oneliners">
+  <div class="section-title">Useful One-Liners <span class="badge bg1 t1">Tips</span></div>
+  <div class="grid">
+    <div class="card wide">
+      <div class="card-header bg1 t1">Common Patterns</div>
+<pre>
+<span class="c"># Merge two dicts</span>
+<span class="v">merged</span> <span class="o">=</span> {<span class="o">**</span><span class="v">d1</span>, <span class="o">**</span><span class="v">d2</span>}                 <span class="c"># or d1 | d2 (3.9+)</span>
+
+<span class="c"># Remove duplicates (preserve order)</span>
+<span class="v">unique</span> <span class="o">=</span> <span class="b">list</span>(<span class="b">dict</span>.<span class="f">fromkeys</span>(<span class="v">lst</span>))
+
+<span class="c"># Transpose matrix</span>
+<span class="v">transposed</span> <span class="o">=</span> <span class="b">list</span>(<span class="b">zip</span>(<span class="o">*</span><span class="v">matrix</span>))
+
+<span class="c"># Chunk a list</span>
+<span class="k">def</span> <span class="f">chunks</span>(<span class="v">lst</span>, <span class="v">n</span>):
+    <span class="k">return</span> [<span class="v">lst</span>[<span class="v">i</span>:<span class="v">i</span><span class="o">+</span><span class="v">n</span>] <span class="k">for</span> <span class="v">i</span> <span class="k">in</span> <span class="b">range</span>(<span class="n">0</span>, <span class="b">len</span>(<span class="v">lst</span>), <span class="v">n</span>)]
+
+<span class="c"># Dict from two lists</span>
+<span class="v">d</span> <span class="o">=</span> <span class="b">dict</span>(<span class="b">zip</span>(<span class="v">keys</span>, <span class="v">values</span>))
+
+<span class="c"># Flatten nested list</span>
+<span class="v">flat</span> <span class="o">=</span> [<span class="v">x</span> <span class="k">for</span> <span class="v">sub</span> <span class="k">in</span> <span class="v">nested</span> <span class="k">for</span> <span class="v">x</span> <span class="k">in</span> <span class="v">sub</span>]
+
+<span class="c"># Count items</span>
+<span class="k">from</span> <span class="v">collections</span> <span class="k">import</span> <span class="v">Counter</span>
+<span class="v">freq</span> <span class="o">=</span> <span class="b">Counter</span>(<span class="v">items</span>)
+
+<span class="c"># Sort dict by value</span>
+<span class="v">sorted_d</span> <span class="o">=</span> <span class="b">dict</span>(<span class="b">sorted</span>(<span class="v">d</span>.<span class="f">items</span>(), <span class="v">key</span><span class="o">=</span><span class="k">lambda</span> <span class="v">x</span>: <span class="v">x</span>[<span class="n">1</span>]))
+
+<span class="c"># Conditional value</span>
+<span class="v">result</span> <span class="o">=</span> <span class="v">x</span> <span class="k">or</span> <span class="v">default</span>               <span class="c"># use default if x is falsy</span>
+<span class="v">result</span> <span class="o">=</span> <span class="v">x</span> <span class="k">if</span> <span class="v">x</span> <span class="k">is not</span> <span class="k">None</span> <span class="k">else</span> <span class="v">default</span>  <span class="c"># explicit None check</span>
+
+<span class="c"># Safe nested dict access</span>
+<span class="v">val</span> <span class="o">=</span> <span class="v">data</span>.<span class="f">get</span>(<span class="s">"a"</span>, {}).<span class="f">get</span>(<span class="s">"b"</span>, {}).<span class="f">get</span>(<span class="s">"c"</span>)
+
+<span class="c"># Timer context manager</span>
+<span class="k">from</span> <span class="v">contextlib</span> <span class="k">import</span> <span class="v">contextmanager</span>
+<span class="k">import</span> <span class="v">time</span>
+
+<span class="b">@contextmanager</span>
+<span class="k">def</span> <span class="f">timer</span>(<span class="v">label</span>):
+    <span class="v">t</span> <span class="o">=</span> <span class="v">time</span>.<span class="f">time</span>()
+    <span class="k">yield</span>
+    <span class="b">print</span>(<span class="s">f"</span>{<span class="v">label</span>}<span class="s">: </span>{<span class="v">time</span>.<span class="f">time</span>()<span class="o">-</span><span class="v">t</span>}<span class="s">:.3fs"</span>)
+
+<span class="k">with</span> <span class="f">timer</span>(<span class="s">"process"</span>):
+    <span class="f">do_work</span>()
+</pre>
+    </div>
+  </div>
+</div>
+
+</div><!-- /container -->
+
+<div style="text-align: center; padding: 40px 20px; color: var(--comment); font-size: 0.85em;">
+  Python 3.10+ | Generated for quick reference
+</div>
+
+</body>
+</html>

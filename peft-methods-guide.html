@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>mmit 支持的 PEFT 方法 · 逐一详解</title>
+<style>
+:root{--bg:#0f1117;--s:#1a1d27;--s2:#242836;--bd:#2e3347;--t:#e2e8f0;--dim:#8892a8;
+--a:#6c8cff;--pk:#ff6c9a;--g:#4ade80;--o:#fb923c;--p:#a78bfa;--cy:#22d3ee;--y:#facc15;--r:#f87171;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--t);font-family:'SF Mono','Cascadia Code','Fira Code',monospace;}
+.wrap{max-width:920px;margin:0 auto;padding:28px 24px 100px;}
+h1{color:var(--a);font-size:1.4rem;margin-bottom:4px;}
+.sub{color:var(--dim);font-size:0.78rem;margin-bottom:24px;}
+
+/* tabs */
+.tabs{display:flex;gap:4px;flex-wrap:wrap;position:sticky;top:0;z-index:100;background:var(--bg);padding:10px 0;border-bottom:1px solid var(--bd);margin-bottom:24px;}
+.tab{background:var(--s);border:1px solid var(--bd);color:var(--dim);padding:7px 14px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:0.72rem;transition:all .2s;}
+.tab:hover{border-color:var(--a);color:var(--t);}
+.tab.on{background:rgba(108,140,255,.12);border-color:var(--a);color:var(--a);}
+
+.panel{display:none;}.panel.on{display:block;}
+h2{color:var(--a);font-size:1.1rem;margin:24px 0 8px;}
+h3{color:var(--p);font-size:.9rem;margin:18px 0 6px;}
+p{font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.7;}
+strong{color:var(--t);}
+canvas{display:block;margin:14px auto;border-radius:10px;background:var(--s);border:1px solid var(--bd);}
+
+.card{background:var(--s);border:1px solid var(--bd);border-radius:10px;padding:16px 20px;margin:10px 0 14px;}
+.cb{border-left:3px solid var(--a);}.cp{border-left:3px solid var(--pk);}.cg{border-left:3px solid var(--g);}.co{border-left:3px solid var(--o);}
+.card h4{font-size:.84rem;margin-bottom:5px;}
+
+pre{background:var(--s2);border:1px solid var(--bd);border-radius:8px;padding:12px 16px;margin:8px 0 12px;overflow-x:auto;font-size:.72rem;line-height:1.6;}
+.kw{color:var(--pk);}.fn{color:var(--a);}.cm{color:var(--dim);font-style:italic;}.st{color:var(--g);}.ty{color:var(--cy);}
+
+table{width:100%;border-collapse:collapse;margin:8px 0 12px;font-size:.74rem;}
+th{background:var(--s2);color:var(--a);text-align:left;padding:6px 10px;border:1px solid var(--bd);}
+td{padding:6px 10px;border:1px solid var(--bd);color:var(--dim);}
+
+.callout{background:rgba(108,140,255,.07);border:1px solid rgba(108,140,255,.18);border-radius:8px;padding:10px 14px;margin:8px 0 12px;font-size:.76rem;color:var(--dim);}
+.callout strong{color:var(--t);}
+.analogy{background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.2);border-radius:8px;padding:10px 14px;margin:8px 0 12px;font-size:.78rem;}
+.analogy strong{color:var(--o);}
+
+.flow{display:flex;align-items:center;gap:6px;margin:8px 0;flex-wrap:wrap;}
+.fb{padding:5px 12px;border-radius:6px;font-size:.72rem;}
+.fb-fw{background:var(--a)+'15';border:1px solid var(--a);color:var(--a);}
+.fb-pl{background:var(--pk)+'15';border:1px solid var(--pk);color:var(--pk);}
+.fb-dt{background:var(--g)+'15';border:1px solid var(--g);color:var(--g);}
+.fa{color:var(--dim);font-size:.85rem;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>mmit 支持的训练方法 · 逐一详解</h1>
+<p class="sub">每种方法：架构图 → 原理 → 如何用 mmit 框架实现</p>
+
+<div class="tabs" id="tabs">
+  <button class="tab on" data-p="lora">LoRA（标准）</button>
+  <button class="tab" data-p="stage1">Projector 预训练</button>
+  <button class="tab" data-p="loralora">LoRA-in-LoRA</button>
+  <button class="tab" data-p="mores">MoReS / Steering</button>
+  <button class="tab" data-p="adapter">Adapter Layer</button>
+  <button class="tab" data-p="full">Full Fine-tune</button>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- LoRA -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="panel on" id="p_lora">
+<h2>LoRA — 低秩适配</h2>
+<div class="analogy"><strong>类比：</strong>教科书不能改，但可以在页边贴便签。每次读书时顺便看便签，就学到了新知识。便签很小，不影响书本身。</div>
+
+<canvas id="cv_lora" width="880" height="400"></canvas>
+
+<h3>原理</h3>
+<div class="card cb">
+<p>在 LLM 的 <strong>attention 层</strong>的权重矩阵旁边，并联一对低秩矩阵 A (d→r) 和 B (r→d)：</p>
+<p><strong>y = W·x + (α/r) · B·A·x</strong></p>
+<p>W 冻结不动，只训练 A 和 B。r 通常 = 8~64，所以参数量极少（~0.1%）。</p>
+</div>
+
+<h3>在 mmit 中使用</h3>
+<pre><code><span class="cm"># 内置 LoRAStrategy — 直接用</span>
+<span class="kw">from</span> mmit.config.schema <span class="kw">import</span> TrainingConfig, PEFTConfig
+<span class="kw">from</span> mmit.training <span class="kw">import</span> Trainer
+
+config = TrainingConfig(
+    peft=PEFTConfig(
+        name=<span class="st">"lora"</span>,           <span class="cm"># ← 内置策略名</span>
+        rank=16,                  <span class="cm"># 低秩的 r</span>
+        alpha=32,                 <span class="cm"># 缩放因子 α</span>
+        target_modules=[<span class="st">"q_proj"</span>, <span class="st">"v_proj"</span>],
+    ),
+    loss=<span class="st">"causal_lm"</span>,
+    learning_rate=2e-5,
+    num_epochs=3,
+)
+
+trainer = Trainer.from_config(method, config)
+trainer.train(dataset)</code></pre>
+
+<h3>框架调度流程</h3>
+<canvas id="cv_lora_flow" width="880" height="260"></canvas>
+
+<table>
+  <tr><th>框架方法</th><th>LoRAStrategy 做了什么</th></tr>
+  <tr><td>wrap_model(method)</td><td>在 method.llm 上用 HuggingFace peft 注入 LoRA 层，冻结原始权重</td></tr>
+  <tr><td>trainable_params(method)</td><td>返回 LoRA 的 A/B 矩阵参数（和可选的 projector 参数）</td></tr>
+  <tr><td>save_adapter(method)</td><td>用 peft 库的 save_pretrained 只保存 LoRA 权重</td></tr>
+  <tr><td>load_adapter(method)</td><td>用 PeftModel.from_pretrained 加载</td></tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- Projector 预训练 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="panel" id="p_stage1">
+<h2>Projector 预训练（LLaVA Stage 1）</h2>
+<div class="analogy"><strong>类比：</strong>你请了一个翻译（Projector）。你不需要改变说话的人（Vision）和听的人（LLM），只需要训练翻译学会把"图片语言"翻译成"文字语言"。</div>
+
+<canvas id="cv_stage1" width="880" height="380"></canvas>
+
+<h3>原理</h3>
+<div class="card co">
+<p>LLaVA Stage 1 的目标：<strong>让 Projector 学会对齐视觉特征和语言特征空间</strong>。</p>
+<p>Vision Encoder（CLIP）已经能提取图像特征，LLM 已经能理解语言。<br>
+但它们的特征维度不同（CLIP: 1024d, LLM: 4096d）。<br>
+Projector 就是一个"翻译器"，把视觉特征投影到 LLM 的空间里。</p>
+<p>这个阶段：<strong>只训练 Projector</strong>，Vision 和 LLM 全部冻结。</p>
+</div>
+
+<h3>在 mmit 中使用</h3>
+<pre><code><span class="cm"># 自定义策略：只训 Projector</span>
+<span class="kw">class</span> <span class="ty">ProjectorOnlyStrategy</span>(PEFTStrategy):
+
+    <span class="kw">def</span> <span class="fn">wrap_model</span>(self, method, config):
+        <span class="cm"># 冻结 Vision 和 LLM</span>
+        <span class="kw">for</span> p <span class="kw">in</span> method.vision.parameters():
+            p.requires_grad = <span class="kw">False</span>
+        <span class="kw">for</span> p <span class="kw">in</span> method.llm.parameters():
+            p.requires_grad = <span class="kw">False</span>
+        <span class="cm"># 只解冻 Projector</span>
+        <span class="kw">for</span> p <span class="kw">in</span> method.projector.parameters():
+            p.requires_grad = <span class="kw">True</span>
+
+    <span class="kw">def</span> <span class="fn">trainable_params</span>(self, method):
+        <span class="kw">return</span> [{<span class="st">"params"</span>: list(method.projector.parameters())}]
+
+    <span class="kw">def</span> <span class="fn">save_adapter</span>(self, method, path):
+        torch.save(method.projector.state_dict(), path + <span class="st">"/projector.pt"</span>)
+
+    <span class="kw">def</span> <span class="fn">load_adapter</span>(self, method, path):
+        method.projector.load_state_dict(torch.load(path + <span class="st">"/projector.pt"</span>))
+
+<span class="cm"># 注册 + 使用</span>
+registry.register(<span class="st">"peft"</span>, <span class="st">"projector_only"</span>, ProjectorOnlyStrategy)
+
+config = TrainingConfig(
+    peft=PEFTConfig(name=<span class="st">"projector_only"</span>),
+    learning_rate=1e-3,   <span class="cm"># Projector 用较大的 lr</span>
+    num_epochs=1,
+)</code></pre>
+
+<canvas id="cv_stage1_flow" width="880" height="200"></canvas>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- LoRA-in-LoRA -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="panel" id="p_loralora">
+<h2>LoRA-in-LoRA — 嵌套 LoRA 持续学习</h2>
+<div class="analogy"><strong>类比：</strong>你有一本教科书（原始权重），上面贴了一张大便签（外层 LoRA，记住旧任务）。现在学新任务时，你在大便签上面再贴一张小便签（内层 LoRA）。学完后把小便签的内容合并进大便签。</div>
+
+<canvas id="cv_loralora" width="880" height="440"></canvas>
+
+<h3>原理</h3>
+<div class="card cp">
+<p><strong>问题：</strong>直接用 LoRA 学新任务会忘记旧任务（灾难性遗忘）。</p>
+<p><strong>方案：</strong>两层 LoRA 嵌套结构：</p>
+<p>• <strong>外层 LoRA</strong> (A_out, B_out)：存储所有已学任务的知识。学习率小，慢慢积累。<br>
+• <strong>内层 LoRA</strong> (A_in, B_in)：只负责学习当前新任务。学习率大，快速适应。<br>
+• 每个任务结束后，<strong>merge 内层 → 外层</strong>，然后重置内层。</p>
+<p><strong>y = W·x + B_out·A_out·x + B_in·A_in·x</strong></p>
+</div>
+
+<h3>在 mmit 中使用</h3>
+<pre><code><span class="kw">class</span> <span class="ty">LoRAInLoRAStrategy</span>(PEFTStrategy):
+
+    <span class="kw">def</span> <span class="fn">wrap_model</span>(self, method, config):
+        inner_rank = config.extra.get(<span class="st">"inner_rank"</span>, 4)
+        <span class="cm"># 注入双层 LoRA 到 method.llm</span>
+        <span class="cm"># 外层 rank=16, 内层 rank=4</span>
+        ...
+
+    <span class="kw">def</span> <span class="fn">trainable_params</span>(self, method):
+        <span class="kw">return</span> [
+            {<span class="st">"params"</span>: outer_params, <span class="st">"lr"</span>: 1e-5},  <span class="cm"># 外层：小 lr 保持旧知识</span>
+            {<span class="st">"params"</span>: inner_params, <span class="st">"lr"</span>: 1e-4},  <span class="cm"># 内层：大 lr 学新任务</span>
+        ]
+
+    <span class="kw">def</span> <span class="fn">on_task_start</span>(self, method, task_id, config):
+        <span class="cm"># 新任务开始：重新初始化内层 LoRA</span>
+        self._reinit_inner(method.llm)
+
+    <span class="kw">def</span> <span class="fn">on_task_end</span>(self, method, task_id, config):
+        <span class="cm"># 任务结束：把内层 merge 进外层</span>
+        self._merge_inner_to_outer(method.llm)
+
+    ...
+
+registry.register(<span class="st">"peft"</span>, <span class="st">"lora-in-lora"</span>, LoRAInLoRAStrategy)
+
+<span class="cm"># 持续学习：多任务顺序训练</span>
+trainer = Trainer.from_config(method, config)
+trainer.<span class="fn">train_continual</span>([task1, task2, task3])</code></pre>
+
+<h3>train_continual 调度流程</h3>
+<canvas id="cv_loralora_flow" width="880" height="220"></canvas>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- MoReS -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="panel" id="p_mores">
+<h2>MoReS / LLaVA Steering — 模态表示转向</h2>
+<div class="analogy"><strong>类比：</strong>想象 embedding 空间是一片海洋，不同模态（视觉/文本）的特征像船一样在海上漂浮。Steering 就是给每条船加一个小推进器，把它推向更好的位置，让不同模态的船靠得更近。</div>
+
+<canvas id="cv_mores" width="880" height="400"></canvas>
+
+<h3>原理</h3>
+<div class="card cg">
+<p><strong>与 LoRA 的根本区别：</strong>MoReS 不修改模型权重！</p>
+<p>它在 embedding 空间中学习一个<strong>方向向量 (steering vector)</strong>，在 forward 时加到特定模态的 token embedding 上：</p>
+<p><strong>h' = h + α · v_steer</strong></p>
+<p>v_steer 是一个可学习的向量，α 是缩放因子。<br>
+效果：把视觉特征在 embedding 空间中"推向"更好的方向，改善模态对齐。</p>
+</div>
+
+<h3>在 mmit 中使用</h3>
+<pre><code><span class="kw">class</span> <span class="ty">MoReSStrategy</span>(PEFTStrategy):
+
+    <span class="kw">def</span> <span class="fn">wrap_model</span>(self, method, config):
+        steer_dim = config.extra.get(<span class="st">"steer_dim"</span>, 4096)
+        alpha = config.extra.get(<span class="st">"alpha"</span>, 0.1)
+
+        <span class="cm"># 创建可学习的 steering vector</span>
+        method._steer_vector = nn.Parameter(torch.randn(steer_dim) * 0.01)
+        method._steer_alpha = alpha
+
+        <span class="cm"># 冻结所有其他参数</span>
+        <span class="kw">for</span> p <span class="kw">in</span> method.parameters():
+            <span class="kw">if</span> p <span class="kw">is not</span> method._steer_vector:
+                p.requires_grad = <span class="kw">False</span>
+
+        <span class="cm"># Hook: 在 forward 时加上 steering</span>
+        <span class="cm"># method.forward_loss 中在 projector 输出后</span>
+        <span class="cm"># 加上 steer_alpha * steer_vector</span>
+
+    <span class="kw">def</span> <span class="fn">trainable_params</span>(self, method):
+        <span class="kw">return</span> [{<span class="st">"params"</span>: [method._steer_vector]}]
+        <span class="cm"># 只有一个向量！参数量 = 4096 ≈ 16KB</span>
+
+    <span class="kw">def</span> <span class="fn">save_adapter</span>(self, method, path):
+        torch.save(method._steer_vector, path + <span class="st">"/steer.pt"</span>)
+
+    ...
+
+registry.register(<span class="st">"peft"</span>, <span class="st">"mores"</span>, MoReSStrategy)
+
+config = TrainingConfig(
+    peft=PEFTConfig(name=<span class="st">"mores"</span>, extra={<span class="st">"alpha"</span>: 0.1}),
+)</code></pre>
+
+<table>
+  <tr><th></th><th>LoRA</th><th>MoReS</th></tr>
+  <tr><td>修改对象</td><td>LLM 权重矩阵</td><td>Embedding 空间</td></tr>
+  <tr><td>参数量</td><td>~4M (r=16)</td><td>~4K (一个向量)</td></tr>
+  <tr><td>训练速度</td><td>较快</td><td>极快</td></tr>
+  <tr><td>效果</td><td>通用性强</td><td>专注于模态对齐</td></tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- Adapter Layer -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="panel" id="p_adapter">
+<h2>Adapter Layer — 串联 Bottleneck</h2>
+<div class="analogy"><strong>类比：</strong>在流水线的每两道工序之间，加一个"质检+微调"小站。产品经过小站时被微调一下，但整体流水线不变。</div>
+
+<canvas id="cv_adapter" width="880" height="420"></canvas>
+
+<h3>原理</h3>
+<div class="card co">
+<p>在 Transformer 每一层的<strong>FFN 后面</strong>串联一个小的 bottleneck 网络：</p>
+<p><strong>adapter(x) = x + Up(ReLU(Down(x)))</strong></p>
+<p>• Down: d → r（降维，如 4096 → 64）<br>
+• ReLU: 非线性激活<br>
+• Up: r → d（升维，如 64 → 4096）<br>
+• 残差连接：加回原始输入</p>
+<p><strong>r 越小，参数越少</strong>（LaVIN 的 RepAdapter 甚至用 r=8）。</p>
+</div>
+
+<h3>在 mmit 中使用</h3>
+<pre><code><span class="kw">class</span> <span class="ty">AdapterLayerStrategy</span>(PEFTStrategy):
+
+    <span class="kw">def</span> <span class="fn">wrap_model</span>(self, method, config):
+        bottleneck = config.extra.get(<span class="st">"bottleneck"</span>, 64)
+
+        <span class="cm"># 冻结 LLM 所有参数</span>
+        <span class="kw">for</span> p <span class="kw">in</span> method.llm.parameters():
+            p.requires_grad = <span class="kw">False</span>
+
+        <span class="cm"># 在每个 Transformer 层后面插入 adapter</span>
+        <span class="kw">for</span> layer <span class="kw">in</span> method.llm.model.layers:
+            d = layer.mlp.down_proj.out_features
+            adapter = nn.Sequential(
+                nn.Linear(d, bottleneck),
+                nn.ReLU(),
+                nn.Linear(bottleneck, d),
+            )
+            layer._adapter = adapter  <span class="cm"># 挂载</span>
+
+        <span class="cm"># 修改 forward 使数据流经 adapter</span>
+        ...
+
+    <span class="kw">def</span> <span class="fn">trainable_params</span>(self, method):
+        params = []
+        <span class="kw">for</span> layer <span class="kw">in</span> method.llm.model.layers:
+            params.extend(layer._adapter.parameters())
+        <span class="kw">return</span> [{<span class="st">"params"</span>: params}]
+
+    ...
+
+registry.register(<span class="st">"peft"</span>, <span class="st">"adapter_layer"</span>, AdapterLayerStrategy)
+
+config = TrainingConfig(
+    peft=PEFTConfig(name=<span class="st">"adapter_layer"</span>, extra={<span class="st">"bottleneck"</span>: 64}),
+)</code></pre>
+
+<div class="callout">
+  <strong>对比 LoRA：</strong>Adapter Layer 是"串联"在数据流中，数据必须经过它，所以推理时会有额外延迟。而 LoRA 是"并联"的，训练完可以 merge 回原权重，推理无额外开销。
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- Full Fine-tune -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="panel" id="p_full">
+<h2>Full Fine-tune — 全量微调</h2>
+<div class="analogy"><strong>类比：</strong>不加任何便签，直接在教科书上改字。效果可能最好，但要小心：改太多可能把原来的好内容也改坏了。</div>
+
+<canvas id="cv_full" width="880" height="360"></canvas>
+
+<h3>原理</h3>
+<div class="card cp">
+<p>不使用任何 adapter，<strong>直接训练模型的所有参数</strong>（或指定的组件）。</p>
+<p>优点：理论上表达能力最强<br>
+缺点：显存需求大、容易过拟合/遗忘、每个任务需要存一份完整模型</p>
+<p>适用于：数据量大 + 计算资源充足 + 不需要保留原始模型能力的场景。</p>
+</div>
+
+<h3>在 mmit 中使用</h3>
+<pre><code><span class="kw">class</span> <span class="ty">FullFinetuneStrategy</span>(PEFTStrategy):
+
+    <span class="kw">def</span> <span class="fn">wrap_model</span>(self, method, config):
+        components = config.extra.get(<span class="st">"components"</span>, [<span class="st">"llm"</span>])
+        <span class="cm"># 冻结所有</span>
+        <span class="kw">for</span> p <span class="kw">in</span> method.llm.parameters(): p.requires_grad = <span class="kw">False</span>
+        <span class="kw">for</span> p <span class="kw">in</span> method.projector.parameters(): p.requires_grad = <span class="kw">False</span>
+        <span class="kw">for</span> p <span class="kw">in</span> method.vision.parameters(): p.requires_grad = <span class="kw">False</span>
+
+        <span class="cm"># 解冻指定组件</span>
+        <span class="kw">if</span> <span class="st">"llm"</span> <span class="kw">in</span> components:
+            <span class="kw">for</span> p <span class="kw">in</span> method.llm.parameters(): p.requires_grad = <span class="kw">True</span>
+        <span class="kw">if</span> <span class="st">"projector"</span> <span class="kw">in</span> components:
+            <span class="kw">for</span> p <span class="kw">in</span> method.projector.parameters(): p.requires_grad = <span class="kw">True</span>
+        <span class="kw">if</span> <span class="st">"vision"</span> <span class="kw">in</span> components:
+            <span class="kw">for</span> p <span class="kw">in</span> method.vision.parameters(): p.requires_grad = <span class="kw">True</span>
+
+    <span class="kw">def</span> <span class="fn">trainable_params</span>(self, method):
+        <span class="kw">return</span> [{<span class="st">"params"</span>: [p <span class="kw">for</span> p <span class="kw">in</span> method.parameters() <span class="kw">if</span> p.requires_grad]}]
+
+    <span class="kw">def</span> <span class="fn">save_adapter</span>(self, method, path):
+        <span class="cm"># 保存整个模型（因为没有单独的 adapter）</span>
+        method.llm.save_pretrained(path)
+
+    <span class="kw">def</span> <span class="fn">load_adapter</span>(self, method, path):
+        method.llm = method.llm.from_pretrained(path)
+
+registry.register(<span class="st">"peft"</span>, <span class="st">"full_finetune"</span>, FullFinetuneStrategy)
+
+config = TrainingConfig(
+    peft=PEFTConfig(name=<span class="st">"full_finetune"</span>,
+                    extra={<span class="st">"components"</span>: [<span class="st">"llm"</span>, <span class="st">"projector"</span>]}),
+    learning_rate=2e-5,
+)</code></pre>
+
+<div class="callout">
+  <strong>注意：</strong>虽然叫 "Full Fine-tune"，在 mmit 框架里它仍然是一个 PEFTStrategy 的子类。框架不关心策略里面是不是"参数高效" — 它只关心你实现了 4 个接口方法。这就是抽象的力量。
+</div>
+</div>
+
+</div><!-- wrap -->
+
+<script>
+const dpr=window.devicePixelRatio||1;
+function cv(id){const c=document.getElementById(id);const w=+c.getAttribute('width'),h=+c.getAttribute('height');c.width=w*dpr;c.height=h*dpr;c.style.width=w+'px';c.style.height=h+'px';const x=c.getContext('2d');x.scale(dpr,dpr);x.clearRect(0,0,w,h);return x;}
+function rr(x,a,b,w,h,r,f,s,lw=1){x.beginPath();x.roundRect(a,b,w,h,r);if(f){x.fillStyle=f;x.fill();}if(s){x.strokeStyle=s;x.lineWidth=lw;x.stroke();}}
+function tx(x,t,a,b,c,sz=12,al='center'){x.fillStyle=c;x.font=sz+'px "SF Mono",monospace';x.textAlign=al;x.textBaseline='middle';t.split('\n').forEach((l,i)=>x.fillText(l,a,b+i*(sz+4)));}
+function ar(x,x1,y1,x2,y2,c,lw=1.5){x.beginPath();x.moveTo(x1,y1);x.lineTo(x2,y2);x.strokeStyle=c;x.lineWidth=lw;x.stroke();const a=Math.atan2(y2-y1,x2-x1),s=7;x.beginPath();x.moveTo(x2,y2);x.lineTo(x2-s*Math.cos(a-.35),y2-s*Math.sin(a-.35));x.lineTo(x2-s*Math.cos(a+.35),y2-s*Math.sin(a+.35));x.closePath();x.fillStyle=c;x.fill();}
+const cl={a:'#6c8cff',pk:'#ff6c9a',g:'#4ade80',o:'#fb923c',p:'#a78bfa',cy:'#22d3ee',dim:'#5a6078',t:'#c8cfe0',bg:'#1a1d27',bd:'#2e3347'};
+
+// ══ Panel → draw functions mapping ══
+const panelDrawers = {
+  lora:     [drawLora, drawLoraFlow],
+  stage1:   [drawStage1, drawStage1Flow],
+  loralora: [drawLoraLora, drawLoraLoraFlow],
+  mores:    [drawMores],
+  adapter:  [drawAdapter],
+  full:     [drawFull],
+};
+
+function drawPanel(id) {
+  (panelDrawers[id]||[]).forEach(fn=>{try{fn();}catch(e){console.error(fn.name,e);}});
+}
+
+// ══ Tab nav ══
+document.getElementById('tabs').addEventListener('click',e=>{
+  const b=e.target.closest('.tab');if(!b)return;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
+  const pid=b.dataset.p;
+  document.getElementById('p_'+pid).classList.add('on');
+  window.scrollTo({top:0,behavior:'smooth'});
+  requestAnimationFrame(()=>drawPanel(pid));
+});
+
+// ══ LoRA diagram ══
+function drawLora(){
+  const x=cv('cv_lora');
+  // Method
+  rr(x,20,20,840,360,12,'#ffffff04',cl.bd);
+
+  // Vision
+  rr(x,50,60,160,100,8,cl.dim+'10',cl.dim);
+  tx(x,'Vision Encoder\n(冻结)',130,100,cl.dim,11);
+
+  ar(x,210,110,280,110,cl.dim);
+
+  // Projector
+  rr(x,280,60,140,100,8,cl.dim+'10',cl.dim);
+  tx(x,'Projector\n(冻结)',350,100,cl.dim,11);
+
+  ar(x,420,110,500,110,cl.dim);
+
+  // LLM
+  rr(x,500,40,340,140,10,cl.g+'10',cl.g,2);
+  tx(x,'LLM',670,55,cl.g,13);
+
+  // LLM internal - attention with LoRA
+  rr(x,520,80,140,80,6,cl.dim+'10',cl.dim+'40');
+  tx(x,'W (frozen)',590,105,cl.dim,10);
+  rr(x,520,128,60,24,4,cl.g+'25',cl.g);
+  tx(x,'A↓',550,140,cl.g,9);
+  rr(x,590,128,60,24,4,cl.g+'25',cl.g);
+  tx(x,'B↑',620,140,cl.g,9);
+
+  // Another block
+  rr(x,680,80,140,80,6,cl.dim+'10',cl.dim+'40');
+  tx(x,'FFN (frozen)',750,110,cl.dim,10);
+
+  // Output
+  ar(x,670,180,670,210,cl.dim);
+  tx(x,'logits + labels',670,228,cl.t,10);
+
+  // Bottom annotations
+  rr(x,50,250,240,100,8,cl.g+'08',cl.g+'30');
+  tx(x,'LoRA 训练的部分',170,268,cl.g,10);
+  tx(x,'A: d→r (4096→16)\nB: r→d (16→4096)\n参数量: ~131K / 层',170,305,cl.dim,9);
+
+  rr(x,340,250,220,100,8,cl.dim+'08',cl.dim+'30');
+  tx(x,'冻结的部分',450,268,cl.dim,10);
+  tx(x,'原始 LLM 权重\nVision Encoder\nProjector',450,305,cl.dim,9);
+
+  rr(x,610,250,230,100,8,cl.o+'08',cl.o+'30');
+  tx(x,'保存的内容',725,268,cl.o,10);
+  tx(x,'只保存 LoRA A/B 矩阵\n大小: ~20MB\n(完整模型: 14GB)',725,305,cl.dim,9);
+}
+
+function drawLoraFlow(){
+  const x=cv('cv_lora_flow');
+  const steps=[
+    {label:'Config\nname="lora"',col:cl.g},
+    {label:'Registry\nbuild("peft","lora")',col:cl.a},
+    {label:'wrap_model\n注入 LoRA',col:cl.pk},
+    {label:'train loop\nforward+backward',col:cl.a},
+    {label:'save_adapter\n~20MB',col:cl.g},
+  ];
+  const sw=140,gap=20,startX=(880-5*sw-4*gap)/2;
+  steps.forEach((s,i)=>{
+    const sx=startX+i*(sw+gap);
+    rr(x,sx,40,sw,80,8,s.col+'12',s.col,1.5);
+    tx(x,s.label,sx+sw/2,80,cl.t,10);
+    if(i<4) ar(x,sx+sw,80,sx+sw+gap,80,cl.dim);
+  });
+  // Numbers
+  steps.forEach((s,i)=>{
+    const sx=startX+i*(sw+gap);
+    rr(x,sx+sw/2-10,22,20,18,10,s.col,s.col);
+    tx(x,''+(i+1),sx+sw/2,31,'#0f1117',10);
+  });
+}
+
+// ══ Stage 1 ══
+function drawStage1(){
+  const x=cv('cv_stage1');
+  rr(x,20,20,840,340,12,'#ffffff04',cl.bd);
+
+  rr(x,50,60,180,120,8,cl.dim+'10',cl.dim);
+  tx(x,'Vision Encoder\n(CLIP)\n\n冻结',140,115,cl.dim,11);
+
+  ar(x,230,120,300,120,cl.o,2);
+  tx(x,'视觉特征\n1024 维',265,90,cl.dim,9);
+
+  rr(x,300,60,200,120,8,cl.g+'15',cl.g,2.5);
+  tx(x,'Projector\n(MLP)\n\n训练中',400,115,cl.g,11);
+  // Glow
+  x.shadowColor=cl.g;x.shadowBlur=15;
+  x.beginPath();x.roundRect(300,60,200,120,8);x.strokeStyle=cl.g;x.lineWidth=1;x.stroke();
+  x.shadowBlur=0;
+
+  ar(x,500,120,580,120,cl.o,2);
+  tx(x,'对齐后的特征\n4096 维',540,90,cl.dim,9);
+
+  rr(x,580,60,240,120,8,cl.dim+'10',cl.dim);
+  tx(x,'LLM\n(LLaMA)\n\n冻结',700,115,cl.dim,11);
+
+  // Bottom
+  rr(x,50,220,760,120,10,'#ffffff05',cl.bd);
+  tx(x,'为什么用大学习率 (1e-3)？',430,240,cl.t,11);
+  tx(x,'Projector 是从零开始训练的新模块，不是在已有知识上微调。',430,265,cl.dim,10);
+  tx(x,'需要快速学会"翻译"视觉特征 → LLM 能理解的 embedding。',430,285,cl.dim,10);
+  tx(x,'只有 ~4M 参数，不容易过拟合，可以用较大的 lr。',430,305,cl.dim,10);
+}
+
+function drawStage1Flow(){
+  const x=cv('cv_stage1_flow');
+  const items=['冻结 Vision\n+ LLM','解冻\nProjector','训练','保存\nprojector.pt'];
+  const cols=[cl.dim,cl.g,cl.a,cl.g];
+  const sw=160,gap=28,startX=(880-4*sw-3*gap)/2;
+  items.forEach((t,i)=>{
+    const sx=startX+i*(sw+gap);
+    rr(x,sx,40,sw,70,8,cols[i]+'12',cols[i],1.5);
+    tx(x,t,sx+sw/2,75,cl.t,10);
+    if(i<3) ar(x,sx+sw,75,sx+sw+gap,75,cl.dim);
+  });
+}
+
+// ══ LoRA-in-LoRA ══
+function drawLoraLora(){
+  const x=cv('cv_loralora');
+
+  // Weight matrix
+  rr(x,60,40,180,160,8,cl.dim+'10',cl.dim,1.5);
+  tx(x,'W (frozen)\n原始权重矩阵',150,80,cl.dim,11);
+  tx(x,'冻结',150,130,cl.dim,10);
+
+  tx(x,'+',270,120,cl.t,18);
+
+  // Outer LoRA
+  rr(x,300,30,220,180,8,cl.a+'12',cl.a,2);
+  tx(x,'外层 LoRA',410,50,cl.a,12);
+  rr(x,320,70,80,50,6,cl.a+'20',cl.a);
+  tx(x,'A_out\n(d→r)',360,95,cl.a,9);
+  rr(x,420,70,80,50,6,cl.a+'20',cl.a);
+  tx(x,'B_out\n(r→d)',460,95,cl.a,9);
+  tx(x,'lr = 1e-5 (慢)',410,140,cl.dim,9);
+  tx(x,'积累所有任务知识',410,158,cl.dim,9);
+  tx(x,'rank = 16',410,176,cl.dim,9);
+
+  tx(x,'+',540,120,cl.t,18);
+
+  // Inner LoRA
+  rr(x,570,30,260,180,8,cl.pk+'12',cl.pk,2);
+  tx(x,'内层 LoRA (当前任务)',700,50,cl.pk,12);
+  rr(x,590,70,80,50,6,cl.pk+'20',cl.pk);
+  tx(x,'A_in\n(d→r)',630,95,cl.pk,9);
+  rr(x,690,70,80,50,6,cl.pk+'20',cl.pk);
+  tx(x,'B_in\n(r→d)',730,95,cl.pk,9);
+  tx(x,'lr = 1e-4 (快)',700,140,cl.dim,9);
+  tx(x,'只学当前新任务',700,158,cl.dim,9);
+  tx(x,'rank = 4',700,176,cl.dim,9);
+
+  // Lifecycle
+  rr(x,60,260,760,160,10,'#ffffff05',cl.bd);
+  tx(x,'持续学习生命周期',440,278,cl.t,12);
+
+  const phases = [
+    {x:90,label:'Task 1\n开始',sub:'初始化内层',col:cl.pk},
+    {x:250,label:'Task 1\n训练',sub:'外层+内层\n同时训练',col:cl.a},
+    {x:410,label:'Task 1\n结束',sub:'merge 内层\n→ 外层',col:cl.g},
+    {x:570,label:'Task 2\n开始',sub:'重置内层\n(外层保留)',col:cl.pk},
+    {x:720,label:'Task 2\n训练',sub:'继续…',col:cl.a},
+  ];
+  phases.forEach((p,i)=>{
+    rr(x,p.x,300,130,60,6,p.col+'15',p.col);
+    tx(x,p.label,p.x+65,320,cl.t,9);
+    tx(x,p.sub,p.x+65,370,cl.dim,8);
+    if(i<4) ar(x,p.x+130,330,phases[i+1].x,330,cl.dim);
+  });
+}
+
+function drawLoraLoraFlow(){
+  const x=cv('cv_loralora_flow');
+  const items=[
+    {label:'on_task_start\n重置内层',col:cl.pk},
+    {label:'train(task_n)\n外层+内层训练',col:cl.a},
+    {label:'on_task_end\nmerge 内→外',col:cl.g},
+    {label:'→ 下一个 task\n重复',col:cl.o},
+  ];
+  const sw=170,gap=24,startX=(880-4*sw-3*gap)/2;
+  items.forEach((s,i)=>{
+    const sx=startX+i*(sw+gap);
+    rr(x,sx,40,sw,80,8,s.col+'12',s.col,1.5);
+    tx(x,s.label,sx+sw/2,80,cl.t,10);
+    if(i<3) ar(x,sx+sw,80,sx+sw+gap,80,cl.dim);
+  });
+  // Loop arrow
+  x.strokeStyle=cl.o+'60';x.lineWidth=1;x.setLineDash([4,4]);
+  x.beginPath();x.moveTo(startX+3*(sw+gap)+sw,80);
+  x.lineTo(startX+3*(sw+gap)+sw+20,80);
+  x.lineTo(startX+3*(sw+gap)+sw+20,150);
+  x.lineTo(startX-20,150);
+  x.lineTo(startX-20,80);
+  x.lineTo(startX,80);x.stroke();x.setLineDash([]);
+  tx(x,'循环',440,165,cl.o,9);
+}
+
+// ══ MoReS ══
+function drawMores(){
+  const x=cv('cv_mores');
+
+  // Embedding space visualization
+  rr(x,40,20,400,360,10,'#ffffff05',cl.bd);
+  tx(x,'Embedding 空间',240,14,cl.dim,10);
+
+  // Scatter dots - vision (before)
+  const vDots = [[120,120],[140,150],[100,170],[160,130],[130,190],[110,140]];
+  const tDots = [[280,250],[310,230],[290,270],[260,280],[300,260],[320,240]];
+
+  // Before steering
+  vDots.forEach(([dx,dy])=>{
+    x.beginPath();x.arc(dx,dy,5,0,Math.PI*2);
+    x.fillStyle=cl.o+'80';x.fill();
+  });
+  tDots.forEach(([dx,dy])=>{
+    x.beginPath();x.arc(dx,dy,5,0,Math.PI*2);
+    x.fillStyle=cl.a+'80';x.fill();
+  });
+
+  // Labels
+  tx(x,'视觉特征',130,90,cl.o,10);
+  tx(x,'文本特征',290,220,cl.a,10);
+  tx(x,'距离远 → 对齐差',210,200,cl.dim,9);
+
+  // Arrow showing steering direction
+  vDots.forEach(([dx,dy])=>{
+    ar(x,dx,dy,dx+60,dy+40,cl.g+'60',1);
+  });
+  tx(x,'steering\nvector',200,160,cl.g,9);
+
+  // After (right side)
+  rr(x,480,20,380,360,10,'#ffffff05',cl.bd);
+  tx(x,'Steering 之后',670,14,cl.dim,10);
+
+  // Steered vision dots (closer to text)
+  const vDotsSteered = [[180+480,160],[200+480,190],[160+480,210],[220+480,170],[190+480,230],[170+480,180]];
+  const tDots2 = [[220+480,250],[250+480,230],[230+480,270],[200+480,280],[240+480,260],[260+480,240]];
+
+  vDotsSteered.forEach(([dx,dy])=>{
+    x.beginPath();x.arc(dx,dy,5,0,Math.PI*2);
+    x.fillStyle=cl.o;x.fill();
+  });
+  tDots2.forEach(([dx,dy])=>{
+    x.beginPath();x.arc(dx,dy,5,0,Math.PI*2);
+    x.fillStyle=cl.a;x.fill();
+  });
+
+  tx(x,'距离近 → 对齐好',670,310,cl.g,10);
+
+  // Legend
+  x.beginPath();x.arc(520,350,5,0,Math.PI*2);x.fillStyle=cl.o;x.fill();
+  tx(x,'视觉',540,350,cl.dim,9,'left');
+  x.beginPath();x.arc(600,350,5,0,Math.PI*2);x.fillStyle=cl.a;x.fill();
+  tx(x,'文本',620,350,cl.dim,9,'left');
+}
+
+// ══ Adapter Layer ══
+function drawAdapter(){
+  const x=cv('cv_adapter');
+
+  // Transformer layer
+  rr(x,100,20,680,380,12,'#ffffff05',cl.bd);
+  tx(x,'一个 Transformer 层',440,14,cl.dim,10);
+
+  // Input
+  tx(x,'输入',440,55,cl.t,11);
+  ar(x,440,63,440,90,cl.dim);
+
+  // Self-attention
+  rr(x,280,90,320,60,8,cl.dim+'10',cl.dim+'40');
+  tx(x,'Self-Attention (frozen)',440,120,cl.dim,10);
+  ar(x,440,150,440,180,cl.dim);
+
+  // FFN
+  rr(x,280,180,320,60,8,cl.dim+'10',cl.dim+'40');
+  tx(x,'FFN (frozen)',440,210,cl.dim,10);
+  ar(x,440,240,440,270,cl.dim);
+
+  // Adapter (inserted)
+  rr(x,300,270,280,80,8,cl.o+'15',cl.o,2.5);
+  tx(x,'Adapter (可训练)',440,290,cl.o,11);
+  tx(x,'Down(d→r) → ReLU → Up(r→d)',440,315,cl.o,9);
+  tx(x,'+ 残差连接',440,335,cl.dim,9);
+
+  // Glow
+  x.shadowColor=cl.o;x.shadowBlur=12;
+  x.beginPath();x.roundRect(300,270,280,80,8);x.strokeStyle=cl.o;x.lineWidth=1;x.stroke();
+  x.shadowBlur=0;
+
+  ar(x,440,350,440,380,cl.dim);
+  tx(x,'输出',440,395,cl.t,11);
+
+  // Side comparison
+  rr(x,660,80,130,180,8,'#ffffff05',cl.bd);
+  tx(x,'对比 LoRA',725,98,cl.p,10);
+  tx(x,'LoRA: 并联\n(不在数据路径上)\n\nAdapter: 串联\n(在数据路径上)\n\n推理差异:\nLoRA: 可 merge\nAdapter: 有延迟',725,175,cl.dim,8);
+}
+
+// ══ Full ══
+function drawFull(){
+  const x=cv('cv_full');
+  rr(x,20,20,840,320,12,'#ffffff04',cl.bd);
+
+  // All components glowing
+  const comps=[
+    {x:50,y:60,w:200,h:100,label:'Vision Encoder\n可选训练',trainable:true},
+    {x:310,y:60,w:170,h:100,label:'Projector\n训练',trainable:true},
+    {x:540,y:60,w:280,h:100,label:'LLM (全部参数)\n训练',trainable:true},
+  ];
+
+  comps.forEach(c=>{
+    const col = cl.pk;
+    rr(x,c.x,c.y,c.w,c.h,8,col+'15',col,2);
+    tx(x,c.label,c.x+c.w/2,c.y+c.h/2,cl.t,11);
+    x.shadowColor=col;x.shadowBlur=12;
+    x.beginPath();x.roundRect(c.x,c.y,c.w,c.h,8);x.strokeStyle=col;x.lineWidth=1;x.stroke();
+    x.shadowBlur=0;
+  });
+
+  ar(x,250,110,310,110,cl.dim);
+  ar(x,480,110,540,110,cl.dim);
+
+  // Bottom: comparison
+  rr(x,50,200,360,120,10,cl.pk+'08',cl.pk+'30');
+  tx(x,'全量微调',230,218,cl.pk,11);
+  tx(x,'参数量: 7B (100%)\n保存大小: ~14GB\n显存: ~56GB\n优点: 表达能力最强\n风险: 灾难性遗忘',230,275,cl.dim,9);
+
+  rr(x,460,200,380,120,10,cl.g+'08',cl.g+'30');
+  tx(x,'LoRA (对比)',650,218,cl.g,11);
+  tx(x,'参数量: ~4M (0.06%)\n保存大小: ~20MB\n显存: ~16GB\n优点: 高效且保留原始能力\n风险: 表达能力稍弱',650,275,cl.dim,9);
+}
+
+// Init — only draw the visible panel
+requestAnimationFrame(()=>drawPanel('lora'));
+</script>
+</body>
+</html>

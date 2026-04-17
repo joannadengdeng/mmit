@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MoReS Architecture — LLaVA-1.5 上的可视化 (with concrete example)</title>
+<style>
+/* ============================================================
+ * MoReS 算法可视化 — 打印优化 + 一个完整例子贯穿全文
+ * ============================================================ */
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#fff;
+  --text:#000;
+  --t2:#333;
+  --t3:#666;
+  --accent:#0040a0;
+  --green:#006400;
+  --red:#a00000;
+  --orange:#a04000;
+  --purple:#6020a0;
+  --mono:'SF Mono','Fira Code','Consolas',monospace;
+  --sans:-apple-system,'Helvetica Neue',sans-serif;
+}
+body{
+  background:#fff;
+  color:#000;
+  font-family:var(--sans);
+  font-size:9.5pt;
+  line-height:1.45;
+  padding:16px 24px;
+  max-width:920px;
+  margin:0 auto;
+}
+
+@page { size: A4 portrait; margin: 12mm; }
+@media print {
+  body { padding: 0; max-width: none; }
+  .print-hint { display: none !important; }
+  .section { page-break-inside: avoid; }
+  h2 { page-break-after: avoid; page-break-before: always; }
+  h2:first-of-type { page-break-before: avoid; }
+  pre, .matrix-vis, .layer-list, .formula-box { page-break-inside: avoid; }
+}
+
+/* === Print hint === */
+.print-hint{
+  background:#fffbe0;
+  border:2px solid #806000;
+  padding:12px 20px;
+  margin:0 0 20px;
+  font-size:12pt;
+  color:#806000;
+  border-radius:4px;
+}
+.print-hint b{color:#000}
+
+/* === Headings === */
+h1{
+  font-size:15pt;
+  font-weight:700;
+  margin-bottom:4px;
+  border-bottom:2px solid #000;
+  padding-bottom:5px;
+}
+.subtitle{
+  font-size:9.5pt;
+  color:#333;
+  margin-bottom:16px;
+  font-style:italic;
+}
+h2{
+  font-size:12pt;
+  font-weight:700;
+  margin:20px 0 10px;
+  padding:6px 12px;
+  background:#000;
+  color:#fff;
+  border-radius:3px;
+}
+h3{
+  font-size:10.5pt;
+  font-weight:700;
+  margin:12px 0 6px;
+  color:#000;
+  padding-bottom:2px;
+  border-bottom:1px solid #ccc;
+}
+h4{
+  font-size:9.5pt;
+  font-weight:700;
+  margin:8px 0 4px;
+  color:#000;
+}
+p{margin:8px 0}
+.section{margin-bottom:28px}
+
+/* === 例子定锚框 === */
+.example-anchor{
+  background:#fff8e0;
+  border:1.5px solid #806000;
+  border-radius:4px;
+  padding:10px 14px;
+  margin:12px 0;
+}
+.example-anchor h3{
+  margin:0 0 6px;
+  border:none;
+  color:#806000;
+  font-size:10.5pt;
+}
+.example-anchor pre{
+  background:#fff;
+  border:1px solid #806000;
+  border-radius:3px;
+  padding:6px 10px;
+  font-family:var(--mono);
+  font-size:8.5pt;
+  line-height:1.45;
+  white-space:pre-wrap;
+}
+
+/* === 架构盒子 === */
+.box{
+  border:1.5px solid #000;
+  padding:6px 12px;
+  margin:4px 0;
+  border-radius:3px;
+  background:#fff;
+  font-family:var(--mono);
+  font-size:9pt;
+  text-align:center;
+}
+.box-frozen{
+  background:#f0f5f0;
+  border-color:#006400;
+  border-style:dashed;
+}
+.box-frozen .label{color:#006400;font-size:7.5pt;font-style:italic;margin-top:2px}
+.box-mores{
+  background:#fff0f0;
+  border:1.8px solid #a00000;
+  border-radius:3px;
+}
+.box-mores .label{color:#a00000;font-weight:700;font-size:8pt;margin-top:2px}
+.box .name{font-weight:700;font-size:9.5pt}
+.box .shape{color:#666;font-size:8pt;margin-top:2px}
+.box .params{color:#666;font-size:8pt;margin-top:1px}
+.box .example{color:#806000;font-size:8pt;margin-top:2px;font-weight:600}
+
+.arrow-down{
+  text-align:center;
+  font-size:11pt;
+  color:#000;
+  margin:0;
+  line-height:1;
+  font-weight:700;
+}
+
+.arch-stack{display:flex;flex-direction:column;align-items:center;width:100%;max-width:680px;margin:12px auto}
+.arch-stack > *{width:100%}
+
+/* === Layer list (32 层) === */
+.layer-list{
+  border:1.5px solid #000;
+  border-radius:3px;
+  padding:0;
+  margin:5px 0;
+  font-family:var(--mono);
+  font-size:8.5pt;
+  width:100%;
+  background:#fff;
+}
+.layer-list .layer-row{
+  padding:3px 10px;
+  border-bottom:1px solid #ddd;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+.layer-list .layer-row:last-child{border-bottom:none}
+.layer-list .layer-row.hooked{
+  background:#fff0f0;
+  font-weight:700;
+}
+.layer-list .layer-row.hooked .marker{color:#a00000}
+.layer-list .layer-row .marker{color:#006400;font-size:7.5pt}
+.layer-list .skip{
+  padding:4px 10px;
+  text-align:center;
+  color:#666;
+  font-style:italic;
+  font-size:7.5pt;
+  border-bottom:1px solid #ddd;
+  background:#fafafa;
+}
+
+/* === 数学公式块 === */
+.formula-box{
+  background:#f8f8f8;
+  border:1.5px solid #000;
+  border-radius:3px;
+  padding:10px 14px;
+  margin:8px 0;
+  font-family:var(--mono);
+  font-size:9pt;
+  line-height:1.5;
+}
+.formula-box .title{
+  font-family:var(--sans);
+  font-weight:700;
+  font-size:9.5pt;
+  color:#a00000;
+  margin-bottom:5px;
+  border-bottom:1px solid #a00000;
+  padding-bottom:3px;
+}
+
+/* === Matrix visualization === */
+.matrix-vis{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  margin:8px 0;
+  font-family:var(--mono);
+  flex-wrap:wrap;
+}
+.matrix{
+  display:inline-block;
+  border:1.2px solid #000;
+  padding:0;
+  background:#fff;
+  text-align:center;
+}
+.matrix .mtitle{
+  background:#000;
+  color:#fff;
+  padding:2px 7px;
+  font-size:7.5pt;
+  font-weight:700;
+}
+.matrix .mbody{
+  padding:4px 7px;
+  font-size:7.5pt;
+  line-height:1.3;
+  white-space:pre;
+}
+.matrix .mshape{
+  background:#f0f0f0;
+  padding:2px 7px;
+  font-size:7pt;
+  color:#666;
+  border-top:1px solid #ccc;
+}
+.mop{font-size:11pt;font-weight:700;margin:0 3px}
+
+/* === Token flow visualization === */
+.token-strip{
+  display:flex;
+  flex-wrap:wrap;
+  gap:2px;
+  margin:5px 0;
+  padding:7px;
+  border:1.2px solid #000;
+  border-radius:3px;
+  background:#fafafa;
+  align-items:center;
+}
+.token{
+  display:inline-block;
+  padding:2px 5px;
+  border:1px solid #000;
+  border-radius:2px;
+  font-family:var(--mono);
+  font-size:7pt;
+  background:#fff;
+  white-space:nowrap;
+}
+.token.system{background:#e8eef5;font-size:6.5pt;color:#0040a0}
+.token.visual{background:#fff;border-color:#a04000;color:#a04000}
+.token.visual-selected{background:#fff0e0;border:1.8px solid #a00000;color:#a00000;font-weight:700}
+.token.text{background:#fff}
+.token.assistant{background:#e8f5e8;color:#006400}
+.token-ellipsis{font-size:11pt;color:#666;padding:0 3px}
+.token-bracket{font-size:11pt;color:#000;padding:0 3px;font-weight:700}
+
+/* === Numeric grid (heatmap-like) === */
+.num-grid{
+  display:grid;
+  grid-template-columns:repeat(8, 1fr);
+  gap:2px;
+  margin:5px 0;
+  padding:5px;
+  border:1.2px solid #000;
+  border-radius:3px;
+  background:#fafafa;
+  font-family:var(--mono);
+  font-size:6.5pt;
+}
+.num-cell{
+  padding:2px 1px;
+  border:1px solid #000;
+  text-align:center;
+  background:#fff;
+}
+.num-cell.high{background:#ffe0e0;border-color:#a00000;font-weight:700}
+.num-cell.med{background:#fff0e0}
+
+/* note */
+.note{
+  background:#fff8e0;
+  border-left:3px solid #806000;
+  padding:7px 12px;
+  margin:8px 0;
+  font-size:8.5pt;
+}
+.note b{color:#806000}
+
+/* highlight */
+.hl-mores{color:#a00000;font-weight:700}
+.hl-frozen{color:#006400;font-weight:600}
+.hl-num{font-family:var(--mono);background:#fff8e0;padding:1px 4px;border:1px solid #806000;border-radius:2px;font-size:8pt}
+
+/* legend */
+.legend{
+  display:flex;
+  gap:10px;
+  margin:5px 0 12px;
+  font-size:8pt;
+  flex-wrap:wrap;
+}
+.legend-item{display:flex;align-items:center;gap:4px}
+.legend-box{display:inline-block;width:10px;height:10px;border:1.2px solid #000;border-radius:2px}
+.legend-box.frozen{background:#f0f5f0;border-color:#006400;border-style:dashed}
+.legend-box.mores{background:#fff0f0;border-color:#a00000;border-width:1.8px}
+.legend-box.normal{background:#fff;border-color:#000}
+
+/* table */
+table{width:100%;border-collapse:collapse;font-size:8pt;margin:7px 0}
+th,td{padding:4px 7px;border:1px solid #000;text-align:left}
+th{background:#000;color:#fff}
+</style>
+</head>
+<body>
+
+<div class="print-hint">
+  <b>📄 打印说明：</b>按 <b>Ctrl+P / Cmd+P</b> 打印。推荐：A4 纵向、最小边距、勾选"背景图形"。每个 section 自动分页。
+</div>
+
+<h1>MoReS 算法可视化 — 用一个具体例子讲清楚每一步</h1>
+<p class="subtitle">把 Bi et al. (ACL 2025) 的 MoReS 论文用图解展示。所有数字基于 LLaVA-1.5-7B + 一张公交车图片。</p>
+
+<!-- ============================================================ -->
+<!-- 例子锚定                                                     -->
+<!-- ============================================================ -->
+<div class="example-anchor">
+  <h3>📌 整篇文章用的例子</h3>
+  <pre>模型: llava-hf/llava-1.5-7b-hf
+  ├─ vision_tower:           CLIP ViT-L/14 (336×336)
+  ├─ multi_modal_projector:  2-layer MLP (1024 → 4096)
+  └─ language_model:         Vicuna-7B
+       ├─ embed_tokens
+       ├─ layers: 32 × LlamaDecoderLayer    ← MoReS 在这里 hook
+       │     hidden_dim = 4096
+       └─ lm_head: Linear(4096, 32064)
+
+输入:
+  image: coco/train2017/000000033471.jpg   (一张白红相间的公交车图片)
+  question: "What are the colors of the buses?"
+  answer: "The buses are white and red."</pre>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><span class="legend-box normal"></span> 数据流动</div>
+  <div class="legend-item"><span class="legend-box frozen"></span> 冻结模块 (不训练)</div>
+  <div class="legend-item"><span class="legend-box mores"></span> MoReS 介入位置</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- Section 1: LLaVA-1.5 完整数据流                              -->
+<!-- ============================================================ -->
+<div class="section">
+<h2>1. 我们的例子怎么从图片+问题变成 hidden state</h2>
+
+<p>从 PIL 图片和问题文本开始，到进入第一个 transformer layer 之前发生了什么：</p>
+
+<div class="arch-stack">
+
+<div class="box">
+<div class="name">📷 PIL.Image (公交车图)</div>
+<div class="example">原始 RGB 图片, 任意尺寸 (比如 480×640)</div>
+</div>
+<div class="arrow-down">↓ resize + normalize</div>
+
+<div class="box box-frozen">
+<div class="name">CLIP ViT-L/14 视觉编码器</div>
+<div class="shape">输入: pixel_values = (1, 3, 336, 336)</div>
+<div class="shape">内部: 24 个 transformer block</div>
+<div class="shape">输出: image_features = (1, 576, 1024)</div>
+<div class="example">576 = (336/14)² 个 patch tokens, 每个 1024 维</div>
+<div class="params">~300M 参数 — <span class="hl-frozen">全部冻结</span></div>
+<div class="label">FROZEN</div>
+</div>
+<div class="arrow-down">↓</div>
+
+<div class="box box-frozen">
+<div class="name">multi_modal_projector (2-layer MLP)</div>
+<div class="shape">Linear(1024, 4096) → GELU → Linear(4096, 4096)</div>
+<div class="shape">(1, 576, 1024) → (1, 576, 4096)</div>
+<div class="example">把 CLIP 输出投影到 Vicuna 的 hidden 空间</div>
+<div class="params">~25M 参数 — <span class="hl-frozen">冻结 (per paper)</span></div>
+<div class="label">FROZEN</div>
+</div>
+<div class="arrow-down">↓ 视觉 token 准备好了</div>
+
+<div class="box">
+<div class="name">🔤 同时处理文本: tokenize question</div>
+<div class="example">"What are the colors of the buses?"</div>
+<div class="shape">→ input_ids 长 45 (含 1 个 &lt;image&gt; token id=32000)</div>
+</div>
+<div class="arrow-down">↓ embedding lookup + 替换 image token</div>
+
+</div>
+
+<h3>拼接后的 hidden state — 实际进入 LLM 的样子</h3>
+
+<p>在 forward 内部，1 个 <code>&lt;image&gt;</code> token 被展开成 576 个 visual tokens：</p>
+
+<div class="token-strip">
+  <span class="token-bracket">[</span>
+  <span class="token system">BOS</span>
+  <span class="token system">A</span>
+  <span class="token system">chat</span>
+  <span class="token system">...</span>
+  <span class="token system">USER:</span>
+  <span class="token-bracket">|</span>
+  <span class="token visual">VIS₁</span>
+  <span class="token visual">VIS₂</span>
+  <span class="token visual">VIS₃</span>
+  <span class="token-ellipsis">...</span>
+  <span class="token visual">VIS₅₇₆</span>
+  <span class="token-bracket">|</span>
+  <span class="token text">\n</span>
+  <span class="token text">What</span>
+  <span class="token text">are</span>
+  <span class="token text">the</span>
+  <span class="token text">colors</span>
+  <span class="token text">of</span>
+  <span class="token text">the</span>
+  <span class="token text">buses</span>
+  <span class="token text">?</span>
+  <span class="token assistant">ASSISTANT:</span>
+  <span class="token assistant">The</span>
+  <span class="token assistant">buses</span>
+  <span class="token assistant">...</span>
+  <span class="token-bracket">]</span>
+</div>
+
+<div class="formula-box">
+<div class="title">最终 hidden state shape</div>
+position 0~4:    5 个系统 prompt tokens     <span class="hl-frozen">(蓝色)</span>
+position 5~580:  576 个 visual tokens        <span class="hl-mores">(橙色 ← MoReS 关心的!)</span>
+position 581~619: 39 个文本 tokens           (白色)
+
+总长度: <span class="hl-num">620</span>
+hidden state shape: <span class="hl-num">(1, 620, 4096)</span>
+</div>
+
+<div class="note">
+<b>关键事实：</b>576 个 visual tokens 在 hidden state 里是<b>连续的一段</b> (位置 5~580)。
+MoReS 的目标就是在这 576 个位置上做修正。
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- Section 2: 32 层 decoder 的全景                              -->
+<!-- ============================================================ -->
+<div class="section">
+<h2>2. Vicuna-7B 的 32 层 decoder — MoReS 在哪 9 层 hook</h2>
+
+<p>hidden state <code>(1, 620, 4096)</code> 进入 LLM 后会逐层 forward。MoReS 在
+<b>positions = "f4+l5"</b> 这 9 层注册了 forward hook：</p>
+
+<div class="layer-list">
+<div class="layer-row hooked">
+  <span><b>Layer 0</b> &nbsp; LlamaDecoderLayer</span><span class="marker">★ MoReS hook</span>
+</div>
+<div class="layer-row hooked">
+  <span><b>Layer 1</b> &nbsp; LlamaDecoderLayer</span><span class="marker">★ MoReS hook</span>
+</div>
+<div class="layer-row hooked">
+  <span><b>Layer 2</b> &nbsp; LlamaDecoderLayer</span><span class="marker">★ MoReS hook</span>
+</div>
+<div class="layer-row hooked">
+  <span><b>Layer 3</b> &nbsp; LlamaDecoderLayer</span><span class="marker">★ MoReS hook (前 4 层 = "f4")</span>
+</div>
+<div class="layer-row"><span>Layer 4</span><span class="marker">普通 forward</span></div>
+<div class="layer-row"><span>Layer 5</span><span class="marker">普通 forward</span></div>
+<div class="layer-row"><span>Layer 6</span><span class="marker">普通 forward</span></div>
+<div class="skip">⋮ Layer 7 ~ 25 (19 层) — 普通 forward, 无 hook ⋮</div>
+<div class="layer-row"><span>Layer 26</span><span class="marker">普通 forward</span></div>
+<div class="layer-row hooked">
+  <span><b>Layer 27</b> &nbsp; LlamaDecoderLayer</span><span class="marker">★ MoReS hook</span>
+</div>
+<div class="layer-row hooked">
+  <span><b>Layer 28</b> &nbsp; LlamaDecoderLayer</span><span class="marker">★ MoReS hook</span>
+</div>
+<div class="layer-row hooked">
+  <span><b>Layer 29</b> &nbsp; LlamaDecoderLayer</span><span class="marker">★ MoReS hook</span>
+</div>
+<div class="layer-row hooked">
+  <span><b>Layer 30</b> &nbsp; LlamaDecoderLayer</span><span class="marker">★ MoReS hook</span>
+</div>
+<div class="layer-row hooked">
+  <span><b>Layer 31</b> &nbsp; LlamaDecoderLayer</span><span class="marker">★ MoReS hook (后 5 层 = "l5")</span>
+</div>
+</div>
+
+<div class="formula-box">
+<div class="title">_parse_positions("f4+l5", num_layers=32) 的代码逻辑</div>
+f4 = list(range(0, 4))           = [0, 1, 2, 3]              <span class="hl-frozen"># 前 4 层</span>
+l5 = list(range(32-5, 32))       = [27, 28, 29, 30, 31]      <span class="hl-frozen"># 后 5 层</span>
+target_indices = sorted(f4 + l5) = [0, 1, 2, 3, 27, 28, 29, 30, 31]
+
+<span class="hl-mores"># 共 9 层会被 hook, 中间 23 层完全不动</span>
+</div>
+
+<p>每一个 hooked 层的输出都会经过<b>同一个</b> intervention 模块（共享权重）。
+所以参数总量只有一份 intervention 的大小。</p>
+</div>
+
+<!-- ============================================================ -->
+<!-- Section 3: 一个 LlamaDecoderLayer 内部                       -->
+<!-- ============================================================ -->
+<div class="section">
+<h2>3. 走进一个 LlamaDecoderLayer — hook 究竟在哪里触发</h2>
+
+<p>以 Layer 0 为例（hidden state shape 一直是 <code>(1, 620, 4096)</code>）：</p>
+
+<div class="arch-stack">
+
+<div class="box"><div class="name">输入 h</div><div class="shape">(1, 620, 4096)</div></div>
+<div class="arrow-down">↓</div>
+
+<div class="box box-frozen">
+<div class="name">RMSNorm (input_layernorm)</div>
+<div class="params">4,096 参数 — <span class="hl-frozen">FROZEN</span></div>
+</div>
+<div class="arrow-down">↓</div>
+
+<div class="box box-frozen">
+<div class="name">Self-Attention</div>
+<div class="shape">q_proj, k_proj, v_proj, o_proj — 每个 Linear(4096, 4096)</div>
+<div class="params">4 × 4096² = 67,108,864 参数 — <span class="hl-frozen">FROZEN</span></div>
+<div class="example">注意: LoRA 会注入到 q/v 这里, MoReS 不动</div>
+</div>
+<div class="arrow-down">↓</div>
+
+<div class="box"><div class="name">+ residual</div></div>
+<div class="arrow-down">↓</div>
+
+<div class="box box-frozen">
+<div class="name">RMSNorm (post_attention_layernorm)</div>
+</div>
+<div class="arrow-down">↓</div>
+
+<div class="box box-frozen">
+<div class="name">FFN (SwiGLU MLP)</div>
+<div class="shape">gate_proj, up_proj, down_proj — Linear(4096, 11008) × 3</div>
+<div class="params">~134M 参数 — <span class="hl-frozen">FROZEN</span></div>
+</div>
+<div class="arrow-down">↓</div>
+
+<div class="box"><div class="name">+ residual</div></div>
+<div class="arrow-down">↓</div>
+
+<div class="box">
+<div class="name">layer 的 forward() 返回 output</div>
+<div class="shape">(1, 620, 4096)</div>
+</div>
+<div class="arrow-down">↓ 返回到 PyTorch</div>
+
+<div class="box box-mores">
+<div class="name">★ PyTorch 自动调用我们注册的 hook ★</div>
+<div class="shape">layer.register_forward_hook(make_hook(intervention))</div>
+<div class="label">这是 MoReS 唯一介入的位置 — 整个 layer 的 weight 一个都没动</div>
+</div>
+<div class="arrow-down">↓</div>
+
+<div class="box box-mores">
+<div class="name">OrthogonalIntervention.forward(h)</div>
+<div class="shape">见 Section 4 的逐步可视化</div>
+</div>
+<div class="arrow-down">↓</div>
+
+<div class="box">
+<div class="name">修改后的 h' → 传给 Layer 1</div>
+<div class="shape">(1, 620, 4096)</div>
+</div>
+
+</div>
+
+<div class="note">
+<b>整个 LlamaDecoderLayer 的 ~200M 参数全部 frozen。</b>
+MoReS 不修改 weight，只是在 layer 输出后做一次加法 (h' = h + delta)。
+后续 layer 拿到的是修改后的 h'，所以模型行为发生变化。
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- Section 4: OrthogonalIntervention 内部 — 矩阵可视化           -->
+<!-- ============================================================ -->
+<div class="section">
+<h2>4. OrthogonalIntervention 内部 — 用矩阵图展示每一步</h2>
+
+<h3>4.1 模块的两个参数</h3>
+
+<div class="matrix-vis">
+<div class="matrix">
+<div class="mtitle">R (正交投影)</div>
+<div class="mbody">[ r₁  r₂  r₃ ... r₄₀₉₆ ]</div>
+<div class="mshape">shape: (1, 4096) | 参数: 4096</div>
+</div>
+<div class="matrix">
+<div class="mtitle">W (Linear)</div>
+<div class="mbody">weight: [ w₁  w₂ ... w₄₀₉₆ ]
+bias:   [ b ]</div>
+<div class="mshape">shape: (1, 4096) + (1,) | 参数: 4097</div>
+</div>
+</div>
+
+<p style="text-align:center"><b>总参数 = 4096 + 4097 = <span class="hl-num">8,193</span></b></p>
+
+<p>初始化：<span class="hl-mores">R</span> 用 <code>nn.init.orthogonal_</code> 初始化（满足 R·Rᵀ ≈ I），
+<span class="hl-mores">W.weight 和 W.bias 全 0</span>。
+所以训练第一步时 delta = 0，模型行为和原模型完全一样，然后慢慢学。</p>
+
+<h3>4.2 输入：选中的 6 个 visual tokens</h3>
+
+<p>从 620 个位置中按 norm 选 top 1% (6 个)，假设是位置 [12, 47, 89, 234, 412, 510]：</p>
+
+<div class="num-grid">
+<div class="num-cell">h_sel[0]<br>4096-dim</div>
+<div class="num-cell">h_sel[1]<br>4096-dim</div>
+<div class="num-cell">h_sel[2]<br>4096-dim</div>
+<div class="num-cell">h_sel[3]<br>4096-dim</div>
+<div class="num-cell">h_sel[4]<br>4096-dim</div>
+<div class="num-cell">h_sel[5]<br>4096-dim</div>
+<div class="num-cell" style="background:#eee">—</div>
+<div class="num-cell" style="background:#eee">—</div>
+</div>
+<p style="text-align:center;font-family:var(--mono);font-size:11pt">
+<b>h_sel.shape = (6, 4096)</b>
+</p>
+
+<h3>4.3 Step 1: Rh = F.linear(h_sel, R)</h3>
+
+<div class="matrix-vis">
+<div class="matrix">
+<div class="mtitle">h_sel</div>
+<div class="mbody">┌                      ┐
+│ token 0: [4096 dims] │
+│ token 1: [4096 dims] │
+│ token 2: [4096 dims] │
+│ token 3: [4096 dims] │
+│ token 4: [4096 dims] │
+│ token 5: [4096 dims] │
+└                      ┘</div>
+<div class="mshape">(6, 4096)</div>
+</div>
+<div class="mop">·</div>
+<div class="matrix">
+<div class="mtitle">Rᵀ</div>
+<div class="mbody">┌    ┐
+│ r₁ │
+│ r₂ │
+│ ⋮  │
+│r₄₀₉₆│
+└    ┘</div>
+<div class="mshape">(4096, 1)</div>
+</div>
+<div class="mop">=</div>
+<div class="matrix" style="border-color:#a00000">
+<div class="mtitle" style="background:#a00000">Rh</div>
+<div class="mbody">┌      ┐
+│ rh₀  │
+│ rh₁  │
+│ rh₂  │
+│ rh₃  │
+│ rh₄  │
+│ rh₅  │
+└      ┘</div>
+<div class="mshape">(6, 1)</div>
+</div>
+</div>
+
+<p>把 6 个 4096 维的向量都投影到 R 的 1 维子空间，得到 6 个标量</p>
+
+<h3>4.4 Step 2: Wh = self.W(h_sel)</h3>
+
+<div class="matrix-vis">
+<div class="matrix">
+<div class="mtitle">h_sel</div>
+<div class="mbody">(同上)</div>
+<div class="mshape">(6, 4096)</div>
+</div>
+<div class="mop">·</div>
+<div class="matrix">
+<div class="mtitle">W.weightᵀ</div>
+<div class="mbody">┌    ┐
+│ w₁ │
+│ w₂ │
+│ ⋮  │
+│w₄₀₉₆│
+└    ┘</div>
+<div class="mshape">(4096, 1)</div>
+</div>
+<div class="mop">+</div>
+<div class="matrix">
+<div class="mtitle">bias</div>
+<div class="mbody">[b]</div>
+<div class="mshape">(1,)</div>
+</div>
+<div class="mop">=</div>
+<div class="matrix" style="border-color:#a00000">
+<div class="mtitle" style="background:#a00000">Wh</div>
+<div class="mbody">┌      ┐
+│ wh₀  │
+│ wh₁  │
+│ wh₂  │
+│ wh₃  │
+│ wh₄  │
+│ wh₅  │
+└      ┘</div>
+<div class="mshape">(6, 1)</div>
+</div>
+</div>
+
+<p>这是 MoReS 学习的"应该往哪个方向修正"。训练初期 W=0 → Wh=0。</p>
+
+<h3>4.5 Step 3: delta_low = Wh - Rh</h3>
+
+<div class="matrix-vis">
+<div class="matrix">
+<div class="mtitle">Wh</div>
+<div class="mbody">[wh₀, wh₁, wh₂,
+ wh₃, wh₄, wh₅]</div>
+<div class="mshape">(6, 1)</div>
+</div>
+<div class="mop">-</div>
+<div class="matrix">
+<div class="mtitle">Rh</div>
+<div class="mbody">[rh₀, rh₁, rh₂,
+ rh₃, rh₄, rh₅]</div>
+<div class="mshape">(6, 1)</div>
+</div>
+<div class="mop">=</div>
+<div class="matrix" style="border-color:#a00000">
+<div class="mtitle" style="background:#a00000">delta_low</div>
+<div class="mbody">[d₀, d₁, d₂,
+ d₃, d₄, d₅]</div>
+<div class="mshape">(6, 1)</div>
+</div>
+</div>
+
+<p>"想要的方向 - 当前的投影" — 这就是要在低维子空间里加的修正量</p>
+
+<h3>4.6 Step 4: delta = F.linear(delta_low, R.t())</h3>
+
+<div class="matrix-vis">
+<div class="matrix">
+<div class="mtitle">delta_low</div>
+<div class="mbody">[d₀, d₁, d₂,
+ d₃, d₄, d₅]</div>
+<div class="mshape">(6, 1)</div>
+</div>
+<div class="mop">·</div>
+<div class="matrix">
+<div class="mtitle">R</div>
+<div class="mbody">[ r₁  r₂  ... r₄₀₉₆ ]</div>
+<div class="mshape">(1, 4096)</div>
+</div>
+<div class="mop">=</div>
+<div class="matrix" style="border-color:#a00000">
+<div class="mtitle" style="background:#a00000">delta</div>
+<div class="mbody">┌                      ┐
+│ d₀·r: [4096 values]  │
+│ d₁·r: [4096 values]  │
+│ d₂·r: [4096 values]  │
+│ d₃·r: [4096 values]  │
+│ d₄·r: [4096 values]  │
+│ d₅·r: [4096 values]  │
+└                      ┘</div>
+<div class="mshape">(6, 4096)</div>
+</div>
+</div>
+
+<p>把每个标量 dᵢ 沿着 R 的方向"展开"成一个 4096 维的向量。
+这就是要加到 h_sel 上的修正量。</p>
+
+<h3>4.7 Step 5: h_sel + delta</h3>
+
+<div class="matrix-vis">
+<div class="matrix">
+<div class="mtitle">h_sel</div>
+<div class="mbody">(原始 6×4096)</div>
+<div class="mshape">(6, 4096)</div>
+</div>
+<div class="mop">+</div>
+<div class="matrix" style="border-color:#a00000">
+<div class="mtitle" style="background:#a00000">delta</div>
+<div class="mbody">(修正量 6×4096)</div>
+<div class="mshape">(6, 4096)</div>
+</div>
+<div class="mop">=</div>
+<div class="matrix" style="border-color:#a00000;background:#fff8f8">
+<div class="mtitle" style="background:#a00000">h_sel'</div>
+<div class="mbody">(修正后)</div>
+<div class="mshape">(6, 4096)</div>
+</div>
+</div>
+
+<p>最后把这 6 个修正后的 token 写回原 hidden state 的对应位置：</p>
+
+<div class="formula-box">
+<div class="title">写回原 hidden state</div>
+h_out = h.clone()                       <span class="hl-frozen"># 复制 (1, 620, 4096)</span>
+h_out[0, [12,47,89,234,412,510]] = h_sel + delta
+<span class="hl-mores"># 只有这 6 个位置变了, 其他 614 个位置完全不动</span>
+return h_out                             <span class="hl-frozen"># 传给下一层</span>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- Section 5: Top 1% 怎么选                                     -->
+<!-- ============================================================ -->
+<div class="section">
+<h2>5. 怎么从 620 个 token 里挑出 6 个？— Top 1% by norm</h2>
+
+<p>对每个位置算它的 L2 范数（norm）。norm 大的认为"信息量更多"，挑前 1%：</p>
+
+<div class="formula-box">
+<div class="title">selection 代码</div>
+norms = h[<span class="hl-frozen">0</span>].norm(dim=-<span class="hl-frozen">1</span>)        <span class="hl-frozen"># shape (620,) — 每个 token 的 L2 范数</span>
+k = max(<span class="hl-frozen">1</span>, int(<span class="hl-frozen">620</span> * <span class="hl-frozen">0.01</span>))     <span class="hl-frozen"># k = 6</span>
+top6 = norms.topk(k).indices       <span class="hl-mores"># 选 norm 最大的 6 个位置</span>
+</div>
+
+<h3>假设的 norm 分布</h3>
+
+<p>每个格子是一个 token 的 L2 范数（颜色越红表示 norm 越大）：</p>
+
+<div class="num-grid">
+<div class="num-cell">2.1</div><div class="num-cell">3.4</div><div class="num-cell">2.8</div><div class="num-cell">3.1</div><div class="num-cell">2.5</div><div class="num-cell med">5.2</div><div class="num-cell">3.0</div><div class="num-cell">2.7</div>
+<div class="num-cell">2.4</div><div class="num-cell">2.9</div><div class="num-cell">3.3</div><div class="num-cell">2.6</div><div class="num-cell high">8.7</div><div class="num-cell">3.5</div><div class="num-cell">2.8</div><div class="num-cell">3.0</div>
+<div class="num-cell">3.1</div><div class="num-cell">2.7</div><div class="num-cell">2.9</div><div class="num-cell">3.4</div><div class="num-cell">2.8</div><div class="num-cell">3.0</div><div class="num-cell">2.6</div><div class="num-cell med">5.5</div>
+<div class="num-cell">2.9</div><div class="num-cell">3.2</div><div class="num-cell">2.8</div><div class="num-cell">3.0</div><div class="num-cell">2.7</div><div class="num-cell">2.9</div><div class="num-cell">3.3</div><div class="num-cell">2.5</div>
+<div class="num-cell">2.6</div><div class="num-cell">3.1</div><div class="num-cell">2.8</div><div class="num-cell">2.9</div><div class="num-cell">3.4</div><div class="num-cell">2.7</div><div class="num-cell">3.0</div><div class="num-cell high">9.1</div>
+<div class="num-cell">2.5</div><div class="num-cell">2.8</div><div class="num-cell">3.2</div><div class="num-cell">2.7</div><div class="num-cell">2.9</div><div class="num-cell">3.0</div><div class="num-cell med">5.8</div><div class="num-cell">2.6</div>
+<div class="num-cell">3.1</div><div class="num-cell">2.8</div><div class="num-cell">3.0</div><div class="num-cell">2.7</div><div class="num-cell">2.9</div><div class="num-cell high">8.3</div><div class="num-cell">3.2</div><div class="num-cell">2.5</div>
+<div class="num-cell">2.6</div><div class="num-cell">3.0</div><div class="num-cell">2.8</div><div class="num-cell">2.9</div><div class="num-cell">3.1</div><div class="num-cell">2.7</div><div class="num-cell high">7.9</div><div class="num-cell">2.8</div>
+</div>
+<p style="text-align:center;font-size:10pt;color:#666">
+(只展示 64 个格子作为示意, 实际有 620 个)
+</p>
+
+<div class="legend">
+<div class="legend-item"><span class="legend-box" style="background:#fff"></span> 普通 token (norm ~3)</div>
+<div class="legend-item"><span class="legend-box" style="background:#fff0e0"></span> 中等 (norm ~5)</div>
+<div class="legend-item"><span class="legend-box" style="background:#ffe0e0;border-color:#a00000"></span> 被选中 (top 1%)</div>
+</div>
+
+<div class="note">
+<b>论文的假设：</b>norm 越大的 token 包含越多语义信息。修正这些"信号最强"的 token，
+比修正所有 token 更高效。这就是为什么只动 1% 也能 work。
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- Section 6: 训练时的梯度流                                    -->
+<!-- ============================================================ -->
+<div class="section">
+<h2>6. 训练时只有 8,193 个参数有梯度</h2>
+
+<p>在我们的例子里，loss 是 cross-entropy on "The buses are white and red." 这 9 个 token 的预测。
+backward 时梯度只能流到 <code>requires_grad=True</code> 的参数：</p>
+
+<div class="formula-box">
+<div class="title">参数清单 (LLaVA-1.5-7B + MoReS)</div>
+🔒 vision_tower (CLIP):           ~300,000,000  <span class="hl-frozen">FROZEN (无梯度)</span>
+🔒 multi_modal_projector:          ~25,000,000  <span class="hl-frozen">FROZEN</span>
+🔒 language_model.embed_tokens:   ~131,000,000  <span class="hl-frozen">FROZEN</span>
+🔒 language_model.layers (32×):
+   ├─ 4 × attention proj          ~67M × 32     <span class="hl-frozen">FROZEN</span>
+   ├─ 3 × FFN proj               ~134M × 32     <span class="hl-frozen">FROZEN</span>
+   └─ 2 × RMSNorm                  ~8K × 32     <span class="hl-frozen">FROZEN</span>
+🔒 lm_head:                       ~131,000,000  <span class="hl-frozen">FROZEN</span>
+
+────────────────────────────────────────────────
+<span class="hl-mores">★ OrthogonalIntervention (共享):</span>
+   R                                     4,096  <span class="hl-mores">TRAINABLE ★</span>
+   W.weight                              4,096  <span class="hl-mores">TRAINABLE ★</span>
+   W.bias                                    1  <span class="hl-mores">TRAINABLE ★</span>
+                                  ───────────
+                                       <span class="hl-num">8,193</span>  <span class="hl-mores">★ 唯一有梯度的参数</span>
+────────────────────────────────────────────────
+总计: 7,063,008,193 params, trainable ratio = 0.000116%
+</div>
+
+<h3>梯度流向</h3>
+
+<div class="formula-box">
+<div class="title">backward() 在做什么</div>
+loss = CE(logits[answer_pos], labels[answer_pos])
+loss.backward()
+
+<span class="hl-frozen"># PyTorch 自动梯度反传:</span>
+<span class="hl-frozen"># lm_head ← logits 的梯度</span>
+<span class="hl-frozen"># layer 31 ← lm_head 的梯度  (frozen, 不更新)</span>
+<span class="hl-frozen"># intervention(layer 31 output) ← 这里有 hook!</span>
+<span class="hl-mores">#   → R.grad, W.weight.grad, W.bias.grad ★</span>
+<span class="hl-frozen"># layer 31 weight ← (frozen, 不更新)</span>
+<span class="hl-frozen"># layer 30 ← ...</span>
+<span class="hl-mores"># intervention(layer 30 output) ← 同一个 intervention 又收一次梯度</span>
+<span class="hl-mores"># ... 9 个 hooked layer 的梯度会累加到同一个 intervention 上 ...</span>
+<span class="hl-frozen"># layers 4~26 (普通 forward) ← 没有 hook, 梯度直接流过去</span>
+<span class="hl-frozen"># layer 0~3 ← 又触发 hook</span>
+<span class="hl-mores"># intervention 收到累计 9 次的梯度</span>
+
+<span class="hl-mores">optimizer.step()  # 只更新 R 和 W (8,193 个参数)</span>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- Section 7: 一句话总结                                         -->
+<!-- ============================================================ -->
+<div class="section">
+<h2>7. 一句话总结</h2>
+
+<div class="formula-box" style="font-size:13pt;text-align:center;background:#fff8f8;border-color:#a00000;padding:20px">
+<b style="color:#a00000;font-size:14pt">MoReS = 在 LLaVA 的 32 层 decoder 中,<br>
+只在 <span class="hl-num">9 个特定层</span>的输出上,<br>
+对最重要的 <span class="hl-num">1%</span> visual token,<br>
+用一个共享的 <span class="hl-num">8,193 参数</span>小模块,<br>
+做一次 <span class="hl-num">rank-1</span> 的正交修正</b>
+</div>
+
+<p style="margin-top:16px">在我们的例子里：模型看到公交车图 + 问题 → CLIP 出 576 个 visual tokens →
+进入 32 层 LLM → 在 9 个层上, top 1% (~6 个) 的视觉 token 被一个 8K 参数的小模块修正方向 →
+最终生成 "The buses are white and red." 的概率被微调。</p>
+
+<p>训练时，这 8,193 个参数从 0 学起，慢慢学到"应该把视觉 token 往哪个方向 nudge"
+才能让模型回答得更准。</p>
+</div>
+
+</body>
+</html>

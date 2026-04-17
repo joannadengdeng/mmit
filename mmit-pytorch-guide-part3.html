@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PyTorch 基础教学 — mmit 所需知识 (Part 3)</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:8.5pt;line-height:1.4;padding:12px 20px;max-width:980px;margin:0 auto}
+@page{size:A4 portrait;margin:6mm}
+@media print{body{padding:0;max-width:none;font-size:8pt;line-height:1.35}.print-hint{display:none!important}h2{page-break-after:avoid}h3{page-break-after:avoid}.vis,.pytorch,pre.code,table,.note{page-break-inside:avoid}}
+h1{font-size:13pt;font-weight:700;border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:3px}
+.subtitle{font-size:8pt;color:#444;font-style:italic;margin-bottom:8px}
+h2{font-size:10.5pt;font-weight:700;margin:10px 0 5px;padding:4px 8px;background:#000;color:#fff;border-radius:3px}
+h3{font-size:9pt;font-weight:700;margin:6px 0 3px;border-bottom:1px solid #ccc;padding-bottom:1px}
+p{margin:3px 0;font-size:8pt}
+pre.code{background:#f8f8f8;border:1px solid #000;border-radius:2px;padding:5px 8px;font-family:var(--mono);font-size:7.5pt;line-height:1.4;margin:4px 0;white-space:pre-wrap;word-break:break-word}
+.code .kw{color:#a00050;font-weight:600}.code .fn{color:#0040a0;font-weight:600}.code .str{color:#006400}.code .cm{color:#666;font-style:italic}.code .num{color:#a04000}
+.vis{border:1.2px solid #000;border-radius:3px;padding:6px 10px;margin:4px 0;background:#fafafa}
+.vis .vis-title{font-weight:700;font-size:9pt;margin-bottom:4px;color:#a00000}
+.vis-row{display:flex;align-items:center;gap:5px;margin:2px 0;font-family:var(--mono);font-size:7.5pt;flex-wrap:wrap}
+.vis-box{border:1px solid #000;padding:3px 8px;border-radius:2px;background:#fff;text-align:center;min-width:45px;font-size:7pt}
+.vis-box.param{background:#fff0f0;border-color:#a00000;font-weight:700}
+.vis-box.result{background:#e8f0ff;border-color:#0040a0}
+.vis-box.input{background:#fff8e0;border-color:#806000}
+.vis-box.frozen{background:#f0f5f0;border-color:#006400;border-style:dashed}
+.vis-arrow{font-size:12pt;font-weight:700;color:#000}
+.vis-eq{font-size:11pt;font-weight:700;color:#a00000}
+.vis-label{font-size:6.5pt;color:#666;font-style:italic}
+.pytorch{margin:3px 0;padding:5px 8px;background:#f0f0ff;border:1px solid #0040a0;border-radius:2px;font-size:7.5pt}
+.pytorch .pt-title{font-weight:700;color:#0040a0;font-size:8pt;margin-bottom:2px;font-family:var(--mono)}
+.note{background:#fff8e0;border-left:2.5px solid #806000;padding:4px 8px;margin:3px 0;font-size:7.5pt}
+.note b{color:#806000}
+table{width:100%;border-collapse:collapse;font-size:7pt;margin:3px 0}
+th,td{padding:2px 5px;border:1px solid #000;text-align:left;vertical-align:top}
+th{background:#000;color:#fff}
+.graph{font-family:var(--mono);font-size:7pt;line-height:1.2;white-space:pre;background:#f8f8f8;border:1px solid #000;padding:5px 8px;margin:4px 0;border-radius:2px}
+</style>
+</head>
+<body>
+
+<h1>PyTorch 基础教学 — mmit 所需知识 (Part 3)</h1>
+<div class="subtitle">Day 5: PEFT 参数高效微调方法 &nbsp;|&nbsp; Day 6: 进阶技术与知识总览</div>
+<p class="print-hint" style="color:#888;font-size:7pt">提示：Ctrl+P 可直接打印为 PDF，已优化 A4 排版</p>
+
+<!-- ═══════════════════════════════════════════════════ DAY 5 ═══════════════════════════════════════ -->
+
+<h2>Day 5 &mdash; PEFT 参数高效微调方法</h2>
+
+<!-- ─────── 5.1 LoRA ─────── -->
+<h3>5.1 LoRA — 低秩适配 (Low-Rank Adaptation)</h3>
+
+<p><b>核心问题：</b>大模型的线性层权重矩阵 W 通常是 4096&times;4096 = 16M 个参数。全量微调需要为每个参数计算梯度，存储优化器状态，内存消耗巨大。</p>
+<p><b>核心思想：</b>研究发现，微调时权重的<b>变化量 &Delta;W 近似低秩</b>。与其学习 16M 个参数的 &Delta;W，不如直接学习两个小矩阵 A (r&times;4096) 和 B (4096&times;r)，其中 r=8。可训练参数量：2 &times; 8 &times; 4096 = 65K，仅为原来的 0.4%。</p>
+
+<p><b>数学公式：</b></p>
+<pre class="code"><span class="cm"># LoRA 的核心等式</span>
+W' = W + (&alpha;/r) &times; B @ A
+
+<span class="cm"># W:  原始权重，冻结（不计算梯度）</span>
+<span class="cm"># A:  低秩矩阵，shape=(r, d_in)，Kaiming uniform 初始化</span>
+<span class="cm"># B:  低秩矩阵，shape=(d_out, r)，零初始化</span>
+<span class="cm"># &alpha;/r: 缩放因子，例如 &alpha;=16, r=8 &rarr; scale=2</span>
+<span class="cm"># B 初始化为零 &rarr; 训练开始时 &Delta;W = 0 &rarr; 模型行为不变</span></pre>
+
+<div class="vis">
+<div class="vis-title">LoRA 前向传播流程</div>
+<div class="vis-row">
+  <div class="vis-box input">x<br><span class="vis-label">输入 (batch, d_in)</span></div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box frozen">W (冻结)<br><span class="vis-label">4096&times;4096, 无梯度</span></div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box result">Wx<br><span class="vis-label">主路径输出</span></div>
+</div>
+<div class="vis-row" style="margin-left:80px">
+  <span style="font-size:9pt;font-weight:700;color:#a00000">+</span>
+</div>
+<div class="vis-row">
+  <div class="vis-box input">x<br><span class="vis-label">同一输入</span></div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box param">A (可训练)<br><span class="vis-label">r&times;4096, Kaiming init</span></div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box param">B (可训练)<br><span class="vis-label">4096&times;r, 零 init</span></div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box result">(&alpha;/r)&times;BAx<br><span class="vis-label">低秩旁路输出</span></div>
+</div>
+<div class="vis-row" style="margin-top:4px">
+  <span class="vis-eq">=</span>
+  <div class="vis-box result" style="background:#d0e8ff;font-weight:700">W'x = Wx + (&alpha;/r)&times;BAx<br><span class="vis-label">最终输出，等价于用 W' = W+(&alpha;/r)BA 做线性变换</span></div>
+</div>
+</div>
+
+<p><b>推理时合并：</b>训练完成后，可以直接计算 W_merged = W + (&alpha;/r)&times;B@A，得到一个普通线性层。推理时<b>零额外延迟</b>。</p>
+
+<div class="vis">
+<div class="vis-title">LoRA 在 Transformer Block 中的位置</div>
+<div class="graph">
+          Input
+            &darr;
+    ┌───────────────────┐
+    &vert;   Multi-Head Attn  &vert;
+    &vert;  ┌──────────────┐ &vert;
+    &vert;  &vert; q_proj [+LoRA]&vert; &vert; &larr; LoRA 适配器
+    &vert;  &vert; k_proj [+LoRA]&vert; &vert; &larr; LoRA 适配器
+    &vert;  &vert; v_proj [+LoRA]&vert; &vert; &larr; LoRA 适配器
+    &vert;  &vert; o_proj [+LoRA]&vert; &vert; &larr; LoRA 适配器
+    &vert;  └──────────────┘ &vert;
+    └───────────────────┘
+            &darr; + residual
+    ┌───────────────────┐
+    &vert;      MLP          &vert;
+    &vert;  ┌──────────────┐ &vert;
+    &vert;  &vert;gate_proj[+LoRA]&vert; &larr; LoRA 适配器
+    &vert;  &vert;up_proj  [+LoRA]&vert; &larr; LoRA 适配器
+    &vert;  &vert;down_proj[+LoRA]&vert; &larr; LoRA 适配器
+    &vert;  └──────────────┘ &vert;
+    └───────────────────┘
+            &darr; + residual
+          Output</div>
+</div>
+
+<p><b>LLaVA-1.5-7B 参数计算：</b>7 个目标模块 &times; 32 层 &times; 2 矩阵 (A+B) &times; r(8) &times; d(4096) = 约 3.6M 可训练参数。相比 7B 全量参数，仅占 <b>0.05%</b>。</p>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch / PEFT 实现</div>
+<pre class="code"><span class="kw">from</span> peft <span class="kw">import</span> LoraConfig, get_peft_model
+
+config = LoraConfig(
+    r=<span class="num">8</span>,                          <span class="cm"># 低秩维度</span>
+    lora_alpha=<span class="num">16</span>,                 <span class="cm"># 缩放因子 &alpha;</span>
+    target_modules=[<span class="str">"q_proj"</span>, <span class="str">"v_proj"</span>,
+                    <span class="str">"k_proj"</span>, <span class="str">"o_proj"</span>,
+                    <span class="str">"gate_proj"</span>, <span class="str">"up_proj"</span>,
+                    <span class="str">"down_proj"</span>],       <span class="cm"># 目标层</span>
+    lora_dropout=<span class="num">0.05</span>,              <span class="cm"># Dropout 正则化</span>
+)
+model = <span class="fn">get_peft_model</span>(model, config)
+model.<span class="fn">print_trainable_parameters</span>()
+<span class="cm"># 输出: trainable params: 3,670,016 || all params: 7,262,576,640 || 0.05%</span></pre>
+</div>
+
+<table>
+<tr><th>参数</th><th>含义</th><th>典型值</th><th>影响</th></tr>
+<tr><td>r</td><td>秩（低秩维度）</td><td>8, 16, 64</td><td>越大 &rarr; 表达力越强，参数越多</td></tr>
+<tr><td>lora_alpha</td><td>缩放因子 &alpha;</td><td>16, 32</td><td>alpha/r 决定 LoRA 更新的幅度</td></tr>
+<tr><td>target_modules</td><td>应用 LoRA 的层名</td><td>["q_proj","v_proj"]</td><td>更多层 &rarr; 效果更好但参数更多</td></tr>
+<tr><td>lora_dropout</td><td>LoRA 路径的 Dropout</td><td>0.0 ~ 0.1</td><td>正则化，防止过拟合</td></tr>
+</table>
+
+<div class="note"><b>mmit 中的 LoRA：</b>mmit 的 LoRA 方法对 LLM 的全部 7 个投影层应用 LoRA (r=8, &alpha;=16)。视觉编码器和投影层保持冻结。训练完成后可用 merge_and_unload() 合并权重。</div>
+
+<!-- ─────── 5.2 QLoRA ─────── -->
+<h3>5.2 QLoRA — 量化 + LoRA</h3>
+
+<p><b>核心思想：</b>先把基座模型量化到 4-bit（NF4 格式），再在上面叠加 LoRA 适配器（保持 fp16）。这样基座模型从 14GB 压缩到 3.5GB，大幅降低显存需求。</p>
+
+<p><b>NF4 (Normal Float 4-bit)：</b>专门为正态分布的权重设计的 4-bit 编码。将权重按块分组（通常 64 个一组），找到最优的 16 个量化点（4-bit = 2^4 = 16 个级别），将每个权重映射到最近的量化点。</p>
+<p><b>双重量化 (Double Quantization)：</b>每个量化块需要一个 fp32 的缩放常数。双重量化将这些缩放常数再量化一次，进一步节省内存。</p>
+
+<div class="vis">
+<div class="vis-title">显存对比 (7B 模型)</div>
+<div class="vis-row">
+  <div class="vis-box" style="background:#ffcccc;min-width:320px;font-weight:700">Full FT: 模型 14GB + 梯度 14GB + 优化器 28GB = 56GB</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box" style="background:#ffe0b0;min-width:240px;font-weight:700">LoRA: 模型 14GB + LoRA 8MB + 优化器 24MB &asymp; 15GB</div>
+</div>
+<div class="vis-row">
+  <div class="vis-box" style="background:#ccffcc;min-width:180px;font-weight:700">QLoRA: 模型 3.5GB + LoRA 8MB + 优化器 24MB &asymp; 5GB</div>
+</div>
+<div class="vis-row">
+  <span class="vis-label">Full FT 需要 A100 80GB &times;1 | LoRA 需要 RTX 4090 24GB &times;1 | QLoRA 可在 RTX 3060 12GB 上运行</span>
+</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch / BitsAndBytes 实现</div>
+<pre class="code"><span class="kw">from</span> transformers <span class="kw">import</span> BitsAndBytesConfig
+<span class="kw">import</span> torch
+
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=<span class="kw">True</span>,                     <span class="cm"># 启用 4-bit 量化</span>
+    bnb_4bit_quant_type=<span class="str">"nf4"</span>,              <span class="cm"># NF4 量化类型</span>
+    bnb_4bit_compute_dtype=torch.float16,   <span class="cm"># 计算时反量化到 fp16</span>
+    bnb_4bit_use_double_quant=<span class="kw">True</span>,         <span class="cm"># 双重量化</span>
+)
+model = AutoModelForCausalLM.<span class="fn">from_pretrained</span>(
+    model_name, quantization_config=bnb_config
+)
+<span class="cm"># 然后正常应用 LoRA</span>
+model = <span class="fn">get_peft_model</span>(model, lora_config)</pre>
+</div>
+
+<p><b>速度代价：</b>QLoRA 的每次前向传播都需要反量化（4-bit &rarr; fp16），比纯 fp16 的 LoRA 慢约 30-40%。这是用时间换空间的权衡。</p>
+
+<div class="note"><b>mmit 中的 QLoRA：</b>mmit 支持在 BitsAndBytes 量化模型上叠加 LoRA。对于消费级 GPU（如 RTX 3090），这是训练 7B VLM 的实用方案。</div>
+
+<!-- ─────── 5.3 DoRA ─────── -->
+<h3>5.3 DoRA — 权重分解 LoRA (Weight-Decomposed LRA)</h3>
+
+<p><b>核心观察：</b>全量微调会同时改变权重的<b>幅度（magnitude）</b>和<b>方向（direction）</b>，而标准 LoRA 把两者混在一起。DoRA 将它们分开处理。</p>
+
+<p><b>数学分解：</b></p>
+<pre class="code"><span class="cm"># 将权重分解为幅度 m 和方向 V/||V||</span>
+W = m &times; (V / ||V||)
+
+<span class="cm"># m:  每列的幅度（标量向量），单独训练</span>
+<span class="cm"># V:  方向矩阵，用 LoRA 修改: V' = V + &Delta;V = V + (&alpha;/r)&times;BA</span>
+<span class="cm"># 最终: W' = m' &times; (V' / ||V'||)</span></pre>
+
+<div class="vis">
+<div class="vis-title">DoRA 权重分解</div>
+<div class="vis-row">
+  <div class="vis-box frozen">W (原始权重)<br><span class="vis-label">冻结</span></div>
+  <span class="vis-eq">=</span>
+  <div class="vis-box param">m (幅度)<br><span class="vis-label">可训练标量向量</span></div>
+  <span class="vis-arrow">&times;</span>
+  <div class="vis-box frozen">V / ||V||<br><span class="vis-label">方向（归一化）</span></div>
+</div>
+<div class="vis-row" style="margin-top:4px">
+  <span class="vis-label" style="margin-left:20px">LoRA 只修改方向部分：</span>
+</div>
+<div class="vis-row">
+  <div class="vis-box frozen">V<br><span class="vis-label">原始方向</span></div>
+  <span class="vis-arrow">+</span>
+  <div class="vis-box param">BA<br><span class="vis-label">LoRA &Delta;V</span></div>
+  <span class="vis-eq">=</span>
+  <div class="vis-box result">V'<br><span class="vis-label">新方向</span></div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box result">V'/||V'||<br><span class="vis-label">归一化</span></div>
+</div>
+</div>
+
+<p><b>效果：</b>相比标准 LoRA 平均提升约 0.7%，推理时可以合并（和 LoRA 一样零额外延迟）。</p>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch / PEFT 实现（仅需一行改动）</div>
+<pre class="code">config = LoraConfig(
+    r=<span class="num">8</span>, lora_alpha=<span class="num">16</span>,
+    target_modules=[<span class="str">"q_proj"</span>, <span class="str">"v_proj"</span>],
+    use_dora=<span class="kw">True</span>,   <span class="cm"># 就这一行！启用 DoRA</span>
+)
+model = <span class="fn">get_peft_model</span>(model, config)</pre>
+</div>
+
+<div class="note"><b>mmit 中的 DoRA：</b>在 mmit 中使用 DoRA 只需在 LoraConfig 中设置 <code>use_dora=True</code>。整个 DoRA 的实现只有约 5 行代码——PEFT 库帮你处理了所有细节。</div>
+
+<!-- ─────── 5.4 MoE / MoLE ─────── -->
+<h3>5.4 Mixture of Experts (MoE) — 专家混合</h3>
+
+<p><b>核心思想：</b>不用单个 MLP 处理所有 token，而是准备 N 个"专家"MLP + 一个路由器。每个 token 由路由器选择 top-k 个最合适的专家处理。参数量增大但每个 token 的计算量不变（只激活 k 个专家）。</p>
+
+<p><b>路由器：</b>一个简单的线性层 + softmax，将输入映射到 N 个专家的概率分布，选择概率最高的 k 个。</p>
+
+<div class="vis">
+<div class="vis-title">MoE 路由流程（N=4 个专家，top-k=2）</div>
+<div class="vis-row">
+  <div class="vis-box input">token x<br><span class="vis-label">输入向量</span></div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box result">Router<br><span class="vis-label">softmax(x @ W_r)</span></div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box" style="background:#ffe0e0">得分: [0.45, 0.05, 0.12, 0.38]</div>
+</div>
+<div class="vis-row" style="margin-top:4px">
+  <span class="vis-label" style="margin-left:200px">选择 top-2:</span>
+</div>
+<div class="vis-row">
+  <div class="vis-box param" style="border-width:2px">Expert 0<br><span class="vis-label">得分 0.45 (选中)</span></div>
+  <div class="vis-box frozen" style="opacity:0.4">Expert 1<br><span class="vis-label">得分 0.05 (跳过)</span></div>
+  <div class="vis-box frozen" style="opacity:0.4">Expert 2<br><span class="vis-label">得分 0.12 (跳过)</span></div>
+  <div class="vis-box param" style="border-width:2px">Expert 3<br><span class="vis-label">得分 0.38 (选中)</span></div>
+</div>
+<div class="vis-row" style="margin-top:4px">
+  <span class="vis-label">输出 = 0.54 &times; Expert0(x) + 0.46 &times; Expert3(x)</span>
+  <span class="vis-label" style="margin-left:10px">（权重重新归一化：0.45/(0.45+0.38), 0.38/(0.45+0.38)）</span>
+</div>
+</div>
+
+<p><b>负载均衡损失：</b>如果不加约束，路由器会陷入"赢者通吃"——所有 token 都路由到同一个专家，其他专家完全浪费。需要加辅助损失 L_balance 鼓励均匀分配：</p>
+<pre class="code"><span class="cm"># 辅助负载均衡损失</span>
+L_balance = N &times; &Sigma;_i (f_i &times; P_i)
+<span class="cm"># f_i = 分配到专家 i 的 token 比例</span>
+<span class="cm"># P_i = 路由到专家 i 的平均概率</span>
+<span class="cm"># 当均匀分配时，f_i = P_i = 1/N，L_balance 最小</span></pre>
+
+<div class="pytorch">
+<div class="pt-title">MoLE 路由器实现（简化版）</div>
+<pre class="code"><span class="kw">class</span> <span class="fn">MoLERouter</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, hidden_dim, num_experts):
+        <span class="kw">super</span>().__init__()
+        self.gate = nn.Linear(hidden_dim, num_experts, bias=<span class="kw">False</span>)
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        scores = self.gate(x)                    <span class="cm"># (batch, seq, num_experts)</span>
+        probs = torch.softmax(scores, dim=-<span class="num">1</span>)    <span class="cm"># 概率分布</span>
+        top_val, top_idx = probs.<span class="fn">topk</span>(<span class="num">1</span>, dim=-<span class="num">1</span>) <span class="cm"># 选择最佳专家</span>
+        <span class="kw">return</span> top_idx, top_val                   <span class="cm"># 专家索引 + 权重</span></pre>
+</div>
+
+<div class="note"><b>mmit 中的 MoLE：</b>MoLE 在 MLP 层使用多个 LoRA "专家"，在 Attention 层使用标准 LoRA。路由器为每个 token 选择一个 LoRA 专家。这样在不增加推理成本的前提下增强了模型容量。</div>
+
+<!-- ─────── 5.5 Forward Hooks ─────── -->
+<h3>5.5 Forward Hooks — 不改代码注入行为</h3>
+
+<p><b>核心思想：</b>PyTorch 允许你注册一个函数，在某个模块的 forward() 执行<b>之前</b>或<b>之后</b>自动运行。你可以读取或修改输入/输出，而<b>无需修改模型源代码</b>。</p>
+<p>这正是 MoReS 和 ReFT 的工作原理——它们不碰模型代码，而是"挂钩"到已有层上。</p>
+
+<div class="vis">
+<div class="vis-title">Hook 在前向传播中的执行时机</div>
+<div class="graph">
+输入 x
+  &darr;
+[pre_hook(module, input)]     &larr; register_forward_pre_hook: 可修改输入
+  &darr;
+[module.forward(x)]           &larr; 模块的正常前向传播
+  &darr;
+[post_hook(module, input, output)]  &larr; register_forward_hook: 可修改输出
+  &darr;
+输出 y (可能已被 hook 修改)</div>
+</div>
+
+<p><b>两种 Hook 类型：</b></p>
+<table>
+<tr><th>类型</th><th>注册方法</th><th>签名</th><th>用途</th></tr>
+<tr><td>后置钩子 (post-hook)</td><td>register_forward_hook(fn)</td><td>fn(module, input, output) &rarr; modified_output</td><td>修改层的输出（MoReS 用此干预表示）</td></tr>
+<tr><td>前置钩子 (pre-hook)</td><td>register_forward_pre_hook(fn)</td><td>fn(module, input) &rarr; modified_input</td><td>修改层的输入（捕获 input_ids 等）</td></tr>
+</table>
+
+<p><b>闭包工厂模式（重要的 Python 陷阱）：</b></p>
+<pre class="code"><span class="cm"># 错误写法：循环变量捕获 bug</span>
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">9</span>):
+    layer.<span class="fn">register_forward_hook</span>(
+        <span class="kw">lambda</span> mod, inp, out: <span class="fn">intervene</span>(out, i)   <span class="cm"># BUG! i 永远是 8</span>
+    )
+
+<span class="cm"># 正确写法：用闭包工厂</span>
+<span class="kw">def</span> <span class="fn">make_hook</span>(layer_idx):
+    <span class="kw">def</span> <span class="fn">hook</span>(mod, inp, out):
+        <span class="kw">return</span> <span class="fn">intervene</span>(out, layer_idx)   <span class="cm"># layer_idx 在创建时绑定</span>
+    <span class="kw">return</span> hook
+
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">9</span>):
+    layer.<span class="fn">register_forward_hook</span>(<span class="fn">make_hook</span>(i))  <span class="cm"># 每个 hook 捕获不同的 i</span></pre>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch Hook API</div>
+<pre class="code"><span class="cm"># 注册钩子，返回 handle</span>
+handle = layer.<span class="fn">register_forward_hook</span>(hook_fn)
+
+<span class="cm"># 移除钩子</span>
+handle.<span class="fn">remove</span>()
+
+<span class="cm"># 实际例子：打印每层输出的统计信息</span>
+<span class="kw">def</span> <span class="fn">debug_hook</span>(module, input, output):
+    <span class="fn">print</span>(f<span class="str">"output mean={output.mean():.4f}, std={output.std():.4f}"</span>)
+    <span class="kw">return</span> output  <span class="cm"># 返回 None 或原始 output 表示不修改</span>
+
+handle = model.layers[<span class="num">0</span>].<span class="fn">register_forward_hook</span>(debug_hook)</pre>
+</div>
+
+<div class="note"><b>mmit 中的 Hook：</b>MoReS 在 LLM 的 9 个层上注册 post-hook，用于干预隐藏表示。ReFT 也使用 hook 实现表示微调。Pre-hook 用于捕获 input_ids 以确定干预位置。</div>
+
+<!-- ─────── 5.6 state_dict ─────── -->
+<h3>5.6 state_dict / save / load — 模型持久化</h3>
+
+<p><b>核心概念：</b><code>state_dict()</code> 返回一个字典，键是参数名（如 "layers.0.self_attn.q_proj.weight"），值是对应的 Tensor。这是 PyTorch 模型序列化的标准接口。</p>
+
+<div class="vis">
+<div class="vis-title">保存/加载流水线</div>
+<div class="vis-row">
+  <div class="vis-box param">model</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box result">.state_dict()</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box input">torch.save()</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box" style="background:#e0e0e0">checkpoint.pt<br><span class="vis-label">磁盘文件</span></div>
+</div>
+<div class="vis-row" style="margin-top:4px">
+  <div class="vis-box" style="background:#e0e0e0">checkpoint.pt</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box input">torch.load()</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box result">state_dict</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box param">.load_state_dict()</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box param">model</div>
+</div>
+</div>
+
+<pre class="code"><span class="cm"># 保存</span>
+state = model.<span class="fn">state_dict</span>()          <span class="cm"># OrderedDict of name &rarr; Tensor</span>
+torch.<span class="fn">save</span>(state, <span class="str">"checkpoint.pt"</span>)
+
+<span class="cm"># 加载</span>
+state = torch.<span class="fn">load</span>(<span class="str">"checkpoint.pt"</span>,
+    map_location=<span class="str">"cpu"</span>,              <span class="cm"># 先加载到 CPU（避免 GPU OOM）</span>
+    weights_only=<span class="kw">True</span>                <span class="cm"># 安全：禁止执行任意代码</span>
+)
+model.<span class="fn">load_state_dict</span>(state, strict=<span class="kw">False</span>)  <span class="cm"># strict=False: 忽略缺失键</span></pre>
+
+<table>
+<tr><th>参数/方法</th><th>作用</th><th>使用场景</th></tr>
+<tr><td>strict=False</td><td>只加载匹配的键，忽略缺失和多余的</td><td>Freeze Tuning（只保存可训练参数）</td></tr>
+<tr><td>map_location="cpu"</td><td>强制加载到 CPU</td><td>避免 GPU OOM，先加载再 .to(device)</td></tr>
+<tr><td>weights_only=True</td><td>禁止 pickle 执行代码</td><td>安全防护（防止恶意 checkpoint）</td></tr>
+</table>
+
+<div class="vis">
+<div class="vis-title">不同 PEFT 方法保存的内容</div>
+<table>
+<tr><th>方法</th><th>保存 API</th><th>保存内容</th><th>文件大小</th></tr>
+<tr><td>Full FT</td><td>model.save_pretrained()</td><td>整个模型权重</td><td>&sim;14 GB</td></tr>
+<tr><td>LoRA</td><td>model.save_pretrained()</td><td>仅 adapter 权重 (A, B)</td><td>&sim;8 MB</td></tr>
+<tr><td>MoReS</td><td>torch.save(iv.state_dict())</td><td>干预向量 state_dict</td><td>&sim;32 KB</td></tr>
+<tr><td>Freeze</td><td>torch.save(trainable_sd)</td><td>仅可训练参数 state_dict</td><td>&sim;200 MB</td></tr>
+</table>
+</div>
+
+<div class="note"><b>mmit 中的持久化：</b>mmit 的 stage_runner 根据方法类型使用不同的保存策略。LoRA/DoRA 使用 PEFT 的 save_pretrained；MoReS 使用 torch.save 保存极小的干预向量；Freeze 方法筛选 requires_grad=True 的参数后用 torch.save 保存。</div>
+
+<!-- ═══════════════════════════════════════════════════ DAY 6 ═══════════════════════════════════════ -->
+
+<h2>Day 6 &mdash; 进阶技术</h2>
+
+<!-- ─────── 6.1 Mixed Precision ─────── -->
+<h3>6.1 Mixed Precision Training — 混合精度训练</h3>
+
+<p><b>核心思想：</b>前向和反向传播使用低精度（fp16/bf16），速度快、省内存；优化器状态保持 fp32，保证数值稳定。"混合"精度就是指在同一次训练中同时使用两种精度。</p>
+
+<table>
+<tr><th>数据类型</th><th>字节数</th><th>指数位</th><th>尾数位</th><th>数值范围</th><th>特点</th></tr>
+<tr><td>float32</td><td>4</td><td>8</td><td>23</td><td>&pm;3.4&times;10^38</td><td>标准精度，优化器状态用此</td></tr>
+<tr><td>float16</td><td>2</td><td>5</td><td>10</td><td>&pm;6.5&times;10^4</td><td>范围小，训练易溢出</td></tr>
+<tr><td>bfloat16</td><td>2</td><td>8</td><td>7</td><td>&pm;3.4&times;10^38</td><td>与 fp32 同范围，精度略低，训练首选</td></tr>
+</table>
+
+<div class="vis">
+<div class="vis-title">bf16 vs fp16 对比</div>
+<div class="vis-row">
+  <div class="vis-box result">bf16: [1][8位指数][7位尾数]</div>
+  <span class="vis-label">&larr; 范围大 (同 fp32)，精度低</span>
+</div>
+<div class="vis-row">
+  <div class="vis-box input">fp16: [1][5位指数][10位尾数]</div>
+  <span class="vis-label">&larr; 范围小 (易溢出)，精度高</span>
+</div>
+<div class="vis-row">
+  <div class="vis-box frozen">fp32: [1][8位指数][23位尾数]</div>
+  <span class="vis-label">&larr; 完整精度，内存 &times;2</span>
+</div>
+</div>
+
+<p><b>为什么 bf16 优于 fp16：</b>fp16 的指数只有 5 位，最大值约 65504。训练中梯度或激活值一旦超过这个范围就会变成 inf（溢出）。bf16 与 fp32 有相同的指数范围，几乎不会溢出，所以训练更稳定。</p>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 混合精度用法</div>
+<pre class="code"><span class="cm"># 方法一：加载模型时指定 dtype（mmit 的做法）</span>
+model = AutoModelForCausalLM.<span class="fn">from_pretrained</span>(
+    model_name, torch_dtype=torch.bfloat16     <span class="cm"># 模型权重用 bf16</span>
+)
+
+<span class="cm"># 方法二：使用 autocast（自动选择最优精度）</span>
+<span class="kw">with</span> torch.autocast(device_type=<span class="str">"cuda"</span>, dtype=torch.bfloat16):
+    outputs = model(input_ids)     <span class="cm"># 自动使用 bf16 计算</span>
+    loss = outputs.loss            <span class="cm"># loss 也是 bf16</span>
+loss.<span class="fn">backward</span>()                     <span class="cm"># 梯度也是 bf16</span>
+optimizer.<span class="fn">step</span>()                    <span class="cm"># 优化器内部用 fp32 更新</span></pre>
+</div>
+
+<div class="note"><b>mmit 中的混合精度：</b>mmit 所有模型均使用 <code>torch_dtype=torch.bfloat16</code> 加载。这意味着模型权重、前向/反向计算全部使用 bf16，优化器状态保持 fp32。这样 7B 模型的内存占用减半，同时训练稳定。</div>
+
+<!-- ─────── 6.2 Label Smoothing ─────── -->
+<h3>6.2 Label Smoothing — 标签平滑</h3>
+
+<p><b>核心问题：</b>标准的交叉熵损失要求模型输出"硬"标签——对正确类别的概率尽可能接近 1.0，其他类别接近 0.0。这导致模型过度自信（overconfident），泛化能力下降。</p>
+
+<p><b>解决方案：</b>将硬目标平滑为软目标，给每个非正确类别分配一点概率 &epsilon;/C。</p>
+
+<div class="vis">
+<div class="vis-title">标签平滑效果 (&epsilon;=0.1, C=4 个类别)</div>
+<div class="vis-row">
+  <span class="vis-label" style="min-width:60px">硬标签:</span>
+  <div class="vis-box">0.0</div>
+  <div class="vis-box">0.0</div>
+  <div class="vis-box param">1.0</div>
+  <div class="vis-box">0.0</div>
+</div>
+<div class="vis-row">
+  <span class="vis-label" style="min-width:60px">软标签:</span>
+  <div class="vis-box input">0.025</div>
+  <div class="vis-box input">0.025</div>
+  <div class="vis-box param">0.925</div>
+  <div class="vis-box input">0.025</div>
+</div>
+<div class="vis-row">
+  <span class="vis-label">公式: y_smooth = (1-&epsilon;) &times; y_hard + &epsilon;/C &nbsp;&nbsp; 其中 &epsilon;=0.1, C=4</span>
+</div>
+</div>
+
+<pre class="code"><span class="cm"># PyTorch 内置标签平滑</span>
+loss_fn = nn.CrossEntropyLoss(label_smoothing=<span class="num">0.1</span>)
+
+<span class="cm"># 等价的手动实现</span>
+<span class="kw">def</span> <span class="fn">label_smoothing_loss</span>(logits, targets, epsilon=<span class="num">0.1</span>):
+    C = logits.size(-<span class="num">1</span>)                        <span class="cm"># 类别数</span>
+    log_probs = F.<span class="fn">log_softmax</span>(logits, dim=-<span class="num">1</span>)
+    nll = -log_probs.<span class="fn">gather</span>(dim=-<span class="num">1</span>, index=targets.unsqueeze(-<span class="num">1</span>))
+    smooth = -log_probs.<span class="fn">mean</span>(dim=-<span class="num">1</span>)
+    loss = (<span class="num">1</span> - epsilon) * nll.squeeze(-<span class="num">1</span>) + epsilon * smooth
+    <span class="kw">return</span> loss.<span class="fn">mean</span>()</pre>
+
+<div class="note"><b>mmit 中的标签平滑：</b>mmit 的 losses 目录中包含标签平滑的损失变体，可用于训练时降低模型对 token 预测的过度自信。</div>
+
+<!-- ─────── 6.3 Contrastive Loss ─────── -->
+<h3>6.3 Contrastive Loss (InfoNCE) — 对比学习损失</h3>
+
+<p><b>核心思想：</b>给定一批 (image, text) 配对，让匹配对的相似度尽可能高，不匹配对的相似度尽可能低。这就是 CLIP 的训练方式，也是 LLaVA 视觉编码器的来源。</p>
+
+<pre class="code"><span class="cm"># InfoNCE 损失公式</span>
+L = -log( exp(sim(q, k+) / &tau;) / &Sigma;_j exp(sim(q, k_j) / &tau;) )
+
+<span class="cm"># q:    查询（如图像嵌入）</span>
+<span class="cm"># k+:   正样本（匹配的文本嵌入）</span>
+<span class="cm"># k_j:  所有样本（batch 中所有文本嵌入）</span>
+<span class="cm"># &tau;:    温度参数（通常 0.07），越小 &rarr; 分布越尖锐</span>
+<span class="cm"># sim:  余弦相似度</span></pre>
+
+<div class="vis">
+<div class="vis-title">CLIP 对比学习：batch=4 的相似度矩阵</div>
+<div class="graph">
+              text_0  text_1  text_2  text_3
+  image_0  [  0.92    0.11    0.05    0.13  ]  &larr; 对角线是匹配对
+  image_1  [  0.08    0.87    0.15    0.03  ]    应尽可能大
+  image_2  [  0.12    0.04    0.91    0.07  ]
+  image_3  [  0.06    0.14    0.09    0.88  ]  &larr; 非对角线应尽可能小
+
+  Loss_i2t = -log(exp(diag/&tau;) / row_sum(exp/&tau;))   图像&rarr;文本方向
+  Loss_t2i = -log(exp(diag/&tau;) / col_sum(exp/&tau;))   文本&rarr;图像方向
+  L_clip = (Loss_i2t + Loss_t2i) / 2</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch CLIP 对比损失实现</div>
+<pre class="code"><span class="kw">def</span> <span class="fn">clip_loss</span>(image_embeds, text_embeds, temperature=<span class="num">0.07</span>):
+    <span class="cm"># 归一化</span>
+    image_embeds = F.<span class="fn">normalize</span>(image_embeds, dim=-<span class="num">1</span>)
+    text_embeds = F.<span class="fn">normalize</span>(text_embeds, dim=-<span class="num">1</span>)
+
+    <span class="cm"># 相似度矩阵 (batch, batch)</span>
+    logits = image_embeds @ text_embeds.T / temperature
+
+    <span class="cm"># 标签: 对角线 = 匹配对</span>
+    labels = torch.<span class="fn">arange</span>(logits.size(<span class="num">0</span>), device=logits.device)
+
+    <span class="cm"># 双向交叉熵</span>
+    loss_i2t = F.<span class="fn">cross_entropy</span>(logits, labels)       <span class="cm"># 行方向</span>
+    loss_t2i = F.<span class="fn">cross_entropy</span>(logits.T, labels)     <span class="cm"># 列方向</span>
+    <span class="kw">return</span> (loss_i2t + loss_t2i) / <span class="num">2</span></pre>
+</div>
+
+<div class="note"><b>与 mmit 的关系：</b>LLaVA 使用的视觉编码器 (CLIP ViT) 就是用对比损失预训练的。理解 InfoNCE 有助于理解视觉特征的性质——它们被训练为在嵌入空间中与对应的文本描述"靠近"。</div>
+
+<!-- ─────── 6.4 Activation Checkpointing ─────── -->
+<h3>6.4 Activation Checkpointing — 用计算换内存</h3>
+
+<p><b>核心问题：</b>反向传播需要用到前向传播时保存的中间激活值。一个 7B 模型的 32 层 Transformer，中间激活可能占用 10+ GB 内存。</p>
+<p><b>解决方案：</b>前向传播时<b>不保存</b>中间激活值，反向传播到某一层时<b>重新计算</b>该层的前向结果。</p>
+
+<div class="vis">
+<div class="vis-title">普通训练 vs 激活检查点</div>
+<div class="graph">
+普通训练:
+  Forward:  Layer0 &rarr; [save act0] &rarr; Layer1 &rarr; [save act1] &rarr; ... &rarr; Layer31 &rarr; [save act31]
+  Backward: 用 act31 计算 grad31 &rarr; 用 act30 计算 grad30 &rarr; ... &rarr; 用 act0 计算 grad0
+  内存: 保存全部 32 层的激活 = 很大
+
+激活检查点:
+  Forward:  Layer0 &rarr; [丢弃] &rarr; Layer1 &rarr; [丢弃] &rarr; ... &rarr; Layer31 &rarr; [只保存输出]
+  Backward: 需要 act30? &rarr; 重跑 Layer30 前向 &rarr; 得到 act30 &rarr; 计算 grad30 &rarr; 丢弃 act30
+  内存: 只保存少量检查点 = 约 60% 更少
+  代价: 约 2x 前向计算量</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 激活检查点 API</div>
+<pre class="code"><span class="kw">from</span> torch.utils.checkpoint <span class="kw">import</span> checkpoint
+
+<span class="cm"># 对某个函数启用激活检查点</span>
+<span class="kw">def</span> <span class="fn">forward</span>(self, x):
+    <span class="cm"># 不保存 transformer_block 的中间激活</span>
+    <span class="cm"># 反向传播时会重新计算</span>
+    x = <span class="fn">checkpoint</span>(self.transformer_block, x, use_reentrant=<span class="kw">False</span>)
+    <span class="kw">return</span> x
+
+<span class="cm"># Hugging Face 模型：一键启用</span>
+model.<span class="fn">gradient_checkpointing_enable</span>()
+<span class="cm"># 等价于对每个 Transformer 层启用 checkpoint</span></pre>
+</div>
+
+<table>
+<tr><th>方案</th><th>内存占用</th><th>计算量</th><th>适用场景</th></tr>
+<tr><td>普通训练</td><td>高（保存所有激活）</td><td>1x</td><td>内存充足时</td></tr>
+<tr><td>激活检查点</td><td>低（约 60% 更少）</td><td>&sim;2x 前向</td><td>内存紧张，GPU 算力有余</td></tr>
+<tr><td>检查点 + QLoRA</td><td>最低</td><td>&sim;2.5x</td><td>消费级 GPU 训练大模型</td></tr>
+</table>
+
+<div class="note"><b>mmit 中的激活检查点：</b>当在消费级 GPU 上训练时，可以结合 gradient_checkpointing 和 QLoRA 来大幅降低内存需求。model.gradient_checkpointing_enable() 对 HuggingFace 模型一键生效。</div>
+
+<!-- ─────── 6.5 Summary ─────── -->
+<h3>6.5 知识地图 — 全部内容总览</h3>
+
+<p>以下是 Part 1-3 涵盖的所有知识点，以及它们在 mmit 中的具体应用。</p>
+
+<div class="vis">
+<div class="vis-title">模型构建模块 (Day 1-2)</div>
+<div class="vis-row">
+  <div class="vis-box input">Token IDs</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box result">Embedding</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box result">Attention</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box result">LayerNorm</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box result">MLP</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box" style="background:#ddd;font-size:6pt">&times;32 层</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box result">LM Head</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box input">Logits</div>
+</div>
+</div>
+
+<div class="vis">
+<div class="vis-title">训练流水线 (Day 3-4)</div>
+<div class="vis-row">
+  <div class="vis-box input">数据 batch</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box result">Forward</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box param">Loss</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box result">Backward</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box input">Grad Clip</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box param">optimizer.step()</div>
+  <span class="vis-arrow">&rarr;</span>
+  <div class="vis-box result">scheduler.step()</div>
+</div>
+</div>
+
+<div class="vis">
+<div class="vis-title">PEFT 技术对比 (Day 5)</div>
+<table>
+<tr><th>方法</th><th>修改什么</th><th>原理</th><th>参数量</th><th>推理成本</th></tr>
+<tr><td><b>LoRA</b></td><td>权重 (W)</td><td>低秩分解 &Delta;W = BA</td><td>0.05%</td><td>零（可合并）</td></tr>
+<tr><td><b>QLoRA</b></td><td>权重 (W)</td><td>4-bit 量化 + LoRA</td><td>0.05%</td><td>稍慢（反量化）</td></tr>
+<tr><td><b>DoRA</b></td><td>权重 (W)</td><td>幅度+方向分离的 LoRA</td><td>0.06%</td><td>零（可合并）</td></tr>
+<tr><td><b>MoLE</b></td><td>权重 (W)</td><td>多个 LoRA 专家 + 路由</td><td>0.2%</td><td>约等于 LoRA</td></tr>
+<tr><td><b>MoReS</b></td><td>表示 (hidden states)</td><td>Hook 干预隐藏层输出</td><td>&lt;0.001%</td><td>极小（加向量）</td></tr>
+<tr><td><b>ReFT</b></td><td>表示 (hidden states)</td><td>Hook 投影干预</td><td>&lt;0.01%</td><td>极小</td></tr>
+<tr><td><b>Freeze</b></td><td>部分层权重</td><td>冻结大部分层，微调少数</td><td>5-10%</td><td>零</td></tr>
+</table>
+</div>
+
+<div class="vis">
+<div class="vis-title">进阶技术 (Day 6)</div>
+<div class="vis-row">
+  <div class="vis-box result">混合精度 bf16<br><span class="vis-label">内存减半</span></div>
+  <div class="vis-box input">标签平滑<br><span class="vis-label">防过度自信</span></div>
+  <div class="vis-box param">对比损失<br><span class="vis-label">CLIP 预训练</span></div>
+  <div class="vis-box frozen">激活检查点<br><span class="vis-label">计算换内存</span></div>
+</div>
+</div>
+
+<h3>PyTorch API 速查表</h3>
+<table>
+<tr><th>分类</th><th>API</th><th>功能</th></tr>
+<tr><td rowspan="4">模型构建</td><td><code>nn.Linear(in, out)</code></td><td>全连接层 y = xW^T + b</td></tr>
+<tr><td><code>nn.Embedding(vocab, dim)</code></td><td>词嵌入查表</td></tr>
+<tr><td><code>nn.LayerNorm(dim)</code></td><td>层归一化</td></tr>
+<tr><td><code>F.softmax(x, dim)</code></td><td>Softmax 概率归一化</td></tr>
+<tr><td rowspan="4">训练循环</td><td><code>loss.backward()</code></td><td>反向传播，计算梯度</td></tr>
+<tr><td><code>optimizer.step()</code></td><td>用梯度更新参数</td></tr>
+<tr><td><code>optimizer.zero_grad()</code></td><td>清零梯度</td></tr>
+<tr><td><code>clip_grad_norm_(params, max)</code></td><td>梯度裁剪</td></tr>
+<tr><td rowspan="3">参数控制</td><td><code>param.requires_grad_(False)</code></td><td>冻结参数</td></tr>
+<tr><td><code>model.state_dict()</code></td><td>获取参数字典</td></tr>
+<tr><td><code>model.load_state_dict(sd)</code></td><td>加载参数字典</td></tr>
+<tr><td rowspan="3">PEFT</td><td><code>get_peft_model(model, config)</code></td><td>应用 PEFT 方法</td></tr>
+<tr><td><code>LoraConfig(...)</code></td><td>配置 LoRA 参数</td></tr>
+<tr><td><code>model.merge_and_unload()</code></td><td>合并 LoRA 权重</td></tr>
+<tr><td rowspan="3">Hook</td><td><code>register_forward_hook(fn)</code></td><td>后置钩子（修改输出）</td></tr>
+<tr><td><code>register_forward_pre_hook(fn)</code></td><td>前置钩子（修改输入）</td></tr>
+<tr><td><code>handle.remove()</code></td><td>移除钩子</td></tr>
+<tr><td rowspan="3">内存优化</td><td><code>torch.autocast(dtype=bf16)</code></td><td>自动混合精度</td></tr>
+<tr><td><code>checkpoint(fn, *args)</code></td><td>激活检查点</td></tr>
+<tr><td><code>BitsAndBytesConfig(...)</code></td><td>模型量化配置</td></tr>
+<tr><td rowspan="3">损失函数</td><td><code>F.cross_entropy(logits, labels)</code></td><td>交叉熵损失</td></tr>
+<tr><td><code>CrossEntropyLoss(label_smoothing=0.1)</code></td><td>带标签平滑的交叉熵</td></tr>
+<tr><td><code>F.normalize(x, dim)</code></td><td>L2 归一化（对比学习用）</td></tr>
+</table>
+
+<div class="note" style="margin-top:8px">
+<b>学习路线建议：</b>Part 1 (Day 1-2) 建立张量和模型基础 &rarr; Part 2 (Day 3-4) 理解训练流程 &rarr; Part 3 (Day 5-6) 掌握 PEFT 方法和进阶技巧。掌握这些知识后，你就能理解 mmit 代码库中的每一行代码了。重点关注 LoRA（最常用的 PEFT 方法）和 Forward Hook（MoReS/ReFT 的实现机制）。
+</div>
+
+</body>
+</html>

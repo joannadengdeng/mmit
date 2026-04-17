@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mmit — 包结构树</title>
+<style>
+  :root {
+    --bg: #f8fafc;
+    --card: #fff;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --text-light: #64748b;
+
+    /* node colors by type */
+    --c-root:    #4f46e5;
+    --c-module:  #0ea5e9;
+    --c-abc:     #7c3aed;
+    --c-class:   #0d9488;
+    --c-fn:      #d97706;
+    --c-data:    #be185d;
+    --c-config:  #64748b;
+
+    --bg-root:   #eef2ff;
+    --bg-module: #f0f9ff;
+    --bg-abc:    #f5f3ff;
+    --bg-class:  #f0fdfa;
+    --bg-fn:     #fffbeb;
+    --bg-data:   #fdf2f8;
+    --bg-config: #f8fafc;
+
+    --line: #cbd5e1;
+    --line-hover: #94a3b8;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+    display: flex; flex-direction: column; min-height: 100vh;
+  }
+
+  /* ── header ── */
+  header {
+    background: linear-gradient(135deg, #4f46e5, #7c3aed);
+    color: white; padding: 18px 32px;
+    display: flex; align-items: center; gap: 20px;
+    box-shadow: 0 2px 12px rgba(79,70,229,.3);
+  }
+  header h1 { font-size: 18px; font-weight: 700; }
+  header p  { font-size: 12px; opacity: .8; margin-top: 2px; }
+  .header-actions { margin-left: auto; display: flex; gap: 8px; }
+  .btn {
+    padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer;
+    border: 1px solid rgba(255,255,255,.35); background: rgba(255,255,255,.15);
+    color: white; font-family: inherit; transition: background .15s;
+  }
+  .btn:hover { background: rgba(255,255,255,.28); }
+
+  /* ── legend ── */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 10px;
+    padding: 12px 32px; background: var(--card);
+    border-bottom: 1px solid var(--border);
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-light); }
+  .legend-dot  { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+
+  /* ── main layout ── */
+  .body { display: flex; flex: 1; overflow: hidden; }
+  .tree-pane {
+    flex: 1; overflow: auto; padding: 24px 20px 40px 32px;
+  }
+  .detail-pane {
+    width: 300px; border-left: 1px solid var(--border);
+    background: var(--card); overflow-y: auto;
+    padding: 20px 18px; flex-shrink: 0;
+    transition: width .2s;
+  }
+  .detail-pane h3 { font-size: 13px; font-weight: 700; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .detail-empty { font-size: 12px; color: var(--text-light); text-align: center; margin-top: 40px; }
+
+  /* ── tree nodes ── */
+  ul.tree { list-style: none; padding: 0; }
+  ul.tree ul { padding-left: 22px; margin-top: 2px; position: relative; }
+  ul.tree ul::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 8px;
+    width: 1.5px; background: var(--line);
+    border-radius: 2px;
+  }
+  li.node { position: relative; padding-left: 18px; }
+  li.node::before {
+    content: '';
+    position: absolute; left: 0; top: 14px;
+    width: 14px; height: 1.5px; background: var(--line);
+  }
+
+  .node-row {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 8px; border-radius: 6px; cursor: pointer;
+    transition: background .12s; user-select: none;
+    max-width: 620px;
+  }
+  .node-row:hover { background: rgba(0,0,0,.04); }
+  .node-row:hover ~ ul::before { background: var(--line-hover); }
+
+  .toggle-btn {
+    width: 16px; height: 16px; border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 700; flex-shrink: 0;
+    background: var(--border); color: var(--text-light);
+    cursor: pointer; transition: all .15s; line-height: 1;
+  }
+  .toggle-btn.open  { background: var(--c-module); color: white; }
+  .toggle-btn.leaf  { background: transparent; color: transparent; cursor: default; }
+
+  .node-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600;
+    white-space: nowrap; border: 1px solid transparent;
+  }
+  .node-label { font-size: 12.5px; color: var(--text); }
+  .node-sub   { font-size: 11px; color: var(--text-light); }
+
+  /* badge color variants */
+  .badge-root   { background: var(--bg-root);   color: var(--c-root);   border-color: #c7d2fe; }
+  .badge-module { background: var(--bg-module);  color: var(--c-module); border-color: #bae6fd; }
+  .badge-abc    { background: var(--bg-abc);     color: var(--c-abc);    border-color: #ddd6fe; }
+  .badge-class  { background: var(--bg-class);   color: var(--c-class);  border-color: #99f6e4; }
+  .badge-fn     { background: var(--bg-fn);      color: var(--c-fn);     border-color: #fde68a; }
+  .badge-data   { background: var(--bg-data);    color: var(--c-data);   border-color: #f9a8d4; }
+  .badge-config { background: var(--bg-config);  color: var(--c-config); border-color: #e2e8f0; }
+
+  /* selected */
+  .node-row.selected { background: #eef2ff; outline: 1.5px solid #818cf8; }
+
+  /* collapsed subtree */
+  .subtree.collapsed { display: none; }
+
+  /* ── detail panel ── */
+  .d-badge { display: inline-block; padding: 3px 9px; border-radius: 4px; font-size: 11px; font-weight: 700; margin-bottom: 12px; }
+  .d-title { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .d-path  { font-size: 11px; color: var(--text-light); margin-bottom: 12px; font-family: 'SF Mono','Fira Code',monospace; }
+  .d-desc  { font-size: 12.5px; line-height: 1.7; color: var(--text); margin-bottom: 12px; }
+  .d-section { margin-top: 14px; }
+  .d-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-light); margin-bottom: 6px; }
+  .d-item { font-size: 12px; padding: 4px 0; border-bottom: 1px solid var(--border); display: flex; gap: 8px; }
+  .d-item:last-child { border-bottom: none; }
+  .d-key  { font-family: 'SF Mono','Fira Code',monospace; color: var(--c-class); flex-shrink: 0; }
+  .d-val  { color: var(--text-light); }
+  .d-chip {
+    display: inline-block; padding: 1px 7px; border-radius: 3px;
+    font-size: 10px; font-weight: 600; margin: 2px; font-family: monospace;
+    background: var(--bg-class); color: var(--c-class); border: 1px solid #99f6e4;
+  }
+  .d-chip.purple { background: var(--bg-abc); color: var(--c-abc); border-color: #ddd6fe; }
+  .d-chip.blue   { background: var(--bg-module); color: var(--c-module); border-color: #bae6fd; }
+  .d-chip.orange { background: var(--bg-fn); color: var(--c-fn); border-color: #fde68a; }
+
+  code { font-family: 'SF Mono','Fira Code',monospace; font-size: 11.5px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>mmit 包结构树</h1>
+    <p>点击节点查看详情 · 点击 ▶/▼ 展开/折叠</p>
+  </div>
+  <div class="header-actions">
+    <button class="btn" onclick="expandAll()">全部展开</button>
+    <button class="btn" onclick="collapseAll()">全部折叠</button>
+  </div>
+</header>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#4f46e5"></div> 包 / 顶层</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#0ea5e9"></div> 模块 / 文件</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#7c3aed"></div> 抽象基类 ABC</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#0d9488"></div> 具体类（实现）</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#d97706"></div> 函数 / 方法</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#be185d"></div> 数据类 / dataclass</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#64748b"></div> 配置 / 其他</div>
+</div>
+
+<div class="body">
+<div class="tree-pane">
+<ul class="tree" id="treeRoot"></ul>
+</div>
+<div class="detail-pane" id="detailPane">
+  <h3>组件详情</h3>
+  <div class="detail-empty" id="detailEmpty">← 点击左侧节点<br>查看详细信息</div>
+  <div id="detailContent" style="display:none"></div>
+</div>
+</div>
+
+<script>
+// ─── Tree Data ──────────────────────────────────────────────────────────────
+const TREE = {
+  id: "mmit",
+  label: "mmit",
+  badge: "root",
+  sub: "src/mmit/ — 顶层包",
+  detail: {
+    title: "mmit 包",
+    path: "src/mmit/__init__.py",
+    desc: "Multimodal Instruction Tuning 库的顶层包。__init__.py 在 import 时执行所有 registry.register() 调用，把 15 个内置组件全部挂载到 Registry 单例上。",
+    sections: [
+      { title: "对外暴露的公共 API", items: [
+        { key: "registry", val: "全局单例注册表" },
+        { key: "Method", val: "eval 推理基类" },
+        { key: "CanonicalSample", val: "统一训练样本格式" },
+        { key: "EvalSample", val: "统一评测样本格式" },
+        { key: "ResultsManager", val: "实验结果管理器" },
+      ]},
+      { title: "注册的组件数量", items: [
+        { key: "dataset", val: "2 个适配器" },
+        { key: "training_method", val: "7 种微调方法" },
+        { key: "preprocessor", val: "2 个预处理器" },
+        { key: "mixer / filter", val: "2 + 2 个" },
+        { key: "loss", val: "2 个损失函数" },
+        { key: "method (eval)", val: "2 个推理方法" },
+      ]},
+    ],
+  },
+  children: [
+    // ── registry.py ──
+    {
+      id: "registry",
+      label: "registry.py",
+      badge: "module",
+      sub: "全局插件注册表 · 71 行",
+      detail: {
+        title: "Registry",
+        path: "src/mmit/registry.py",
+        desc: "整个框架的核心基建。实现了插件注册模式（Registry Pattern），管理 7 个插槽中的所有可插拔组件。文件末尾 `registry = Registry()` 创建全局单例。",
+        sections: [
+          { title: "7 个插槽（_SLOTS）", items: [
+            { key: "dataset", val: "数据适配器" },
+            { key: "training_method", val: "微调方法" },
+            { key: "preprocessor", val: "数据预处理器" },
+            { key: "mixer", val: "多数据源混合" },
+            { key: "filter", val: "数据质量过滤" },
+            { key: "loss", val: "损失函数" },
+            { key: "method", val: "eval 推理包装器" },
+          ]},
+          { title: "核心方法", items: [
+            { key: "register(slot, name, cls, defaults)", val: "注册组件" },
+            { key: "build(slot, name, **kwargs)", val: "实例化，defaults+kwargs 合并，caller wins" },
+            { key: "get_cls(slot, name)", val: "只返回类，不实例化" },
+            { key: "list(slot)", val: "列出已注册名称" },
+          ]},
+        ],
+      },
+      children: [
+        { id: "registry-class", label: "Registry", badge: "class", sub: "单例注册表类", detail: {
+          title: "Registry 类",
+          path: "src/mmit/registry.py:25",
+          desc: "双重字典结构：_store 存类本身，_defaults 存默认参数。build() 的核心是 `merged = {**defaults, **kwargs}`，保证调用方的参数永远覆盖默认值。",
+          sections: [{ title: "内部结构", items: [
+            { key: "_store", val: "Dict[slot → Dict[name → Type]]" },
+            { key: "_defaults", val: "Dict[slot → Dict[name → Dict]]" },
+          ]}],
+        }},
+      ],
+    },
+
+    // ── results.py ──
+    {
+      id: "results",
+      label: "results.py",
+      badge: "module",
+      sub: "实验结果管理 · 418 行",
+      detail: {
+        title: "results.py",
+        path: "src/mmit/results.py",
+        desc: "管理评测实验的完整生命周期：创建结果文件、实时追加预测记录、断点续跑、聚合指标。结果以 JSONL 格式写盘，支持超大评测集（数十万题）。",
+      },
+      children: [
+        { id: "PredictionRecord", label: "PredictionRecord", badge: "data", sub: "单条推理结果 dataclass", detail: {
+          title: "PredictionRecord",
+          path: "src/mmit/results.py",
+          desc: "记录一次推理的所有信息：状态(success/error)、预测文本、延迟 latency_ms、token 用量、分数、时间戳。",
+          sections: [{ title: "关键字段", items: [
+            { key: "status", val: "success | error | skipped" },
+            { key: "prediction", val: "模型输出文本" },
+            { key: "latency_ms", val: "推理耗时（毫秒）" },
+            { key: "score", val: "该题得分（0~1）" },
+          ]}],
+        }},
+        { id: "ResultsManager", label: "ResultsManager", badge: "class", sub: "实验全生命周期管理", detail: {
+          title: "ResultsManager",
+          path: "src/mmit/results.py",
+          desc: "支持创建新实验、从已有文件恢复、追加预测、聚合指标。断点续跑的关键是 completed_ids() 返回已成功的 ID 集合，EvalEngine 跳过这些样本。",
+          sections: [{ title: "核心方法", items: [
+            { key: "create(output_dir, model_id, dataset)", val: "初始化新的结果文件" },
+            { key: "find_resumable(output_dir, model_id, dataset)", val: "自动找到未完成的上次运行" },
+            { key: "completed_ids()", val: "返回已成功样本的 ID 集合" },
+            { key: "add_prediction(id, prediction, ...)", val: "追加单条结果并写盘" },
+            { key: "compute_metrics()", val: "聚合 accuracy、latency、tokens/sec" },
+          ]}],
+        }},
+      ],
+    },
+
+    // ── data/ ──
+    {
+      id: "data",
+      label: "data/",
+      badge: "module",
+      sub: "数据层 — 统一数据类型与适配器",
+      detail: {
+        title: "data 模块",
+        path: "src/mmit/data/",
+        desc: "核心职责：把任意来源的外部数据（本地 JSON、HuggingFace Hub）转换为框架内部统一的 CanonicalSample 格式。包含数据类型定义和两个适配器。",
+      },
+      children: [
+        { id: "types", label: "types.py", badge: "module", sub: "统一数据类型定义 · 52 行",
+          detail: {
+            title: "types.py",
+            path: "src/mmit/data/types.py",
+            desc: "定义了整个框架内部流通的三种标准数据类型。所有适配器输出 CanonicalSample，所有评测输入为 EvalSample，它们共享同一套图片路径约定。",
+          },
+          children: [
+            { id: "Turn", label: "Turn", badge: "data", sub: "一轮对话 (role + content)", detail: {
+              title: "Turn",
+              path: "src/mmit/data/types.py:9",
+              desc: "最小的对话单元。role 只有两个值：'human' 或 'assistant'。",
+              sections: [{ title: "字段", items: [
+                { key: "role", val: '"human" | "assistant"' },
+                { key: "content", val: "对话文本" },
+              ]}],
+            }},
+            { id: "CanonicalSample", label: "CanonicalSample", badge: "data", sub: "训练用统一格式 — 所有适配器输出此类型", detail: {
+              title: "CanonicalSample",
+              path: "src/mmit/data/types.py:15",
+              desc: "训练和推理的核心数据格式。image_path 存相对路径（适配器不负责拼绝对路径）。instruction 存推理时用的完整 prompt（多轮对话时为空，由 preprocessor 组装）。",
+              sections: [{ title: "字段", items: [
+                { key: "id", val: "唯一标识符" },
+                { key: "image_path", val: "相对路径（由调用方补 image_root）" },
+                { key: "turns", val: "List[Turn] 多轮对话" },
+                { key: "instruction", val: "推理用完整 prompt（MCQ/classification 时有值）" },
+                { key: "metadata", val: "额外信息字典（raw_answers、PIL图片等）" },
+              ]},
+              { title: "属性（Property）", items: [
+                { key: "first_question", val: "第一个 human turn 的内容" },
+                { key: "first_answer", val: "第一个 assistant turn 的内容" },
+              ]}],
+            }},
+            { id: "EvalSample", label: "EvalSample", badge: "data", sub: "评测用格式 — 携带 ground_truth", detail: {
+              title: "EvalSample",
+              path: "src/mmit/data/types.py:44",
+              desc: "评测专用，没有 turns。image_path 到达 EvalSample 时已是绝对路径（由 Benchmark 负责拼接）。ground_truth 可以是字符串列表（VQA）或单个字母（MCQ）。",
+              sections: [{ title: "字段", items: [
+                { key: "id", val: "题目唯一标识" },
+                { key: "image_path", val: "绝对路径（由 Benchmark 拼好）" },
+                { key: "question", val: "题目文本（已含 build_prompt 引导语）" },
+                { key: "ground_truth", val: '["STOP","stop"] 或 "B"' },
+              ]}],
+            }},
+          ],
+        },
+        { id: "adapters", label: "adapters/", badge: "module", sub: "数据适配器 — 外部格式 → CanonicalSample",
+          detail: {
+            title: "adapters 目录",
+            path: "src/mmit/data/adapters/",
+            desc: "适配器模式（Adapter Pattern）的实现。DatasetAdapter ABC 定义接口，两个子类分别处理本地文件和云端数据集，对外暴露统一的 __iter__ 接口。",
+          },
+          children: [
+            { id: "DatasetAdapter", label: "DatasetAdapter", badge: "abc", sub: "base.py — 所有适配器的基类", detail: {
+              title: "DatasetAdapter (ABC)",
+              path: "src/mmit/data/adapters/base.py",
+              desc: "抽象基类，规定了所有适配器必须实现的接口。继承此类可以接入任意私有数据格式（CSV、数据库、XML 等），只需输出 CanonicalSample。",
+              sections: [{ title: "必须实现的方法", items: [
+                { key: "__iter__()", val: "产出 CanonicalSample 的迭代器" },
+                { key: "__len__()", val: "返回样本总数" },
+              ]}],
+            }},
+            { id: "LLaVAJSONAdapter", label: "LLaVAJSONAdapter", badge: "class", sub: "llava_json.py — 本地 JSON/JSONL", detail: {
+              title: "LLaVAJSONAdapter",
+              path: "src/mmit/data/adapters/llava_json.py",
+              desc: "处理本地 .json 或 .jsonl 文件。只依赖 Python 标准库，极度轻量。自动识别两种格式：LLaVA 对话格式（有 conversations 字段）和扁平格式（question/answer）。自动清除 <image> token。",
+              sections: [
+                { title: "支持的格式", items: [
+                  { key: "对话格式", val: '有 "conversations" 字段，解析 from/value' },
+                  { key: "扁平格式", val: 'input_text/question/text_input + output_text/answer/caption' },
+                ]},
+                { title: "关键细节", items: [
+                  { key: "_strip_image_token()", val: '自动去除 <image> / <Image> token' },
+                  { key: "metadata", val: "不认识的字段全部存入 metadata，不丢数据" },
+                ]},
+              ],
+            }},
+            { id: "HFDatasetsAdapter", label: "HFDatasetsAdapter", badge: "class", sub: "hf_datasets.py — HuggingFace Hub · ~825 行", detail: {
+              title: "HFDatasetsAdapter",
+              path: "src/mmit/data/adapters/hf_datasets.py",
+              desc: "框架中最复杂的文件。对接 HuggingFace Hub，自动处理：列名推断、流式加载、多种任务类型 prompt 拼接、图片三种状态、双配置 JOIN（GQA）、分类标签映射。",
+              sections: [
+                { title: "配置类", items: [
+                  { key: "ColumnMapping", val: "数据集列名映射（id/image/question/answer 列叫什么）" },
+                  { key: "DatasetProfile", val: "ColumnMapping + 任务类型 + instruction_suffix" },
+                  { key: "DATASET_PROFILES", val: "内置 30+ 个主流数据集的配置" },
+                ]},
+                { title: "智能加载", items: [
+                  { key: "_PREFER_STREAMING", val: "强制 streaming 的数据集黑名单" },
+                  { key: "_detect_column_mapping()", val: "自动扫描列名猜测映射" },
+                  { key: "split 降级策略", val: "请求 test 不存在时自动找 train/val" },
+                ]},
+                { title: "图片三种状态", items: [
+                  { key: "路径字符串", val: "延迟读取，内存零占用" },
+                  { key: '"<in_memory>"', val: "PIL.Image 存 metadata['_pil_image']" },
+                  { key: '"<deferred>"', val: "bytes 存 metadata['_image_bytes']，延迟解码" },
+                ]},
+              ],
+            }},
+          ],
+        },
+      ],
+    },
+
+    // ── config/ ──
+    {
+      id: "config",
+      label: "config/",
+      badge: "config",
+      sub: "配置层 — YAML 解析与类型校验",
+      detail: {
+        title: "config 模块",
+        path: "src/mmit/config/",
+        desc: "把 YAML 配置文件转换为强类型的 Python dataclass，提供参数校验和合并功能。",
+      },
+      children: [
+        { id: "TrainingConfig", label: "training_config.py", badge: "module", sub: "YAML → TrainingConfig dataclass · 285 行", detail: {
+          title: "training_config.py",
+          path: "src/mmit/config/training_config.py",
+          desc: "定义了所有训练配置的 dataclass 结构，并提供 load_config() 函数把 YAML 文件转换成类型安全的 TrainingConfig 对象。支持 local/colab/ssh 三种运行模式。",
+          sections: [{ title: "主要 dataclass", items: [
+            { key: "RuntimeConfig", val: "mode: local | colab | ssh" },
+            { key: "ModelConfig", val: "model path, family, quantization" },
+            { key: "TrainingParams", val: "lr, epochs, batch_size, save_steps..." },
+            { key: "DataConfig", val: "data_path, image_root, max_samples" },
+            { key: "TrainingConfig", val: "汇总所有配置的顶层类" },
+          ]},
+          { title: "关键函数", items: [
+            { key: "load_config(path)", val: "YAML 文件 → TrainingConfig" },
+            { key: "config_to_trainer_dict()", val: "转为 StageRunner 需要的字典格式" },
+          ]}],
+        }},
+      ],
+    },
+
+    // ── training/ ──
+    {
+      id: "training",
+      label: "training/",
+      badge: "module",
+      sub: "训练系统 — 从配置到 Checkpoint",
+      detail: {
+        title: "training 模块",
+        path: "src/mmit/training/",
+        desc: "完整的 VLM 微调训练系统。从 YAML 配置启动，支持 local/colab/ssh 三种运行环境，通过 StageRunner 执行多阶段训练，用 JSON events 实时上报进度。",
+      },
+      children: [
+        { id: "main", label: "__main__.py", badge: "module", sub: "CLI 训练入口 · python -m mmit.training", detail: {
+          title: "__main__.py",
+          path: "src/mmit/training/__main__.py",
+          desc: "命令行训练入口。解析 YAML 配置，自动检测是 legacy 单阶段格式还是新的 stages 数组格式，转换后交给 StageRunner 执行。通过 JSON events 把训练状态打到 stdout。",
+        }},
+        { id: "runner", label: "runner.py", badge: "module", sub: "local/colab/ssh 分发器", detail: {
+          title: "runner.py",
+          path: "src/mmit/training/runner.py",
+          desc: "根据 TrainingConfig.runtime.mode 决定在哪里执行训练。local 直接运行子进程；colab 上传代码到 Google Colab；ssh 通过 SSH 连接远程服务器。",
+        }},
+        { id: "StageRunner", label: "stage_runner.py", badge: "module", sub: "训练核心调度器 · ~315 行", detail: {
+          title: "StageRunner",
+          path: "src/mmit/training/stage_runner.py",
+          desc: "训练系统的心脏。管理多阶段训练流程：模型只加载一次，在多个 stage 之间共享并传递。每个 stage 拥有独立的数据、方法、超参数配置。",
+          sections: [
+            { title: "StageConfig 关键字段", items: [
+              { key: "data_sources", val: "数据源列表（adapter + weight + max_samples）" },
+              { key: "mixer / filter_config", val: "数据混合与过滤策略" },
+              { key: "training_method", val: "Registry 中的方法名（如 'lora'）" },
+              { key: "loss", val: "Registry 中的 loss 名（如 'ce'）" },
+              { key: "learning_rate", val: "默认 2e-5" },
+              { key: "gradient_accumulation_steps", val: "梯度累积步数" },
+            ]},
+            { title: "run_stage() 7步流程", items: [
+              { key: "1", val: "registry.build(dataset) × N → DataSource[]" },
+              { key: "2", val: "mixer.mix() → CanonicalSample[]" },
+              { key: "3", val: "filter.filter() 过滤低质量样本" },
+              { key: "4", val: "preprocessor.tokenize() → DataLoader" },
+              { key: "5", val: "method.prepare_model() 注入 LoRA/hooks" },
+              { key: "6", val: "AdamW + Cosine LR 训练循环" },
+              { key: "7", val: "每 save_steps 保存 checkpoint" },
+            ]},
+          ],
+        },
+          children: [
+            { id: "StageConfig", label: "StageConfig", badge: "data", sub: "单个训练阶段的配置 dataclass", detail: {
+              title: "StageConfig",
+              path: "src/mmit/training/stage_runner.py:58",
+              desc: "描述一个训练阶段的完整配置。多个 StageConfig 组成的列表就是多阶段训练计划，StageRunner 按顺序逐一执行。",
+            }},
+          ],
+        },
+
+        // training/methods/
+        { id: "t-methods", label: "methods/", badge: "module", sub: "6 种微调方法实现",
+          detail: {
+            title: "training/methods/",
+            path: "src/mmit/training/methods/",
+            desc: "所有微调方法的实现。每个方法继承 TrainingMethod ABC，注册到 Registry 的 training_method 插槽后，StageRunner 就能通过名字字符串调用它。",
+          },
+          children: [
+            { id: "TrainingMethod", label: "TrainingMethod", badge: "abc", sub: "base.py — 微调方法抽象基类", detail: {
+              title: "TrainingMethod (ABC)",
+              path: "src/mmit/training/methods/base.py",
+              desc: "所有微调方法必须继承的基类。定义了微调方法的完整生命周期接口。基类还提供通用的 freeze_patterns 机制：按名字模式冻结参数，不需要每个子类重复实现。",
+              sections: [{ title: "6 个抽象方法（必须实现）", items: [
+                { key: "default_config()", val: "返回默认超参数字典" },
+                { key: "_prepare_model_impl()", val: "注入 LoRA/hooks，返回改造后的模型" },
+                { key: "preprocess_labels()", val: "训练前修改 label mask（L2T 用）" },
+                { key: "compute_loss()", val: "计算 loss，返回 (scalar, metrics_dict)" },
+                { key: "get_trainable_params()", val: "返回优化器参数组" },
+                { key: "save_checkpoint()", val: "保存权重和 metadata" },
+              ]},
+              { title: "类属性", items: [
+                { key: "name", val: "Registry key，如 'lora'" },
+                { key: "display_name", val: "UI 显示名，如 'LoRA'" },
+                { key: "paper_ref", val: "论文引用，如 'Hu et al., ICLR 2022'" },
+              ]}],
+            }},
+            { id: "LoRAMethod", label: "LoRAMethod", badge: "class", sub: "lora.py — 标准 LoRA (bf16)", detail: {
+              title: "LoRAMethod",
+              path: "src/mmit/training/methods/lora.py",
+              desc: "基于 PEFT 库实现标准 LoRA 微调。自动检测需要注入 LoRA 的目标模块（q_proj, v_proj, k_proj 等）。支持 modules_to_save 对指定层做全量训练（如 projector）。",
+              sections: [{ title: "默认超参数", items: [
+                { key: "lora_r", val: "8（LoRA rank）" },
+                { key: "lora_alpha", val: "16（缩放系数）" },
+                { key: "lora_dropout", val: "0.05" },
+              ]},
+              { title: "Round 3 实验（5K samples）", items: [
+                { key: "VQAv2", val: "77.4%（基线 79.8%）" },
+                { key: "参数量", val: "~20M bf16" },
+                { key: "耗时", val: "35 min" },
+              ]}],
+            }},
+            { id: "QLoRAMethod", label: "QLoRAMethod", badge: "class", sub: "lora.py — 4-bit 量化 LoRA", detail: {
+              title: "QLoRAMethod（继承 LoRAMethod）",
+              path: "src/mmit/training/methods/lora.py:168",
+              desc: "唯一重写 requires_quantization() 返回 True 的方法。StageRunner 检测到此标志后，用 BitsAndBytesConfig(load_in_4bit=True) 加载基础模型，显存需求减少约 75%。",
+              sections: [{ title: "与 LoRAMethod 的区别", items: [
+                { key: "基础模型精度", val: "4-bit NF4（vs bf16）" },
+                { key: "LoRA adapter", val: "仍以 bf16 训练" },
+                { key: "VQAv2（lr=2e-5）", val: "76.7%（vs LoRA 77.4%）" },
+                { key: "⚠️ 陷阱", val: "lr=2e-4 时灾难性遗忘！VQAv2 跌至 51.8%" },
+              ]}],
+            }},
+            { id: "FreezeTuningMethod", label: "FreezeTuningMethod", badge: "class", sub: "freeze.py — 🥇 5K 数据最优方法", detail: {
+              title: "FreezeTuningMethod",
+              path: "src/mmit/training/methods/freeze.py",
+              desc: "只训练指定模块（通常是 projector），冻结 LLM 主干。5K 数据下是唯一超过 baseline 的方法（80.6% vs 79.8%），同时也是最快的（20 min）。",
+              sections: [{ title: "Round 3 实验（5K samples）", items: [
+                { key: "VQAv2", val: "🥇 80.6%（超过基线！）" },
+                { key: "参数量", val: "21M bf16（projector 部分）" },
+                { key: "耗时", val: "20 min（最快）" },
+              ]}],
+            }},
+            { id: "L2TMethod", label: "L2TMethod", badge: "class", sub: "l2t.py — Learn to Think (Zhou 2025)", detail: {
+              title: "L2TMethod",
+              path: "src/mmit/training/methods/l2t.py",
+              desc: "包装另一个方法（通常是 QLoRA），重写 preprocess_labels() 解锁 instruction token 的 loss。设计用于 665K+ 大数据集，5K 数据下 VQAv2 只有 46.3%。",
+              sections: [{ title: "关键设计", items: [
+                { key: "包装模式", val: "包装 QLoRA，不是独立方法" },
+                { key: "preprocess_labels()", val: "解锁 instruction token 参与 loss 计算" },
+                { key: "最优数据量", val: "需要 665K+ 样本（LLaVA-1.5 训练数据量）" },
+                { key: "VQAv2@5K", val: "仅 46.3%（不适合小数据）" },
+              ]}],
+            }},
+            { id: "MoReSMethod", label: "MoReSMethod", badge: "class", sub: "mores.py — Representation Steering (Bi 2025)", detail: {
+              title: "MoReSMethod",
+              path: "src/mmit/training/methods/mores.py",
+              desc: "通过在 transformer 层注入 steering vector 来引导模型行为。冻结 projector 时仅 8K 可训练参数，是所有方法中参数量最少的。",
+              sections: [{ title: "关键数据", items: [
+                { key: "参数量", val: "仅 8K bf16（冻结 projector 时）" },
+                { key: "VQAv2", val: "76.9%" },
+                { key: "⚠️ 陷阱", val: "projector UNFROZEN 时 VQAv2 跌至 12%！过拟合" },
+              ]}],
+            }},
+            { id: "LoRAInLoRAMethod", label: "LoRAInLoRAMethod", badge: "class", sub: "lora_in_lora.py — 嵌套 LoRA", detail: {
+              title: "LoRAInLoRAMethod",
+              path: "src/mmit/training/methods/lora_in_lora.py",
+              desc: "嵌套 LoRA 设计，用于持续学习（continual learning）场景。在已有 LoRA adapter 基础上再叠加一层 LoRA，避免灾难性遗忘（Che et al. 2025）。",
+            }},
+          ],
+        },
+
+        // training/preprocessors/
+        { id: "t-preprocessors", label: "preprocessors/", badge: "module", sub: "CanonicalSample → tokenized tensors",
+          detail: { title: "training/preprocessors/", path: "src/mmit/training/preprocessors/", desc: "把 CanonicalSample 转换成模型可以直接输入的 tensor。核心挑战是精确计算 label mask，确保只对 assistant 的回答计算 loss。" },
+          children: [
+            { id: "Preprocessor", label: "Preprocessor", badge: "abc", sub: "base.py — 预处理器基类", detail: {
+              title: "Preprocessor (ABC)",
+              path: "src/mmit/training/preprocessors/base.py",
+              desc: "抽象基类，定义预处理器的两个方法接口。",
+              sections: [{ title: "必须实现的方法", items: [
+                { key: "tokenize(sample, processor, **kwargs)", val: "单样本 → token dict" },
+                { key: "collate(batch)", val: "List[dict] → batch tensors（用于 DataLoader）" },
+              ]}],
+            }},
+            { id: "ChatTemplatePreprocessor", label: "ChatTemplatePreprocessor", badge: "class", sub: "chat_template.py — 通用 chat template + 两遍 diff", detail: {
+              title: "ChatTemplatePreprocessor",
+              path: "src/mmit/training/preprocessors/chat_template.py",
+              desc: "使用 processor.apply_chat_template() 处理对话，兼容任何支持 chat template 的模型（LLaVA、Qwen2-VL、Gemma 等）。核心是两遍 diff 策略精确计算 label mask。",
+              sections: [{ title: "两遍 diff 策略", items: [
+                { key: "第一遍", val: "tokenize 完整对话（含 assistant 回答）→ full_ids" },
+                { key: "第二遍", val: "只 tokenize prompt 部分 → prompt_ids" },
+                { key: "diff", val: "answer_start = len(prompt_ids)，之前全设为 -100" },
+                { key: "效果", val: "精确 mask 掉问题部分，只对回答计算 loss" },
+              ]}],
+            }},
+            { id: "MultiImagePreprocessor", label: "MultiImagePreprocessor", badge: "class", sub: "multi_image.py — 多图输入", detail: {
+              title: "MultiImagePreprocessor",
+              path: "src/mmit/training/preprocessors/multi_image.py",
+              desc: "处理每个样本包含多张图片的场景（如图文交错、对比理解任务）。",
+            }},
+          ],
+        },
+
+        // training/data/
+        { id: "t-data", label: "data/", badge: "module", sub: "训练数据混合与过滤",
+          detail: { title: "training/data/", path: "src/mmit/training/data/", desc: "训练数据的混合（Mixer）和过滤（Filter）逻辑。" },
+          children: [
+            { id: "ConcatMixer", label: "ConcatMixer", badge: "class", sub: "mixer.py — 简单拼接", detail: {
+              title: "ConcatMixer",
+              path: "src/mmit/training/data/mixer.py",
+              desc: "按顺序把所有数据源的样本拼接成一个大列表。",
+            }},
+            { id: "WeightedInterleaveMixer", label: "WeightedInterleaveMixer", badge: "class", sub: "mixer.py — 按权重交叉混合", detail: {
+              title: "WeightedInterleaveMixer",
+              path: "src/mmit/training/data/mixer.py",
+              desc: "按权重（weight）对多个数据源进行加权采样并交叉混合。LLaVA-1.5 使用此方法把 10 个不同数据集按比例混合成 665K 训练集。",
+              sections: [{ title: "DataSource 字段", items: [
+                { key: "adapter", val: "DatasetAdapter 实例" },
+                { key: "weight", val: "采样概率权重（默认 1.0）" },
+                { key: "instruction_suffix", val: "追加到最后一个 human turn" },
+                { key: "max_samples", val: "0 = 全部，>0 = 限制数量" },
+              ]}],
+            }},
+            { id: "TextLengthFilter", label: "TextLengthFilter", badge: "class", sub: "filter.py — 按文本长度过滤", detail: {
+              title: "TextLengthFilter",
+              path: "src/mmit/training/data/filter.py",
+              desc: "过滤文本过短或过长的样本，保证训练数据质量。",
+            }},
+            { id: "CompositeFilter", label: "CompositeFilter", badge: "class", sub: "filter.py — 组合多个过滤器", detail: {
+              title: "CompositeFilter",
+              path: "src/mmit/training/data/filter.py",
+              desc: "把多个 filter 用 AND/OR 逻辑组合成一个 filter 管道。",
+            }},
+          ],
+        },
+
+        // training/losses/
+        { id: "t-losses", label: "losses/", badge: "module", sub: "损失函数",
+          detail: { title: "training/losses/", path: "src/mmit/training/losses/", desc: "解耦的损失函数实现，通过 Registry 的 loss 插槽管理，可随时替换。" },
+          children: [
+            { id: "LossFunction", label: "LossFunction", badge: "abc", sub: "base.py — 损失函数基类", detail: {
+              title: "LossFunction (ABC)",
+              path: "src/mmit/training/losses/base.py",
+              desc: "抽象基类，定义损失函数的接口。",
+              sections: [{ title: "必须实现", items: [
+                { key: "compute(model, batch, outputs)", val: "返回 (loss_tensor, metrics_dict)" },
+                { key: "on_prepare(model, config)", val: "模型准备阶段的 hook（如注册辅助层）" },
+              ]}],
+            }},
+            { id: "CrossEntropyLoss", label: "CrossEntropyLoss", badge: "class", sub: "ce_loss.py — 标准因果语言模型 loss", detail: {
+              title: "CrossEntropyLoss",
+              path: "src/mmit/training/losses/ce_loss.py",
+              desc: "标准的 Causal LM 交叉熵损失。计算 labels 中不为 -100 的位置的 cross-entropy。这是所有实验的默认损失函数。",
+            }},
+            { id: "CEPlusOrthoLoss", label: "CEPlusOrthoLoss", badge: "class", sub: "ce_ortho.py — CE + 正交约束", detail: {
+              title: "CEPlusOrthoLoss",
+              path: "src/mmit/training/losses/ce_ortho.py",
+              desc: "标准 CE loss 加上正交性约束（orthogonality regularization），用于约束中间层表示的多样性，防止表示坍塌。",
+            }},
+          ],
+        },
+      ],
+    },
+
+    // ── eval/ ──
+    {
+      id: "eval",
+      label: "eval/",
+      badge: "module",
+      sub: "评测系统 — 从推理到指标",
+      detail: {
+        title: "eval 模块",
+        path: "src/mmit/eval/",
+        desc: "完整的模型评测系统。EvalEngine 作为主考官调度整个流程，Benchmark 负责出题和打分，Method 负责模型推理，metrics 模块负责指标计算。",
+      },
+      children: [
+        { id: "EvalEngine", label: "engine.py", badge: "module", sub: "EvalEngine — 评测主考官 · 110 行", detail: {
+          title: "EvalEngine",
+          path: "src/mmit/eval/engine.py",
+          desc: "评测流程的总调度器。核心设计：EvalEngine 本身不含任何业务逻辑，只负责机械地调度 Benchmark 和 Method。try-finally 保证文件句柄安全关闭，JSONL 格式实时写盘支持断点续跑。",
+          sections: [{ title: "run() 5步流程", items: [
+            { key: "1", val: "benchmark.iter_questions() → EvalSample" },
+            { key: "2", val: "benchmark.build_prompt() 加引导语" },
+            { key: "3", val: "method.prepare_eval_input(sample, image_root='')" },
+            { key: "4", val: "method.generate() → prediction 字符串" },
+            { key: "5", val: "实时写 JSONL → benchmark.score()" },
+          ]},
+          { title: "初始化参数", items: [
+            { key: "max_new_tokens", val: "512（限制输出长度）" },
+            { key: "temperature", val: "0.0（贪婪解码，保证可复现）" },
+          ]}],
+        }},
+
+        // eval/methods/
+        { id: "e-methods", label: "methods/", badge: "module", sub: "推理包装器",
+          detail: { title: "eval/methods/", path: "src/mmit/eval/methods/", desc: "把不同的模型（本地 HF、API）统一包装成相同的接口，EvalEngine 不需要关心背后是什么模型。" },
+          children: [
+            { id: "Method", label: "Method", badge: "abc", sub: "base.py — 推理方法基类", detail: {
+              title: "Method (ABC)",
+              path: "src/mmit/eval/methods/base.py",
+              desc: "抽象基类。from_pretrained() 是工厂方法，自动检测模型家族并返回合适的子类实例。",
+              sections: [{ title: "必须实现的方法", items: [
+                { key: "from_pretrained(model_id)", val: "工厂方法，自动检测模型类型" },
+                { key: "prepare_eval_input(sample, image_root)", val: "EvalSample → model 输入 dict" },
+                { key: "generate(prepared, **kwargs)", val: "前向推理 → 字符串" },
+              ]}],
+            }},
+            { id: "HFMethod", label: "HFMethod", badge: "class", sub: "hf_method.py — HuggingFace 统一推理 · ~400 行", detail: {
+              title: "HFMethod",
+              path: "src/mmit/eval/methods/hf_method.py",
+              desc: "统一封装 8+ 种 HF 模型家族（LLaVA-1.5、Qwen2-VL、InstructBLIP、PaliGemma 等），自动检测模型类型并使用对应的图片处理逻辑。支持本地 GPU 和 HF Inference API 两种模式。",
+              sections: [{ title: "支持的模型家族", items: [
+                { key: "llava", val: "LLaVA-1.5 系列" },
+                { key: "qwen2_vl", val: "Qwen2-VL 系列" },
+                { key: "idefics", val: "IDEFICS / BLIP 系列" },
+                { key: "paligemma", val: "PaliGemma 系列" },
+                { key: "...更多", val: "通过 auto-detect 扩展" },
+              ]}],
+            }},
+            { id: "LiteLLMMethod", label: "LiteLLMMethod", badge: "class", sub: "litellm_method.py — API 调用（OpenAI/Anthropic）", detail: {
+              title: "LiteLLMMethod",
+              path: "src/mmit/eval/methods/litellm_method.py",
+              desc: "通过 LiteLLM 库统一封装外部 API（OpenAI GPT-4V、Anthropic Claude、Google Gemini 等），实现相同接口调用商业模型。",
+            }},
+          ],
+        },
+
+        // eval/benchmarks/
+        { id: "e-benchmarks", label: "benchmarks/", badge: "module", sub: "评测基准实现",
+          detail: { title: "eval/benchmarks/", path: "src/mmit/eval/benchmarks/", desc: "学术界标准评测基准的实现。每个 Benchmark 负责出题（iter_questions）、加工题目（build_prompt）、打分（score）三个职责。" },
+          children: [
+            { id: "Benchmark", label: "Benchmark", badge: "abc", sub: "base.py — 评测基准基类", detail: {
+              title: "Benchmark (ABC)",
+              path: "src/mmit/eval/benchmarks/base.py",
+              desc: "所有评测基准的基类。三个方法完全分离了出题、加工、打分三个职责，EvalEngine 只依赖这个接口，不依赖具体实现。",
+              sections: [{ title: "必须实现的方法", items: [
+                { key: "iter_questions()", val: "产出 EvalSample（含拼好的绝对图片路径）" },
+                { key: "build_prompt(sample)", val: "给题目加上任务特定引导语" },
+                { key: "score(predictions)", val: "计算指标 → {'accuracy': 0.743}" },
+              ]}],
+            }},
+            { id: "VQAv2Benchmark", label: "VQAv2Benchmark", badge: "class", sub: "vqav2.py — 图像问答软匹配", detail: {
+              title: "VQAv2Benchmark",
+              path: "src/mmit/eval/benchmarks/vqav2.py",
+              desc: "VQA v2 评测基准，使用软匹配评分（aggregate_vqa_accuracy）。10 个人类标注者，答对 3 个以上得满分，按比例得分。基线：79.8%。",
+            }},
+            { id: "TextVQABenchmark", label: "TextVQABenchmark", badge: "class", sub: "textvqa.py — OCR 文字识别问答", detail: {
+              title: "TextVQABenchmark",
+              path: "src/mmit/eval/benchmarks/textvqa.py",
+              desc: "评测模型的 OCR 能力，图片中包含文字需要识别。LLaVA-1.5-7B 的 TextVQA 上限约 47.5%，受限于模型的 OCR 能力而非评分 bug（经过实验验证）。",
+            }},
+            { id: "POPEBenchmark", label: "POPEBenchmark", badge: "class", sub: "pope.py — 幻觉检测（yes/no）", detail: {
+              title: "POPEBenchmark",
+              path: "src/mmit/eval/benchmarks/pope.py",
+              desc: "Polling-based Object Probing Evaluation，专门检测模型的幻觉（hallucination）问题。只问 'Is there a X in the image?' 类的 yes/no 问题，测试模型是否会'捏造'不存在的物体。基线：83.2%。",
+            }},
+            { id: "MMBenchBenchmark", label: "MMBenchBenchmark", badge: "class", sub: "mmbench.py — 多维度多选题", detail: {
+              title: "MMBenchBenchmark",
+              path: "src/mmit/eval/benchmarks/mmbench.py",
+              desc: "多维度视觉语言理解基准，包含多种能力维度（空间关系、物体识别、场景理解等）。选择题格式，模型只能回答 A/B/C/D。",
+            }},
+          ],
+        },
+
+        // eval/metrics/
+        { id: "e-metrics", label: "metrics/", badge: "module", sub: "指标计算",
+          detail: { title: "eval/metrics/", path: "src/mmit/eval/metrics/", desc: "标准化的指标计算函数，与 Benchmark 解耦，可独立使用。" },
+          children: [
+            { id: "vqa_metrics", label: "vqa.py", badge: "module", sub: "VQA 标准化评分函数", detail: {
+              title: "vqa.py",
+              path: "src/mmit/eval/metrics/vqa.py",
+              desc: "实现 VQA v2 标准的 normalize_answer 和 aggregate_vqa_accuracy 函数。normalize_answer 进行 5 步标准化（小写→去标点→数字词转换→去冠词→规范化空格）。",
+              sections: [{ title: "关键函数", items: [
+                { key: "normalize_answer(text)", val: "5 步标准化，消除大小写/标点/冠词差异" },
+                { key: "aggregate_vqa_accuracy(preds, gts)", val: "软匹配：答对 ≥3 个 annotator = 满分 1.0" },
+              ]}],
+            }},
+            { id: "scoring", label: "scoring.py", badge: "module", sub: "多基准通用指标聚合", detail: {
+              title: "scoring.py",
+              path: "src/mmit/eval/metrics/scoring.py",
+              desc: "处理多种评分模式：精确匹配（exact match）、token F1、ANLS（编辑距离）、包含匹配（contains match）等。各 Benchmark 在 score() 方法中调用这里的函数。",
+            }},
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+// ─── Render ─────────────────────────────────────────────────────────────────
+let selectedRow = null;
+
+function renderTree(nodes, parentEl) {
+  const ul = document.createElement('ul');
+  ul.className = 'tree';
+  nodes.forEach(node => {
+    const li = document.createElement('li');
+    li.className = 'node';
+
+    // Node row
+    const row = document.createElement('div');
+    row.className = 'node-row';
+    row.id = 'row_' + node.id;
+
+    // Toggle button
+    const btn = document.createElement('div');
+    const hasChildren = node.children && node.children.length;
+    btn.className = 'toggle-btn ' + (hasChildren ? '' : 'leaf');
+    btn.textContent = hasChildren ? '▶' : '';
+    if (hasChildren) {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleNode(node.id);
+      });
+    }
+    row.appendChild(btn);
+
+    // Badge
+    const badge = document.createElement('span');
+    badge.className = `node-badge badge-${node.badge}`;
+    badge.textContent = {
+      root: '📦 pkg',
+      module: '📄 module',
+      abc: '⬡ ABC',
+      class: '◆ class',
+      fn: 'ƒ fn',
+      data: '◉ dataclass',
+      config: '⚙ config',
+    }[node.badge] || node.badge;
+    row.appendChild(badge);
+
+    // Label
+    const label = document.createElement('span');
+    label.className = 'node-label';
+    label.textContent = node.label;
+    row.appendChild(label);
+
+    // Sub text
+    if (node.sub) {
+      const sub = document.createElement('span');
+      sub.className = 'node-sub';
+      sub.textContent = '— ' + node.sub;
+      row.appendChild(sub);
+    }
+
+    row.addEventListener('click', () => selectNode(node, row));
+    li.appendChild(row);
+
+    // Children
+    if (hasChildren) {
+      const childUl = renderTree(node.children, null);
+      childUl.className += ' subtree';
+      childUl.id = 'subtree_' + node.id;
+      childUl.classList.add('collapsed');
+      li.appendChild(childUl);
+    }
+
+    ul.appendChild(li);
+  });
+  if (parentEl) parentEl.appendChild(ul);
+  return ul;
+}
+
+function toggleNode(id) {
+  const subtree = document.getElementById('subtree_' + id);
+  const btn = document.querySelector('#row_' + id + ' .toggle-btn');
+  if (!subtree) return;
+  const collapsed = subtree.classList.contains('collapsed');
+  if (collapsed) {
+    subtree.classList.remove('collapsed');
+    btn.textContent = '▼';
+    btn.classList.add('open');
+  } else {
+    subtree.classList.add('collapsed');
+    btn.textContent = '▶';
+    btn.classList.remove('open');
+  }
+}
+
+function selectNode(node, rowEl) {
+  if (selectedRow) selectedRow.classList.remove('selected');
+  rowEl.classList.add('selected');
+  selectedRow = rowEl;
+  renderDetail(node.detail, node.badge);
+}
+
+function renderDetail(detail, badge) {
+  if (!detail) return;
+  document.getElementById('detailEmpty').style.display = 'none';
+  const content = document.getElementById('detailContent');
+  content.style.display = 'block';
+
+  const badgeText = { root:'pkg', module:'module', abc:'ABC', class:'class', fn:'fn', data:'dataclass', config:'config' }[badge] || badge;
+  const badgeClass = { root:'blue', module:'blue', abc:'purple', class:'', fn:'orange', data:'purple', config:'' }[badge] || '';
+
+  let html = `<div class="d-badge badge-${badge}" style="margin-bottom:10px">${badgeText}</div>`;
+  html += `<div class="d-title">${detail.title || ''}</div>`;
+  if (detail.path) html += `<div class="d-path">📁 ${detail.path}</div>`;
+  if (detail.desc) html += `<div class="d-desc">${detail.desc}</div>`;
+
+  if (detail.sections) {
+    detail.sections.forEach(sec => {
+      html += `<div class="d-section"><div class="d-section-title">${sec.title}</div>`;
+      sec.items.forEach(item => {
+        html += `<div class="d-item"><span class="d-key">${item.key}</span><span class="d-val">${item.val}</span></div>`;
+      });
+      html += '</div>';
+    });
+  }
+  content.innerHTML = html;
+}
+
+function expandAll() {
+  document.querySelectorAll('.subtree').forEach(el => {
+    el.classList.remove('collapsed');
+  });
+  document.querySelectorAll('.toggle-btn:not(.leaf)').forEach(btn => {
+    btn.textContent = '▼';
+    btn.classList.add('open');
+  });
+}
+
+function collapseAll() {
+  document.querySelectorAll('.subtree').forEach(el => {
+    el.classList.add('collapsed');
+  });
+  document.querySelectorAll('.toggle-btn:not(.leaf)').forEach(btn => {
+    btn.textContent = '▶';
+    btn.classList.remove('open');
+  });
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+const root = document.getElementById('treeRoot');
+renderTree([TREE], root);
+// Auto-expand top level
+toggleNode('mmit');
+</script>
+</body>
+</html>

@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PyTorch 基础教学 — mmit 所需知识 (Part 1)</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--mono:'SF Mono','Fira Code','Consolas',monospace;--sans:-apple-system,'Helvetica Neue',sans-serif}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:8.5pt;line-height:1.4;padding:12px 20px;max-width:980px;margin:0 auto}
+@page{size:A4 portrait;margin:6mm}
+@media print{body{padding:0;max-width:none;font-size:8pt;line-height:1.35}.print-hint{display:none!important}h2{page-break-after:avoid}h3{page-break-after:avoid}.vis,.pytorch,pre.code,table,.note{page-break-inside:avoid}}
+.print-hint{background:#fffbe0;border:1.5px solid #806000;padding:4px 10px;margin-bottom:6px;font-size:8pt;color:#806000;border-radius:3px}.print-hint b{color:#000}
+h1{font-size:13pt;font-weight:700;border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:3px}
+.subtitle{font-size:8pt;color:#444;font-style:italic;margin-bottom:8px}
+h2{font-size:10.5pt;font-weight:700;margin:10px 0 5px;padding:4px 8px;background:#000;color:#fff;border-radius:3px}
+h3{font-size:9pt;font-weight:700;margin:6px 0 3px;border-bottom:1px solid #ccc;padding-bottom:1px}
+p{margin:3px 0;font-size:8pt}
+pre.code{background:#f8f8f8;border:1px solid #000;border-radius:2px;padding:5px 8px;font-family:var(--mono);font-size:7.5pt;line-height:1.4;margin:4px 0;white-space:pre-wrap;word-break:break-word}
+.code .kw{color:#a00050;font-weight:600}.code .fn{color:#0040a0;font-weight:600}.code .str{color:#006400}.code .cm{color:#666;font-style:italic}.code .num{color:#a04000}
+.vis{border:1.2px solid #000;border-radius:3px;padding:6px 10px;margin:4px 0;background:#fafafa}
+.vis .vis-title{font-weight:700;font-size:9pt;margin-bottom:4px;color:#a00000}
+.vis-row{display:flex;align-items:center;gap:5px;margin:2px 0;font-family:var(--mono);font-size:7.5pt;flex-wrap:wrap}
+.vis-box{border:1px solid #000;padding:3px 8px;border-radius:2px;background:#fff;text-align:center;min-width:45px;font-size:7pt}
+.vis-box.param{background:#fff0f0;border-color:#a00000;font-weight:700}
+.vis-box.result{background:#e8f0ff;border-color:#0040a0}
+.vis-box.input{background:#fff8e0;border-color:#806000}
+.vis-box.frozen{background:#f0f5f0;border-color:#006400;border-style:dashed}
+.vis-arrow{font-size:12pt;font-weight:700;color:#000}
+.vis-eq{font-size:11pt;font-weight:700;color:#a00000}
+.vis-label{font-size:6.5pt;color:#666;font-style:italic}
+.pytorch{margin:3px 0;padding:5px 8px;background:#f0f0ff;border:1px solid #0040a0;border-radius:2px;font-size:7.5pt}
+.pytorch .pt-title{font-weight:700;color:#0040a0;font-size:8pt;margin-bottom:2px;font-family:var(--mono)}
+.note{background:#fff8e0;border-left:2.5px solid #806000;padding:4px 8px;margin:3px 0;font-size:7.5pt}
+.note b{color:#806000}
+table{width:100%;border-collapse:collapse;font-size:7pt;margin:3px 0}
+th,td{padding:2px 5px;border:1px solid #000;text-align:left;vertical-align:top}
+th{background:#000;color:#fff}
+.graph{font-family:var(--mono);font-size:7pt;line-height:1.2;white-space:pre;background:#f8f8f8;border:1px solid #000;padding:5px 8px;margin:4px 0;border-radius:2px}
+</style>
+</head>
+<body>
+
+<div class="print-hint"><b>打印提示：</b>Ctrl/Cmd+P，选择 A4 纵向，边距"最小"，启用背景图形。</div>
+
+<h1>PyTorch 基础教学 — mmit 所需知识 (Part 1)</h1>
+<div class="subtitle">Day 1: 基础层（激活函数、损失、Dropout、线性层、Embedding） · Day 2: 训练层（初始化、优化器、梯度技巧、学习率调度）</div>
+
+<!-- ============================================================ -->
+<!-- DAY 1: 基础层                                                  -->
+<!-- ============================================================ -->
+
+<h2>Day 1: 基础层</h2>
+
+<!-- ==================== 1.1 ReLU ==================== -->
+<h3>1.1 ReLU — 最简单的激活函数</h3>
+
+<p><b>是什么：</b>f(x) = max(0, x)。负值归零，正值不变。计算极其简单高效。</p>
+<p><b>为什么需要：</b>如果没有非线性激活，多个线性层堆叠 = 一个线性层（矩阵乘法的结合律）。加入 ReLU 后，网络才能学习非线性关系。</p>
+
+<div class="graph">  ReLU: f(x) = max(0, x)
+  y
+  3 |                              ·
+    |                           ·
+  2 |                        ·
+    |                     ·
+  1 |                  ·
+    |               ·
+  0 |· · · · · · ·
+    +--+--+--+--+--+--+--+--+--+-→ x
+     -3 -2 -1  0  1  2  3</div>
+
+<div class="vis">
+<div class="vis-title">ReLU 示例</div>
+<div class="vis-row">
+  <span>输入:</span>
+  <span class="vis-box input">-2.0</span>
+  <span class="vis-box input">-0.5</span>
+  <span class="vis-box input">0.0</span>
+  <span class="vis-box input">1.3</span>
+  <span class="vis-box input">3.0</span>
+  <span class="vis-arrow">→ ReLU →</span>
+  <span class="vis-box result">0.0</span>
+  <span class="vis-box result">0.0</span>
+  <span class="vis-box result">0.0</span>
+  <span class="vis-box result">1.3</span>
+  <span class="vis-box result">3.0</span>
+</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 用法</div>
+<pre class="code"><span class="kw">import</span> torch
+<span class="kw">import</span> torch.nn <span class="kw">as</span> nn
+<span class="kw">import</span> torch.nn.functional <span class="kw">as</span> F
+
+x = torch.tensor([-<span class="num">2.0</span>, -<span class="num">0.5</span>, <span class="num">0.0</span>, <span class="num">1.3</span>, <span class="num">3.0</span>])
+
+<span class="cm"># 三种等价写法</span>
+y1 = torch.<span class="fn">relu</span>(x)            <span class="cm"># 函数式</span>
+y2 = F.<span class="fn">relu</span>(x)                <span class="cm"># functional API</span>
+y3 = nn.<span class="fn">ReLU</span>()(x)             <span class="cm"># Module（可放入 nn.Sequential）</span></pre>
+</div>
+
+<h3>激活函数对比：ReLU vs GELU vs SiLU</h3>
+
+<table>
+<tr><th>名称</th><th>公式</th><th>特点</th><th>使用场景</th></tr>
+<tr><td>ReLU</td><td>max(0, x)</td><td>简单高效，x=0 处不可导，负半轴梯度为零（"死神经元"）</td><td>经典 CNN、基础模型</td></tr>
+<tr><td>GELU</td><td>x · Φ(x)</td><td>平滑近似 ReLU，允许少量负值通过</td><td>BERT, GPT 系列</td></tr>
+<tr><td>SiLU/Swish</td><td>x · σ(x)</td><td>平滑、无上界、有下界。LLaMA 的 SwiGLU 中使用</td><td>LLaMA, mmit 基础模型</td></tr>
+</table>
+
+<div class="graph">  激活函数对比（近似图示）
+  y
+  3 |                       R G S         R=ReLU  G=GELU  S=SiLU
+    |                     R G S
+  2 |                   R G S
+    |                 R GS
+  1 |               RGS
+    |            GS·
+  0 |· · · · ·R· · ·                     注意：SiLU 在 x≈-1 处有
+    |       S G                           小的负值（约 -0.28）
+ -1 |     S
+    +--+--+--+--+--+--+--+--+-→ x
+     -3 -2 -1  0  1  2  3</div>
+
+<div class="note"><b>mmit 关联：</b>LLaMA 使用 SwiGLU（= SiLU 激活 + 门控线性单元），不直接用 ReLU。但理解 ReLU 是理解所有激活函数的基础。</div>
+
+<!-- ==================== 1.2 Softmax ==================== -->
+<h3>1.2 Softmax — 把数字变成概率</h3>
+
+<p><b>是什么：</b>softmax(x<sub>i</sub>) = exp(x<sub>i</sub>) / Σ exp(x<sub>j</sub>)。将任意实数向量转换为概率分布（每个值在 0-1 之间，总和为 1）。</p>
+<p><b>为什么需要：</b>分类任务最后需要概率输出；Attention 机制中需要将 score 转为注意力权重。</p>
+
+<div class="vis">
+<div class="vis-title">Softmax 计算示例</div>
+<div class="vis-row">
+  <span>logits:</span>
+  <span class="vis-box input">2.0</span>
+  <span class="vis-box input">1.0</span>
+  <span class="vis-box input">0.1</span>
+  <span class="vis-arrow">→</span>
+  <span>exp:</span>
+  <span class="vis-box">7.39</span>
+  <span class="vis-box">2.72</span>
+  <span class="vis-box">1.11</span>
+  <span class="vis-arrow">→</span>
+  <span>÷ 11.22 →</span>
+  <span class="vis-box result" style="min-width:55px">0.659</span>
+  <span class="vis-box result" style="min-width:55px">0.242</span>
+  <span class="vis-box result" style="min-width:55px">0.099</span>
+</div>
+<div class="vis-label">概率之和：0.659 + 0.242 + 0.099 = 1.000 ✓</div>
+</div>
+
+<p><b>数值稳定性：</b>直接计算 exp(1000) = ∞（溢出）！解决方法：先减去最大值。</p>
+
+<div class="vis">
+<div class="vis-title">数值稳定技巧</div>
+<div class="vis-row">
+  <span class="vis-box input">1000</span>
+  <span class="vis-box input">1001</span>
+  <span class="vis-box input">999</span>
+  <span class="vis-arrow">→</span>
+  <span>减去 max(1001):</span>
+  <span class="vis-box result">-1</span>
+  <span class="vis-box result">0</span>
+  <span class="vis-box result">-2</span>
+  <span class="vis-arrow">→</span>
+  <span>exp 安全计算 ✓</span>
+</div>
+<div class="vis-label">数学上等价：softmax(x) = softmax(x - max(x))，PyTorch 内部自动处理</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 用法</div>
+<pre class="code">logits = torch.tensor([<span class="num">2.0</span>, <span class="num">1.0</span>, <span class="num">0.1</span>])
+probs = F.<span class="fn">softmax</span>(logits, dim=<span class="num">-1</span>)   <span class="cm"># dim=-1 表示沿最后一个维度</span>
+<span class="cm"># tensor([0.6590, 0.2424, 0.0986])</span>
+
+<span class="cm"># 对 batch 的 logits: shape (B, num_classes)</span>
+batch_logits = torch.randn(<span class="num">4</span>, <span class="num">10</span>)   <span class="cm"># 4 个样本，10 个类别</span>
+batch_probs = F.<span class="fn">softmax</span>(batch_logits, dim=<span class="num">-1</span>)  <span class="cm"># 每行独立做 softmax</span></pre>
+</div>
+
+<div class="note"><b>mmit 关联：</b>MoLE 路由器使用 softmax 选择专家（softmax 将路由分数转为权重）。Attention 层中 softmax 将 Q·K^T 转为注意力权重。</div>
+
+<!-- ==================== 1.3 Cross-Entropy Loss ==================== -->
+<h3>1.3 Cross-Entropy Loss — 训练的目标</h3>
+
+<p><b>是什么：</b>CE = -log(P(正确类别))。衡量模型对正确答案的预测质量。模型越"确定"正确答案，loss 越低。</p>
+<p><b>直觉：</b>如果模型给正确 token 90% 概率 → loss = -log(0.9) = 0.105（很好！）。如果只给 10% → loss = -log(0.1) = 2.302（很差！）。</p>
+
+<table>
+<tr><th>预测概率 P(正确)</th><th>Loss = -log(P)</th><th>含义</th></tr>
+<tr><td>0.01</td><td>4.605</td><td>几乎完全错误</td></tr>
+<tr><td>0.10</td><td>2.302</td><td>很差</td></tr>
+<tr><td>0.50</td><td>0.693</td><td>一般（随机猜二选一）</td></tr>
+<tr><td>0.90</td><td>0.105</td><td>很好</td></tr>
+<tr><td>0.99</td><td>0.010</td><td>非常好</td></tr>
+</table>
+
+<div class="vis">
+<div class="vis-title">VLM 中的 Cross-Entropy：token 级别的预测</div>
+<div class="vis-row">
+  <span class="vis-label">token:</span>
+  <span class="vis-box frozen">&lt;img&gt;</span>
+  <span class="vis-box frozen">[vis1]</span>
+  <span class="vis-box frozen">[vis2]</span>
+  <span class="vis-box frozen">描述</span>
+  <span class="vis-box frozen">这张</span>
+  <span class="vis-box input">图片</span>
+  <span class="vis-box input">中有</span>
+  <span class="vis-box input">一只</span>
+  <span class="vis-box input">猫</span>
+</div>
+<div class="vis-row">
+  <span class="vis-label">label:</span>
+  <span class="vis-box frozen">-100</span>
+  <span class="vis-box frozen">-100</span>
+  <span class="vis-box frozen">-100</span>
+  <span class="vis-box frozen">-100</span>
+  <span class="vis-box frozen">-100</span>
+  <span class="vis-box param">图片</span>
+  <span class="vis-box param">中有</span>
+  <span class="vis-box param">一只</span>
+  <span class="vis-box param">猫</span>
+</div>
+<div class="vis-label">绿色虚线框 = label 为 -100，不计算 loss（指令/图像 token）；黄色/红色 = 计算 loss 的回答 token</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 用法</div>
+<pre class="code"><span class="cm"># logits: (B, seq_len, vocab_size)，targets: (B, seq_len)</span>
+logits = model(input_ids)                        <span class="cm"># 模型输出</span>
+loss = F.<span class="fn">cross_entropy</span>(
+    logits.view(-<span class="num">1</span>, vocab_size),                <span class="cm"># 展平为 (B*seq_len, V)</span>
+    targets.view(-<span class="num">1</span>),                             <span class="cm"># 展平为 (B*seq_len,)</span>
+    ignore_index=-<span class="num">100</span>                             <span class="cm"># -100 位置不计 loss</span>
+)
+<span class="cm"># 内部自动做 softmax + 取 log + 取负号，不需要手动 softmax！</span></pre>
+</div>
+
+<div class="note"><b>mmit 关联：</b>标准 SFT 中，指令 token 的 label 设为 -100（忽略）。L2T（Learn to Tokenize）改变了这一做法 —— 让视觉 token 也参与 loss 计算。Lavender loss 是 mmit 中一种改进的 loss 计算方式。</div>
+
+<!-- ==================== 1.4 Dropout ==================== -->
+<h3>1.4 Dropout — 随机丢弃防过拟合</h3>
+
+<p><b>是什么：</b>训练时随机将 p% 的值归零，剩余值乘以 1/(1-p) 进行缩放。推理时什么都不做。</p>
+<p><b>为什么：</b>强制冗余 —— 模型不能依赖任何单一神经元，必须学到更鲁棒的特征。</p>
+
+<div class="vis">
+<div class="vis-title">Dropout 示例（p=0.4）</div>
+<div class="vis-row">
+  <span>训练时输入:</span>
+  <span class="vis-box input">0.5</span>
+  <span class="vis-box input">0.3</span>
+  <span class="vis-box input">0.8</span>
+  <span class="vis-box input">0.2</span>
+  <span class="vis-box input">0.6</span>
+</div>
+<div class="vis-row">
+  <span>随机 mask:</span>
+  <span class="vis-box result">✓</span>
+  <span class="vis-box param">✗</span>
+  <span class="vis-box result">✓</span>
+  <span class="vis-box param">✗</span>
+  <span class="vis-box result">✓</span>
+</div>
+<div class="vis-row">
+  <span>输出 (÷0.6):</span>
+  <span class="vis-box result">0.83</span>
+  <span class="vis-box param">0.0</span>
+  <span class="vis-box result">1.33</span>
+  <span class="vis-box param">0.0</span>
+  <span class="vis-box result">1.0</span>
+</div>
+<div class="vis-label">缩放因子 1/(1-p) = 1/0.6 ≈ 1.667，保证训练和推理时期望值一致</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 用法</div>
+<pre class="code">dropout = nn.<span class="fn">Dropout</span>(p=<span class="num">0.05</span>)          <span class="cm"># 5% 的概率丢弃</span>
+identity = nn.<span class="fn">Identity</span>()              <span class="cm"># 什么都不做的模块（dropout=0 时替代）</span>
+
+<span class="cm"># 训练时</span>
+model.<span class="fn">train</span>()
+out = dropout(x)                       <span class="cm"># 随机丢弃</span>
+
+<span class="cm"># 推理时</span>
+model.<span class="fn">eval</span>()
+out = dropout(x)                       <span class="cm"># 等价于 identity，不丢弃</span></pre>
+</div>
+
+<div class="note"><b>mmit 关联：</b>MoReS 和 ReFT 使用 <code>nn.Dropout(0.05)</code> 在 delta 投影回原空间之前添加正则化。如果 dropout=0，则用 <code>nn.Identity()</code> 替代，避免不必要的计算。</div>
+
+<!-- ==================== 1.5 Linear Layer ==================== -->
+<h3>1.5 Linear Layer — 神经网络的基本单元</h3>
+
+<p><b>是什么：</b>y = x @ W<sup>T</sup> + b。矩阵乘法 + 偏置。这是神经网络中最基本、最重要的操作。</p>
+<p><b>形状规则：</b>输入 (B, in_features)，权重 W (out_features, in_features)，输出 (B, out_features)。</p>
+
+<div class="vis">
+<div class="vis-title">nn.Linear 矩阵乘法</div>
+<div class="vis-row">
+  <span class="vis-box input" style="min-width:90px">x: [1, 4096]</span>
+  <span class="vis-arrow">×</span>
+  <span class="vis-box param" style="min-width:90px">W<sup>T</sup>: [4096, 1]</span>
+  <span class="vis-arrow">+</span>
+  <span class="vis-box param" style="min-width:50px">b: [1]</span>
+  <span class="vis-eq">=</span>
+  <span class="vis-box result" style="min-width:70px">y: [1, 1]</span>
+</div>
+<div class="vis-label">MoReS 的 steering 层: nn.Linear(4096, 1)，将 4096 维向量压缩为 1 个标量</div>
+</div>
+
+<div class="vis">
+<div class="vis-title">nn.Linear vs F.linear</div>
+<div class="vis-row">
+  <span class="vis-box param" style="min-width:130px">nn.Linear(in, out)<br><span class="vis-label">Module：自带 W 和 b</span></span>
+  <span style="padding:0 10px">vs</span>
+  <span class="vis-box result" style="min-width:130px">F.linear(x, W, b)<br><span class="vis-label">函数：你自己提供 W</span></span>
+</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 用法</div>
+<pre class="code"><span class="cm"># nn.Linear — 自动管理权重</span>
+layer = nn.<span class="fn">Linear</span>(<span class="num">4096</span>, <span class="num">1</span>, bias=<span class="kw">True</span>)
+y = layer(x)                           <span class="cm"># x: (B, 4096) → y: (B, 1)</span>
+
+<span class="cm"># F.linear — 用自定义参数做矩阵乘法</span>
+R = nn.<span class="fn">Parameter</span>(torch.empty(<span class="num">1</span>, <span class="num">4096</span>))
+y = F.<span class="fn">linear</span>(h, R)                    <span class="cm"># h: (B, 4096), R: (1, 4096) → y: (B, 1)</span></pre>
+</div>
+
+<table>
+<tr><th>API</th><th>类型</th><th>权重存储</th><th>典型用法</th></tr>
+<tr><td>nn.Linear(in, out)</td><td>Module</td><td>内部管理 weight, bias</td><td>标准网络层</td></tr>
+<tr><td>F.linear(x, W, b)</td><td>函数</td><td>需外部提供</td><td>自定义参数（如 nn.Parameter）做乘法</td></tr>
+</table>
+
+<div class="note"><b>mmit 关联：</b>MoReS 使用 <code>nn.Linear(4096, 1)</code> 做 steering 标量输出，同时用 <code>F.linear(h, R)</code> 将隐藏状态投影到 R 定义的子空间。Linear 是所有 PEFT 方法的核心构件。</div>
+
+<!-- ==================== 1.6 Embedding ==================== -->
+<h3>1.6 Embedding — 把整数变成向量</h3>
+
+<p><b>是什么：</b>一个查找表。Token ID = 42 → 取权重矩阵的第 42 行。没有计算，就是查表。</p>
+<p><b>形状：</b>词表大小 V，嵌入维度 D → 权重矩阵 (V, D)。输入 token IDs (B, seq_len) → 输出 (B, seq_len, D)。</p>
+
+<div class="vis">
+<div class="vis-title">Embedding 查找过程</div>
+<div class="vis-row">
+  <span style="font-size:7pt;min-width:70px">词表 (5×3):</span>
+  <span class="vis-box param" style="min-width:80px">0: [0.2, 0.5, 0.1]</span>
+  <span class="vis-box param" style="min-width:80px">1: [0.8, 0.3, 0.7]</span>
+  <span class="vis-box param" style="min-width:80px">2: [0.1, 0.9, 0.4]</span>
+  <span class="vis-box param" style="min-width:80px">3: [0.6, 0.2, 0.8]</span>
+  <span class="vis-box param" style="min-width:80px">4: [0.3, 0.7, 0.5]</span>
+</div>
+<div class="vis-row">
+  <span style="font-size:7pt;min-width:70px">输入 IDs:</span>
+  <span class="vis-box input">2</span>
+  <span class="vis-box input">0</span>
+  <span class="vis-box input">4</span>
+</div>
+<div class="vis-row">
+  <span style="font-size:7pt;min-width:70px">输出向量:</span>
+  <span class="vis-box result" style="min-width:80px">[0.1, 0.9, 0.4]</span>
+  <span class="vis-box result" style="min-width:80px">[0.2, 0.5, 0.1]</span>
+  <span class="vis-box result" style="min-width:80px">[0.3, 0.7, 0.5]</span>
+</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 用法</div>
+<pre class="code">emb = nn.<span class="fn">Embedding</span>(num_embeddings=<span class="num">32000</span>, embedding_dim=<span class="num">4096</span>)
+<span class="cm"># emb.weight.shape = (32000, 4096)  — 32K 词表，每个词 4096 维</span>
+
+token_ids = torch.tensor([[<span class="num">5</span>, <span class="num">12</span>, <span class="num">8</span>]])   <span class="cm"># (1, 3)</span>
+vectors = emb(token_ids)                     <span class="cm"># (1, 3, 4096)</span></pre>
+</div>
+
+<div class="note"><b>mmit 关联：</b>文本 token 通过 Embedding 层变成向量。视觉 token 来自 CLIP 编码器 + 投影层（MLP），然后与文本 embedding 拼接（concatenate），形成统一的 (B, seq_len, D) 输入送入 LLaMA。</div>
+
+<!-- ============================================================ -->
+<!-- DAY 2: 训练层                                                  -->
+<!-- ============================================================ -->
+
+<h2>Day 2: 训练层</h2>
+
+<!-- ==================== 2.1 Weight Initialization ==================== -->
+<h3>2.1 Weight Initialization — 初始化权重</h3>
+
+<p><b>为什么重要：</b>坏的初始化 → 梯度爆炸或消失 → 训练失败。好的初始化让信号在前向和反向传播中保持稳定的幅度。</p>
+
+<table>
+<tr><th>方法</th><th>公式/策略</th><th>适用场景</th><th>mmit 中的使用</th></tr>
+<tr><td>Kaiming (He)</td><td>方差 = 2/fan_in</td><td>ReLU 网络的标准选择</td><td>通用默认初始化</td></tr>
+<tr><td>正交初始化</td><td>行向量两两正交，保持向量长度</td><td>需要保持信息不失真</td><td>MoReS 的 R 矩阵</td></tr>
+<tr><td>零初始化</td><td>全部为 0</td><td>"从零干预开始"</td><td>MoReS 的 W 矩阵（初始无干预）</td></tr>
+<tr><td>单位矩阵初始化</td><td>对角线为 1</td><td>"从恒等变换开始"</td><td>ReFT 的 W（初始为恒等映射）</td></tr>
+</table>
+
+<div class="vis">
+<div class="vis-title">初始化对梯度的影响（通过 10 层网络）</div>
+<div class="vis-row">
+  <span style="font-size:7pt;min-width:50px">坏初始化:</span>
+  <span class="vis-box param">层1: 1.0</span>
+  <span class="vis-arrow">→</span>
+  <span class="vis-box param">层5: 0.001</span>
+  <span class="vis-arrow">→</span>
+  <span class="vis-box param">层10: 0.000001</span>
+  <span class="vis-label">← 梯度消失！</span>
+</div>
+<div class="vis-row">
+  <span style="font-size:7pt;min-width:50px">好初始化:</span>
+  <span class="vis-box result">层1: 1.0</span>
+  <span class="vis-arrow">→</span>
+  <span class="vis-box result">层5: 0.95</span>
+  <span class="vis-arrow">→</span>
+  <span class="vis-box result">层10: 0.90</span>
+  <span class="vis-label">← 梯度稳定 ✓</span>
+</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 用法</div>
+<pre class="code">R = nn.<span class="fn">Parameter</span>(torch.empty(<span class="num">1</span>, <span class="num">4096</span>))
+W = nn.<span class="fn">Parameter</span>(torch.empty(<span class="num">4096</span>, <span class="num">4096</span>))
+
+nn.init.<span class="fn">orthogonal_</span>(R)                  <span class="cm"># 正交初始化（MoReS 的 R）</span>
+nn.init.<span class="fn">zeros_</span>(W)                       <span class="cm"># 零初始化（MoReS 的 W）</span>
+nn.init.<span class="fn">eye_</span>(W)                         <span class="cm"># 单位矩阵（ReFT 的 W）</span>
+nn.init.<span class="fn">kaiming_uniform_</span>(W)             <span class="cm"># Kaiming 初始化</span>
+
+<span class="cm"># 带下划线 _ 表示原地操作（in-place），直接修改张量</span></pre>
+</div>
+
+<div class="note"><b>mmit 关联：</b>MoReS 的设计哲学："从零开始干预"。R 正交初始化保证投影不失真，W 零初始化保证初始 delta=0（不改变原始模型行为）。ReFT 用单位矩阵初始化 W，表示"初始时做恒等变换"。</div>
+
+<!-- ==================== 2.2 nn.Parameter ==================== -->
+<h3>2.2 nn.Parameter — 可训练参数</h3>
+
+<p><b>是什么：</b>将一个普通张量包装成"可训练参数"，优化器能自动发现并更新它。</p>
+<p><b>vs 普通张量：</b>普通 tensor 不会出现在 <code>model.parameters()</code> 中，优化器看不到它，也不会更新。</p>
+
+<div class="vis">
+<div class="vis-title">nn.Parameter vs 普通 Tensor 的区别</div>
+<div class="vis-row">
+  <span class="vis-box param" style="min-width:160px">self.R = nn.Parameter(tensor)<br><span class="vis-label">✓ 出现在 model.parameters()</span><br><span class="vis-label">✓ 优化器会更新</span><br><span class="vis-label">✓ 保存到 state_dict</span></span>
+  <span style="padding:0 15px;font-weight:700">vs</span>
+  <span class="vis-box frozen" style="min-width:160px">self.R = tensor<br><span class="vis-label">✗ 不在 model.parameters()</span><br><span class="vis-label">✗ 优化器看不到</span><br><span class="vis-label">✗ 不保存到 state_dict</span></span>
+</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 用法</div>
+<pre class="code"><span class="kw">class</span> <span class="fn">MoReS</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, hidden_size=<span class="num">4096</span>):
+        <span class="fn">super</span>().__init__()
+        <span class="cm"># nn.Parameter — 优化器能找到并更新</span>
+        self.R = nn.<span class="fn">Parameter</span>(torch.empty(<span class="num">1</span>, hidden_size))
+        nn.init.<span class="fn">orthogonal_</span>(self.R)
+
+        <span class="cm"># nn.Linear 内部也是用 nn.Parameter 存储 weight 和 bias</span>
+        self.steering = nn.<span class="fn">Linear</span>(hidden_size, <span class="num">1</span>)
+
+<span class="cm"># 验证</span>
+m = MoReS()
+<span class="kw">for</span> name, param <span class="kw">in</span> m.<span class="fn">named_parameters</span>():
+    <span class="fn">print</span>(name, param.shape)
+<span class="cm"># R                    torch.Size([1, 4096])</span>
+<span class="cm"># steering.weight      torch.Size([1, 4096])</span>
+<span class="cm"># steering.bias        torch.Size([1])</span></pre>
+</div>
+
+<div class="note"><b>mmit 关联：</b>MoReS 的 R 矩阵不是放在 nn.Linear 里的，而是直接作为 nn.Parameter 创建。这是当你需要自定义可学习变量（不是标准层的权重）时的做法。</div>
+
+<!-- ==================== 2.3 requires_grad ==================== -->
+<h3>2.3 requires_grad — 控制谁被训练</h3>
+
+<p><b>是什么：</b>每个参数上的布尔标志。True = 计算梯度并更新。False = 冻结，不计算梯度。</p>
+<p><b>核心思想：</b>PEFT 方法的本质就是 —— 冻结大部分参数（requires_grad=False），只训练少量参数（requires_grad=True）。</p>
+
+<div class="vis">
+<div class="vis-title">不同训练策略的 requires_grad 设置</div>
+<div class="vis-row">
+  <span style="font-size:7pt;min-width:60px">Full FT:</span>
+  <span class="vis-box param">Embed ✓</span>
+  <span class="vis-box param">Attn ✓</span>
+  <span class="vis-box param">FFN ✓</span>
+  <span class="vis-box param">Head ✓</span>
+  <span class="vis-label">← 全部训练（最贵）</span>
+</div>
+<div class="vis-row">
+  <span style="font-size:7pt;min-width:60px">Freeze:</span>
+  <span class="vis-box frozen">Embed ✗</span>
+  <span class="vis-box frozen">Attn ✗</span>
+  <span class="vis-box frozen">FFN ✗</span>
+  <span class="vis-box param">Head ✓</span>
+  <span class="vis-label">← 只训练最后一层</span>
+</div>
+<div class="vis-row">
+  <span style="font-size:7pt;min-width:60px">LoRA:</span>
+  <span class="vis-box frozen">Embed ✗</span>
+  <span class="vis-box frozen">Attn ✗</span>
+  <span class="vis-box param">A,B ✓</span>
+  <span class="vis-box frozen">Head ✗</span>
+  <span class="vis-label">← 只训练插入的小矩阵</span>
+</div>
+<div class="vis-row">
+  <span style="font-size:7pt;min-width:60px">MoReS:</span>
+  <span class="vis-box frozen">Embed ✗</span>
+  <span class="vis-box frozen">Attn ✗</span>
+  <span class="vis-box param">R,W ✓</span>
+  <span class="vis-box frozen">Head ✗</span>
+  <span class="vis-label">← 只训练 R 和 W</span>
+</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 用法</div>
+<pre class="code"><span class="cm"># 冻结整个模型</span>
+<span class="kw">for</span> param <span class="kw">in</span> model.<span class="fn">parameters</span>():
+    param.requires_grad = <span class="kw">False</span>
+
+<span class="cm"># 解冻特定部分</span>
+<span class="kw">for</span> param <span class="kw">in</span> model.adapter.<span class="fn">parameters</span>():
+    param.requires_grad = <span class="kw">True</span>
+
+<span class="cm"># 查看可训练参数数量</span>
+trainable = <span class="fn">sum</span>(p.<span class="fn">numel</span>() <span class="kw">for</span> p <span class="kw">in</span> model.<span class="fn">parameters</span>() <span class="kw">if</span> p.requires_grad)
+total = <span class="fn">sum</span>(p.<span class="fn">numel</span>() <span class="kw">for</span> p <span class="kw">in</span> model.<span class="fn">parameters</span>())
+<span class="fn">print</span>(<span class="str">f"可训练: {trainable}/{total} ({trainable/total*100:.2f}%)"</span>)</pre>
+</div>
+
+<div class="note"><b>mmit 关联：</b>所有 PEFT 方法都遵循同一模式：先冻结全部基础模型参数，再将 adapter 参数设为 requires_grad=True。stage_runner.py 中统一管理这个过程。</div>
+
+<!-- ==================== 2.4 Adam / AdamW ==================== -->
+<h3>2.4 Adam / AdamW — 优化器</h3>
+
+<p><b>是什么：</b>SGD 的进阶版。为每个参数维护独立的动量和自适应学习率。</p>
+<p><b>AdamW vs Adam：</b>AdamW 将权重衰减（weight decay）从梯度更新中解耦，效果更好。现代训练几乎都用 AdamW。</p>
+
+<div class="vis">
+<div class="vis-title">Adam 更新步骤</div>
+<div class="vis-row">
+  <span class="vis-box input">梯度 g</span>
+  <span class="vis-arrow">→</span>
+  <span class="vis-box param">一阶动量 m = β₁m + (1-β₁)g<br><span class="vis-label">梯度的移动平均（方向）</span></span>
+</div>
+<div class="vis-row">
+  <span class="vis-box input">梯度 g</span>
+  <span class="vis-arrow">→</span>
+  <span class="vis-box param">二阶动量 v = β₂v + (1-β₂)g²<br><span class="vis-label">梯度平方的移动平均（大小）</span></span>
+</div>
+<div class="vis-row">
+  <span class="vis-box result" style="min-width:250px">参数更新: θ -= lr × m̂ / √(v̂ + ε)<br><span class="vis-label">m̂, v̂ 是偏差修正后的值</span></span>
+</div>
+</div>
+
+<table>
+<tr><th>超参数</th><th>默认值</th><th>含义</th></tr>
+<tr><td>lr</td><td>1e-4</td><td>学习率（最重要的超参数）</td></tr>
+<tr><td>betas</td><td>(0.9, 0.999)</td><td>一阶/二阶动量的衰减系数</td></tr>
+<tr><td>weight_decay</td><td>0.01</td><td>权重衰减（L2 正则化）</td></tr>
+<tr><td>eps</td><td>1e-8</td><td>防止除零的小常数</td></tr>
+</table>
+
+<div class="graph">  SGD vs Adam 在 2D 损失面上的轨迹
+  ┌──────────────────────────┐
+  │         ╭──╮             │
+  │    SGD  │  │  ←目标最小值  │
+  │   ╱╲╱╲╱╲╯  │             │
+  │  ╱         │             │
+  │ ╱  Adam    │             │
+  │╱  ─────→──╯             │
+  │起点                       │
+  └──────────────────────────┘
+  SGD: 震荡前进    Adam: 平滑收敛</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 用法</div>
+<pre class="code"><span class="cm"># 基本用法</span>
+optimizer = torch.optim.<span class="fn">AdamW</span>(
+    model.<span class="fn">parameters</span>(),
+    lr=<span class="num">1e-4</span>,
+    weight_decay=<span class="num">0.01</span>
+)
+
+<span class="cm"># 参数组（不同部分不同学习率）</span>
+optimizer = torch.optim.<span class="fn">AdamW</span>([
+    {<span class="str">"params"</span>: base_params, <span class="str">"lr"</span>: <span class="num">1e-5</span>},    <span class="cm"># 基础模型小学习率</span>
+    {<span class="str">"params"</span>: adapter_params, <span class="str">"lr"</span>: <span class="num">1e-3</span>},  <span class="cm"># adapter 大学习率</span>
+])</pre>
+</div>
+
+<div class="note"><b>mmit 关联：</b>stage_runner.py 使用 AdamW，并为不同部分设置不同学习率（参数组）。adapter 通常用比基础模型大 10-100 倍的学习率。</div>
+
+<!-- ==================== 2.5 Gradient Clipping ==================== -->
+<h3>2.5 Gradient Clipping — 防止梯度爆炸</h3>
+
+<p><b>是什么：</b>如果所有参数梯度的总范数超过阈值，按比例缩小所有梯度。</p>
+<p><b>公式：</b>如果 ||g|| > max_norm，则 g = g × max_norm / ||g||</p>
+<p><b>为什么：</b>偶尔出现的异常大梯度会导致参数剧烈变化，破坏已学到的东西。裁剪保持训练稳定。</p>
+
+<div class="vis">
+<div class="vis-title">梯度裁剪示意（max_norm=1.0）</div>
+<div class="vis-row">
+  <span>裁剪前:</span>
+  <span class="vis-box param" style="min-width:120px">梯度向量 ||g||=3.0<br><span class="vis-label">超出范围！</span></span>
+  <span class="vis-arrow">→</span>
+  <span>裁剪后:</span>
+  <span class="vis-box result" style="min-width:120px">g × (1.0/3.0)<br><span class="vis-label">||g||=1.0，方向不变</span></span>
+</div>
+<div class="vis-row">
+  <span>裁剪前:</span>
+  <span class="vis-box result" style="min-width:120px">梯度向量 ||g||=0.5<br><span class="vis-label">未超出，不变</span></span>
+  <span class="vis-arrow">→</span>
+  <span>裁剪后:</span>
+  <span class="vis-box result" style="min-width:120px">保持不变<br><span class="vis-label">||g||=0.5</span></span>
+</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 用法</div>
+<pre class="code"><span class="cm"># 训练循环中，在 optimizer.step() 之前调用</span>
+loss.<span class="fn">backward</span>()
+
+<span class="cm"># 裁剪梯度范数到 max_norm</span>
+torch.nn.utils.<span class="fn">clip_grad_norm_</span>(
+    model.<span class="fn">parameters</span>(),
+    max_norm=<span class="num">1.0</span>
+)
+
+optimizer.<span class="fn">step</span>()
+optimizer.<span class="fn">zero_grad</span>()</pre>
+</div>
+
+<div class="note"><b>mmit 关联：</b>stage_runner.py 在每次 optimizer.step() 之前调用 clip_grad_norm_，通常 max_norm=1.0。这是大模型训练的标配操作。</div>
+
+<!-- ==================== 2.6 Gradient Accumulation ==================== -->
+<h3>2.6 Gradient Accumulation — 小显存模拟大 batch</h3>
+
+<p><b>是什么：</b>运行 N 次前向+反向传播，累积梯度，然后做一次优化器更新。</p>
+<p><b>效果：</b>等效 batch size = micro_batch_size × accumulation_steps。</p>
+<p><b>为什么：</b>显存不够放 batch_size=32？用 batch_size=4 × 累积 8 步 = 等效 32。</p>
+
+<div class="vis">
+<div class="vis-title">梯度累积过程（accumulation_steps=4）</div>
+<div class="vis-row">
+  <span class="vis-box input">micro-batch 1<br><span class="vis-label">forward + backward</span></span>
+  <span class="vis-arrow">→</span>
+  <span class="vis-box input">micro-batch 2<br><span class="vis-label">forward + backward</span></span>
+  <span class="vis-arrow">→</span>
+  <span class="vis-box input">micro-batch 3<br><span class="vis-label">forward + backward</span></span>
+  <span class="vis-arrow">→</span>
+  <span class="vis-box input">micro-batch 4<br><span class="vis-label">forward + backward</span></span>
+  <span class="vis-arrow">→</span>
+  <span class="vis-box result">optimizer.step()<br><span class="vis-label">更新参数！</span></span>
+</div>
+<div class="vis-label">4 个 micro-batch 的梯度累加后，做一次参数更新。等效 batch = 4 × micro_batch_size</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 用法</div>
+<pre class="code">accumulation_steps = <span class="num">8</span>
+optimizer.<span class="fn">zero_grad</span>()
+
+<span class="kw">for</span> i, batch <span class="kw">in</span> <span class="fn">enumerate</span>(dataloader):
+    logits = model(batch[<span class="str">"input_ids"</span>])
+    loss = F.<span class="fn">cross_entropy</span>(logits, batch[<span class="str">"labels"</span>])
+    loss = loss / accumulation_steps         <span class="cm"># ← 关键！除以累积步数</span>
+    loss.<span class="fn">backward</span>()                          <span class="cm"># 梯度累加到 .grad</span>
+
+    <span class="kw">if</span> (i + <span class="num">1</span>) % accumulation_steps == <span class="num">0</span>:
+        torch.nn.utils.<span class="fn">clip_grad_norm_</span>(model.<span class="fn">parameters</span>(), <span class="num">1.0</span>)
+        optimizer.<span class="fn">step</span>()                    <span class="cm"># 更新参数</span>
+        optimizer.<span class="fn">zero_grad</span>()               <span class="cm"># 清零梯度，准备下一轮</span></pre>
+</div>
+
+<div class="note"><b>注意：</b>loss 必须除以 accumulation_steps！否则梯度会是正确值的 N 倍，等价于学习率放大了 N 倍。这是初学者最常犯的错误之一。</div>
+
+<!-- ==================== 2.7 Learning Rate Schedule ==================== -->
+<h3>2.7 Learning Rate Schedule — 学习率调度</h3>
+
+<p><b>Cosine with warmup：</b>先线性地从 0 升到目标 lr（warmup），然后按余弦曲线从 lr 降到 0。</p>
+<p><b>为什么要 warmup：</b>训练初始，权重是随机的，如果一开始就用大学习率，会产生巨大的不稳定更新。先"热身"让模型稳定下来。</p>
+
+<div class="graph">  学习率调度：Cosine with Warmup
+  lr
+  1e-4 |     ╭──╮
+       |    ╱    ╲
+       |   ╱      ╲
+       |  ╱        ╲
+  5e-5 | ╱          ╲
+       |╱            ╲
+       ╱              ╲
+  0   ╱────────────────╲──→ step
+      0   warmup     total_steps
+      │←─ 线性 ─→│←── 余弦衰减 ──→│</div>
+
+<div class="vis">
+<div class="vis-title">学习率随训练进度变化</div>
+<div class="vis-row">
+  <span class="vis-box" style="background:#e0e0ff">Step 0<br><span class="vis-label">lr=0</span></span>
+  <span class="vis-arrow">→</span>
+  <span class="vis-box" style="background:#c0c0ff">Step 50<br><span class="vis-label">lr=5e-5</span></span>
+  <span class="vis-arrow">→</span>
+  <span class="vis-box param">Step 100<br><span class="vis-label">lr=1e-4 (峰值)</span></span>
+  <span class="vis-arrow">→</span>
+  <span class="vis-box" style="background:#c0c0ff">Step 500<br><span class="vis-label">lr=7e-5</span></span>
+  <span class="vis-arrow">→</span>
+  <span class="vis-box" style="background:#e0e0ff">Step 1000<br><span class="vis-label">lr≈0</span></span>
+</div>
+<div class="vis-label">warmup_steps=100, total_steps=1000</div>
+</div>
+
+<div class="pytorch">
+<div class="pt-title">PyTorch 用法</div>
+<pre class="code"><span class="kw">import</span> math
+
+<span class="kw">def</span> <span class="fn">cosine_warmup_lambda</span>(step, warmup_steps, total_steps):
+    <span class="cm">"""返回学习率乘数 [0, 1]"""</span>
+    <span class="kw">if</span> step &lt; warmup_steps:
+        <span class="kw">return</span> step / warmup_steps              <span class="cm"># 线性 warmup</span>
+    progress = (step - warmup_steps) / (total_steps - warmup_steps)
+    <span class="kw">return</span> <span class="num">0.5</span> * (<span class="num">1</span> + math.<span class="fn">cos</span>(math.pi * progress))  <span class="cm"># 余弦衰减</span>
+
+optimizer = torch.optim.<span class="fn">AdamW</span>(params, lr=<span class="num">1e-4</span>)
+scheduler = torch.optim.lr_scheduler.<span class="fn">LambdaLR</span>(
+    optimizer,
+    lr_lambda=<span class="kw">lambda</span> s: <span class="fn">cosine_warmup_lambda</span>(s, <span class="num">100</span>, <span class="num">1000</span>)
+)
+
+<span class="cm"># 每个 optimizer.step() 后调用</span>
+optimizer.<span class="fn">step</span>()
+scheduler.<span class="fn">step</span>()       <span class="cm"># 更新学习率</span></pre>
+</div>
+
+<div class="note"><b>mmit 关联：</b>stage_runner.py 实现了 cosine warmup schedule。典型配置：warmup 占总步数的 3-10%。学习率调度对训练效果影响很大 —— 不用 warmup 容易在开始阶段就"炸掉"。</div>
+
+<!-- ============================================================ -->
+<p style="text-align:center;margin-top:15px;font-size:7.5pt;color:#666">— Part 1 结束 · Day 1 基础层 + Day 2 训练层 —</p>
+
+</body>
+</html>

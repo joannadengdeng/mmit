@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MoLE / RandLoRA / ReFT — 完整算法可视化 + 源码 + 例子</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --mono:'SF Mono','Fira Code','Consolas',monospace;
+  --sans:-apple-system,'Helvetica Neue',sans-serif;
+}
+body{background:#fff;color:#000;font-family:var(--sans);font-size:9.5pt;line-height:1.5;padding:20px 28px;max-width:960px;margin:0 auto}
+
+@page{size:A4 portrait;margin:10mm}
+@media print{
+  body{padding:0;max-width:none}
+  .print-hint{display:none!important}
+  .section{page-break-inside:avoid}
+  h2{page-break-after:avoid;page-break-before:always}
+  h2:first-of-type{page-break-before:avoid}
+  pre.code{page-break-inside:avoid}
+}
+
+.print-hint{background:#fffbe0;border:1.5px solid #806000;padding:8px 14px;margin-bottom:12px;font-size:9pt;color:#806000;border-radius:3px}
+.print-hint b{color:#000}
+
+h1{font-size:16pt;font-weight:700;border-bottom:2px solid #000;padding-bottom:5px;margin-bottom:4px}
+.subtitle{font-size:9pt;color:#444;font-style:italic;margin-bottom:16px}
+h2{font-size:13pt;font-weight:700;margin:22px 0 10px;padding:6px 12px;background:#000;color:#fff;border-radius:3px}
+h3{font-size:10.5pt;font-weight:700;margin:14px 0 6px;border-bottom:1px solid #ccc;padding-bottom:2px}
+h4{font-size:9.5pt;font-weight:700;margin:10px 0 4px}
+p{margin:6px 0;font-size:9.5pt}
+
+.section{margin-bottom:22px}
+
+/* example anchor */
+.example{background:#fff8e0;border:2px solid #806000;border-radius:4px;padding:12px 16px;margin:12px 0}
+.example h3{margin:0 0 6px;border:none;color:#806000}
+.example pre{font-family:var(--mono);font-size:8.5pt;line-height:1.45;background:#fff;border:1px solid #806000;border-radius:3px;padding:8px 10px;white-space:pre-wrap}
+
+/* boxes */
+.box{border:1.5px solid #000;padding:7px 14px;margin:5px 0;border-radius:3px;font-family:var(--mono);font-size:9pt;text-align:center}
+.box .name{font-weight:700;font-size:10pt}
+.box .shape{color:#666;font-size:8pt;margin-top:2px}
+.box .example-val{color:#806000;font-size:7.5pt;margin-top:2px;font-weight:600}
+.box-frozen{background:#f0f5f0;border-color:#006400;border-style:dashed}
+.box-frozen .label{color:#006400;font-size:7.5pt;font-style:italic}
+.box-moe{background:#fff0f0;border:2px solid #a00000}
+.box-moe .label{color:#a00000;font-weight:700;font-size:8pt}
+.box-new{background:#f0f0ff;border:2px solid #0040a0}
+.box-new .label{color:#0040a0;font-weight:700;font-size:8pt}
+.arrow-down{text-align:center;font-size:12pt;color:#000;margin:0;line-height:1;font-weight:700}
+.arch-stack{display:flex;flex-direction:column;align-items:center;width:100%;max-width:640px;margin:8px auto}
+.arch-stack>*{width:100%}
+
+/* code */
+pre.code{background:#f8f8f8;border:1.5px solid #000;border-radius:3px;padding:10px 14px;font-family:var(--mono);font-size:8.5pt;line-height:1.5;overflow-x:auto;margin:8px 0;white-space:pre-wrap;word-break:break-word;page-break-inside:avoid}
+.code .kw{color:#a00050;font-weight:600}
+.code .fn{color:#0040a0;font-weight:600}
+.code .str{color:#006400}
+.code .cm{color:#666;font-style:italic}
+.code .num{color:#a04000}
+.code .var{color:#a04000}
+
+/* formula */
+.formula-box{background:#f8f8f8;border:1.5px solid #000;border-radius:3px;padding:10px 14px;margin:8px 0;font-family:var(--mono);font-size:9pt;line-height:1.55}
+.formula-box .title{font-family:var(--sans);font-weight:700;font-size:10pt;color:#a00000;margin-bottom:5px;border-bottom:1px solid #a00000;padding-bottom:3px}
+
+/* compare */
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0}
+.compare-cell{border:1.5px solid #000;border-radius:3px;padding:10px 14px}
+.compare-cell h3{margin-top:0;border:none}
+.compare-cell pre{font-family:var(--mono);font-size:8pt;line-height:1.4;white-space:pre-wrap}
+.compare-cell.a{border-color:#0040a0;background:#f8f8ff}
+.compare-cell.a h3{color:#0040a0}
+.compare-cell.b{border-color:#a00000;background:#fff8f8}
+.compare-cell.b h3{color:#a00000}
+.compare-cell.c{border-color:#006400;background:#f8fff8}
+.compare-cell.c h3{color:#006400}
+
+/* table */
+table{width:100%;border-collapse:collapse;font-size:8.5pt;margin:8px 0}
+th,td{padding:4px 8px;border:1px solid #000;text-align:left;vertical-align:top}
+th{background:#000;color:#fff}
+
+.note{background:#fff8e0;border-left:3px solid #806000;padding:6px 12px;font-size:9pt;margin:8px 0}
+.note b{color:#806000}
+
+.hl-num{font-family:var(--mono);background:#fff8e0;padding:1px 4px;border:1px solid #806000;border-radius:2px;font-size:8pt}
+
+/* MoE routing visual */
+.moe-vis{display:flex;gap:6px;align-items:flex-start;margin:8px 0;flex-wrap:wrap}
+.expert-box{border:1.5px solid #000;border-radius:3px;padding:6px;text-align:center;flex:1;min-width:90px;font-family:var(--mono);font-size:7.5pt}
+.expert-box.selected{background:#fff0f0;border-color:#a00000;border-width:2px}
+.expert-box .expert-name{font-weight:700;font-size:8.5pt;margin-bottom:2px}
+.router-box{border:1.5px solid #a00000;background:#fff8f8;border-radius:3px;padding:5px 10px;text-align:center;font-family:var(--mono);font-size:8pt;font-weight:700;color:#a00000}
+
+/* layer list */
+.layer-list{border:1.5px solid #000;border-radius:3px;font-family:var(--mono);font-size:8pt;margin:6px 0}
+.layer-row{padding:3px 10px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between}
+.layer-row:last-child{border-bottom:none}
+.layer-row.active{background:#fff0f0;font-weight:700}
+.layer-row .marker{color:#a00000;font-size:7.5pt}
+.layer-skip{padding:4px 10px;text-align:center;color:#666;font-size:7.5pt;border-bottom:1px solid #ddd;background:#fafafa}
+</style>
+</head>
+<body>
+
+<div class="print-hint">
+  <b>📄 打印：</b>Cmd+P, A4 纵向, 最小边距, 勾选"背景图形"。每个方法自动分页。
+</div>
+
+<h1>MoLE / RandLoRA / ReFT — 完整算法可视化 + 源码 + 例子</h1>
+<p class="subtitle">基于 LLaVA-1.5-7B (Vicuna-7B + CLIP ViT-L/14), 用公交车图片 (id=000000033471) 走一遍每个方法</p>
+
+<div class="example">
+<h3>📌 贯穿全文的例子</h3>
+<pre>模型: llava-hf/llava-1.5-7b-hf (Vicuna-7B, hidden_dim=4096, 32层)
+图片: coco/train2017/000000033471.jpg (公交车)
+问题: "What are the colors of the buses?"
+答案: "The buses are white and red."
+
+tokenize 后: input_ids (45 tokens) → forward 展开后 hidden_states (620, 4096)
+  其中: 位置 0~31 = 系统prompt+USER, 位置 32~607 = 576 visual, 位置 608~619 = 文本+answer</pre>
+</div>
+
+<!-- ============================================================ -->
+<!-- MoLE 完整详解                                                 -->
+<!-- ============================================================ -->
+<div class="section">
+<h2>1. MoLE — 混合 LoRA 专家 (Chen et al., 2024, arXiv 2401.16160)</h2>
+
+<h3>1.1 核心问题和方案</h3>
+<p><b>问题：</b>LLaVA-1.5 用 665K 混合数据训练（VQA + OCR + Science + Caption），单个 LoRA adapter 被不同类型的数据往不同方向拉扯，产生参数干扰。</p>
+<p><b>方案：</b>每个 MLP 层放 4 个 LoRA "专家" + 1 个 router。每个 token 由 router 选 1 个最匹配的专家执行。注意力层仍用标准单 LoRA。</p>
+
+<h3>1.2 LoRAExpert 源码</h3>
+<pre class="code"><span class="cm"># mole.py:37-50 LoRAExpert — 一个 LoRA 专家</span>
+<span class="kw">class</span> <span class="fn">LoRAExpert</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, in_features, out_features, rank, dropout=<span class="num">0.0</span>):
+        super().__init__()
+        self.lora_A = nn.Linear(in_features, rank, bias=<span class="var">False</span>)   <span class="cm"># 降维: 4096 → 8</span>
+        self.lora_B = nn.Linear(rank, out_features, bias=<span class="var">False</span>)  <span class="cm"># 升维: 8 → 11008</span>
+        self.dropout = nn.Dropout(dropout) <span class="kw">if</span> dropout &gt; <span class="num">0</span> <span class="kw">else</span> nn.Identity()
+        nn.init.kaiming_uniform_(self.lora_A.weight, a=<span class="num">5</span>**<span class="num">0.5</span>)   <span class="cm"># Kaiming init</span>
+        nn.init.zeros_(self.lora_B.weight)                         <span class="cm"># B 初始化为 0 → 初始 delta=0</span>
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        <span class="kw">return</span> self.lora_B(self.lora_A(self.dropout(x)))
+        <span class="cm"># x: (N, 4096) → A: (N, 8) → B: (N, 11008)</span>
+
+<span class="cm"># 每个 expert 参数: 4096×8 + 8×11008 = 32,768 + 88,064 = 120,832</span></pre>
+
+<h3>1.3 MoLELayer 源码 — Router + 多专家 dispatch</h3>
+<pre class="code"><span class="cm"># mole.py:53-122 MoLELayer — 包装一个 frozen Linear + N 个专家 + router</span>
+<span class="kw">class</span> <span class="fn">MoLELayer</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, base_linear, num_experts, rank, alpha, dropout):
+        self.base_linear = base_linear                  <span class="cm"># frozen 的原始 Linear</span>
+        self.num_experts = num_experts                  <span class="cm"># 4</span>
+        self.scaling = alpha / rank                     <span class="cm"># 16/8 = 2.0</span>
+
+        <span class="cm"># 冻结原始权重</span>
+        <span class="kw">for</span> p <span class="kw">in</span> base_linear.parameters():
+            p.requires_grad = <span class="var">False</span>
+
+        <span class="cm"># 4 个 LoRA 专家</span>
+        self.experts = nn.ModuleList([
+            LoRAExpert(in_f, out_f, rank, dropout) <span class="kw">for</span> _ <span class="kw">in</span> range(num_experts)])
+
+        <span class="cm"># Router: 一个简单的 Linear → softmax</span>
+        self.router = nn.Linear(in_f, num_experts, bias=<span class="var">False</span>)  <span class="cm"># (4096 → 4)</span>
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        <span class="cm"># x: (batch, seq, 4096)</span>
+
+        <span class="cm"># 1. 原始 frozen 输出</span>
+        base_out = self.base_linear(x)          <span class="cm"># (batch, seq, 11008)</span>
+
+        <span class="cm"># 2. Router 选专家</span>
+        router_logits = self.router(x.detach()) <span class="cm"># (batch, seq, 4) ← detach 防止梯度回传到 router 输入</span>
+        routing_probs = F.softmax(router_logits, dim=-<span class="num">1</span>)  <span class="cm"># (batch, seq, 4)</span>
+        expert_idx = routing_probs.argmax(dim=-<span class="num">1</span>)          <span class="cm"># (batch, seq) ← top-1</span>
+
+        <span class="cm"># 3. Dispatch: 每个 expert 处理分配给它的 token</span>
+        x_flat = x.reshape(-<span class="num">1</span>, x.shape[-<span class="num">1</span>])   <span class="cm"># (620, 4096) ← flatten batch×seq</span>
+        idx_flat = expert_idx.reshape(-<span class="num">1</span>)       <span class="cm"># (620,)</span>
+        delta = torch.zeros(x_flat.shape[<span class="num">0</span>], base_out.shape[-<span class="num">1</span>], ...)  <span class="cm"># (620, 11008)</span>
+
+        <span class="kw">for</span> i, expert <span class="kw">in</span> enumerate(self.experts):
+            mask = (idx_flat == i)              <span class="cm"># 哪些 token 分给 expert i</span>
+            <span class="kw">if</span> mask.any():
+                delta[mask] = expert(x_flat[mask])  <span class="cm"># 只跑选中的 token</span>
+
+        <span class="cm"># 4. 加到 frozen 输出上</span>
+        <span class="kw">return</span> base_out + delta.reshape(*orig_shape, -<span class="num">1</span>) * self.scaling
+        <span class="cm"># (batch, seq, 11008) = frozen + expert_delta × 2.0</span></pre>
+
+<h3>1.4 用公交车例子走一遍 MoLE forward</h3>
+
+<div class="example">
+<h3>📌 一个 gate_proj MoLELayer 的真实数据流</h3>
+<pre>输入 h: (1, 620, 4096)
+  ├─ 位置 0~31: 系统prompt + USER (文本)
+  ├─ 位置 32~607: 576 个 visual tokens (公交车图)
+  └─ 位置 608~619: 问题 + answer
+
+Step 1: base_out = gate_proj(h)  → (1, 620, 11008)  [frozen, 不训练]
+
+Step 2: Router
+  router_logits = router(h.detach())  → (1, 620, 4)
+  routing_probs = softmax(router_logits)
+  假设:
+    位置 32 (公交车主体 visual token):  probs = [0.12, 0.65, 0.15, 0.08] → 选 Expert 1
+    位置 100 (天空 visual token):       probs = [0.55, 0.20, 0.10, 0.15] → 选 Expert 0
+    位置 610 ("colors" 文本 token):    probs = [0.08, 0.10, 0.72, 0.10] → 选 Expert 2
+
+Step 3: Dispatch
+  Expert 0 处理: ~200 个 token (背景 visual + 系统 prompt)
+  Expert 1 处理: ~300 个 token (主体 visual, 公交车相关)
+  Expert 2 处理: ~100 个 token (文本 token, 问题相关)
+  Expert 3 处理: ~20 个 token  (其他)
+
+Step 4: base_out + delta × 2.0
+  每个位置只有 1 个专家的 delta, 不是全部 4 个
+  → 训练后不同专家学到不同的"修正方向"</pre>
+</div>
+
+<h3>1.5 MoLE 在 LLaVA-7B 的完整注入视图</h3>
+
+<div class="layer-list">
+<div class="layer-row active"><span><b>Layer 0</b></span><span class="marker">MLP: 3×MoLELayer (gate/up/down) + Attn: 标准 LoRA (q/k/v/o)</span></div>
+<div class="layer-row active"><span><b>Layer 1</b></span><span class="marker">同上</span></div>
+<div class="layer-skip">⋮ Layer 2~30: 每层都一样 — 3 个 MoLELayer + 4 个 Attn LoRA ⋮</div>
+<div class="layer-row active"><span><b>Layer 31</b></span><span class="marker">MLP: 3×MoLELayer + Attn: 标准 LoRA</span></div>
+</div>
+
+<div class="formula-box">
+<div class="title">参数计算 (LLaVA-7B, num_experts=4, rank=8)</div>
+每个 MoLELayer:
+  4 experts × (4096×8 + 8×11008) = 4 × 120,832 = 483,328
+  + router: 4096 × 4 = 16,384
+  = 499,712 / MoLELayer
+
+每层 MLP: 3 个 MoLELayer (gate/up/down) = 1,499,136
+32 层: 32 × 1,499,136 = <span class="hl-num">47,972,352</span> (MoLE MLP)
+
+每层 Attn: 4 个标准 LoRA (q/k/v/o) = 4 × (4096×8 + 8×4096) = 262,144
+32 层: 32 × 262,144 = <span class="hl-num">8,388,608</span> (Attn LoRA)
+
+总可训练: ~56M (vs LoRA 的 ~2M, vs MoReS 的 ~8K)
+</div>
+
+<h3>1.6 Load-balancing loss 源码</h3>
+<pre class="code"><span class="cm"># mole.py:279-303 _load_balance_loss() 完整代码</span>
+<span class="kw">def</span> <span class="fn">_load_balance_loss</span>(self):
+    <span class="cm">"""L_balance = N × Σᵢ (fᵢ × Pᵢ)"""</span>
+    total_loss = <span class="num">0.0</span>
+    count = <span class="num">0</span>
+    <span class="kw">for</span> layer <span class="kw">in</span> self._mole_layers:       <span class="cm"># 96 个 MoLELayer</span>
+        <span class="kw">if</span> layer._routing_probs <span class="kw">is</span> <span class="var">None</span>:
+            <span class="kw">continue</span>
+        probs = layer._routing_probs.reshape(-<span class="num">1</span>, layer.num_experts)  <span class="cm"># (620, 4)</span>
+        mask = layer._expert_mask.reshape(-<span class="num">1</span>, layer.num_experts)    <span class="cm"># (620, 4) one-hot</span>
+
+        f = mask.mean(dim=<span class="num">0</span>)   <span class="cm"># (4,) 每个 expert 分到的 token 比例</span>
+        <span class="cm"># 例: f = [0.32, 0.48, 0.16, 0.04] ← Expert 1 分到最多</span>
+
+        P = probs.mean(dim=<span class="num">0</span>)  <span class="cm"># (4,) 每个 expert 的平均 routing 概率</span>
+        <span class="cm"># 例: P = [0.30, 0.45, 0.15, 0.10]</span>
+
+        total_loss = total_loss + (f * P).sum() * layer.num_experts
+        <span class="cm"># = (0.32×0.30 + 0.48×0.45 + 0.16×0.15 + 0.04×0.10) × 4</span>
+        <span class="cm"># = (0.096 + 0.216 + 0.024 + 0.004) × 4 = 1.36</span>
+        <span class="cm"># 如果完美均匀 (f=P=[0.25,0.25,0.25,0.25]):</span>
+        <span class="cm">#   = 4 × (0.0625×4) = 1.0 ← 最小值</span>
+        count += <span class="num">1</span>
+    <span class="kw">return</span> total_loss / count
+
+<span class="cm"># 最终: total_loss = CE_loss + 0.01 × L_balance</span></pre>
+</div>
+
+<!-- ============================================================ -->
+<!-- RandLoRA 完整详解                                             -->
+<!-- ============================================================ -->
+<div class="section">
+<h2>2. RandLoRA — Full-Rank 更新 (Kalajdzievski, ICLR 2025, arXiv 2502.00987)</h2>
+
+<h3>2.1 核心问题</h3>
+<p>标准 LoRA: ΔW = B·A, rank(ΔW) = r。如果 r=8, d=4096, ΔW 只能在 4096 维空间的 8 维子空间里修正。很多任务需要更丰富的修正方向。</p>
+
+<h3>2.2 数学对比</h3>
+<div class="compare">
+<div class="compare-cell a">
+<h3>标准 LoRA</h3>
+<pre>ΔW = B · A
+
+A: (d_in, r)  ← 训练
+B: (r, d_out) ← 训练
+scaling = alpha / r
+
+rank(ΔW) = r
+如果 r=8: 只能修正 8 个方向</pre>
+</div>
+<div class="compare-cell c">
+<h3>RandLoRA (rsLoRA)</h3>
+<pre>ΔW = B · A    (矩阵相同!)
+
+A: (d_in, r)  ← 训练
+B: (r, d_out) ← 训练
+scaling = alpha / √r   ← 唯一区别!
+
+rank(ΔW) = r (单看一样)
+但: scaling 变了 → 高 rank 时更稳定
+→ 可以安全使用更大的 r
+→ 实际表达能力更强</pre>
+</div>
+</div>
+
+<h3>2.3 完整源码 (极短)</h3>
+<pre class="code"><span class="cm"># randlora.py — 完整文件, 只有 34 行</span>
+<span class="cm"># 继承 LoRAMethod, 唯一区别是加了 use_rslora=True</span>
+
+<span class="kw">from</span> mmit.training.methods.lora <span class="kw">import</span> LoRAMethod
+
+<span class="kw">class</span> <span class="fn">RandLoRAMethod</span>(LoRAMethod):
+    <span class="str">"""RandLoRA: full-rank adaptation via random basis matrices."""</span>
+
+    name = <span class="str">"randlora"</span>
+    display_name = <span class="str">"RandLoRA"</span>
+    paper_ref = <span class="str">"Kalajdzievski, ICLR 2025"</span>
+
+    <span class="kw">def</span> <span class="fn">default_config</span>(self):
+        cfg = super().default_config()    <span class="cm"># 继承 LoRA 的所有默认值</span>
+        cfg[<span class="str">"lora_r"</span>] = <span class="num">8</span>
+        <span class="kw">return</span> cfg
+
+    <span class="kw">def</span> <span class="fn">_lora_kwargs</span>(self):
+        <span class="kw">return</span> {<span class="str">"use_rslora"</span>: <span class="var">True</span>}
+        <span class="cm"># 就这一行! PEFT 原生支持 rsLoRA</span>
+        <span class="cm"># 传给 LoraConfig(..., use_rslora=True)</span>
+
+<span class="cm"># _lora_kwargs() 在 LoRAMethod._prepare_model_impl() 里被调用:</span>
+<span class="cm"># lora_config = LoraConfig(</span>
+<span class="cm">#     r=8, lora_alpha=16, lora_dropout=0.05,</span>
+<span class="cm">#     target_modules=["q_proj", "v_proj", ...],</span>
+<span class="cm">#     **self._lora_kwargs()  ← DoRA: {"use_dora": True}</span>
+<span class="cm">#                              RandLoRA: {"use_rslora": True}</span>
+<span class="cm"># )</span></pre>
+
+<h3>2.4 用公交车例子看 scaling 的差异</h3>
+
+<div class="example">
+<h3>📌 同一个 token 在 LoRA vs RandLoRA 下的 delta 差异</h3>
+<pre>假设 q_proj 层, 某个 visual token (公交车主体), rank=8, alpha=16:
+
+A·x = [0.5, -0.3, 0.8, 0.1, -0.6, 0.4, -0.2, 0.7]  (rank-8 投影, 两者相同)
+B·(A·x) = [0.012, -0.008, 0.015, ..., 0.003]          (4096 维 delta, 两者相同)
+
+标准 LoRA:  delta = B·A·x × (alpha / r) = B·A·x × (16/8) = B·A·x × 2.0
+RandLoRA:   delta = B·A·x × (alpha / √r) = B·A·x × (16/√8) = B·A·x × 5.66
+
+RandLoRA 的 delta 是 LoRA 的 2.83× 大!
+→ 高 rank 时不会因为 scaling 太小导致 delta 消失
+→ 训练更容易收敛, 尤其是 r=64 这种大 rank
+
+实际效果:
+  LoRA  r=64:  accuracy = 82.7%, scaling = 16/64 = 0.25 (很小!)
+  rsLoRA r=64: accuracy = 85.7%, scaling = 16/√64 = 2.0  (合理)
+  ↑ 同样参数量, +3.0 个点</pre>
+</div>
+
+<div class="note">
+<b>一句话：</b>RandLoRA 不改模型结构、不改参数量、不改训练流程。只改了 scaling factor 从 <code>alpha/r</code> 到 <code>alpha/√r</code>。用户只需在 YAML 里把 <code>training_method: lora</code> 改成 <code>training_method: randlora</code>。
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- ReFT 完整详解                                                 -->
+<!-- ============================================================ -->
+<div class="section">
+<h2>3. ReFT — 表示微调 (Wu et al., NeurIPS 2024, arXiv 2404.03592)</h2>
+
+<h3>3.1 和 MoReS / LoRA 的区别</h3>
+
+<table>
+<tr><th>维度</th><th>LoRA</th><th>MoReS</th><th>ReFT</th></tr>
+<tr><td><b>改什么</b></td><td>weight</td><td>hidden state</td><td>hidden state</td></tr>
+<tr><td><b>怎么改</b></td><td>W + B·A</td><td>h + R^T(Wh - Rh)</td><td>h + R^T(W(Rh) + b - Rh)</td></tr>
+<tr><td><b>R 约束</b></td><td>N/A</td><td>正交 (Householder)</td><td>正交初始化, 可学习</td></tr>
+<tr><td><b>W shape</b></td><td>r×d</td><td>Linear(d, 1)</td><td>Linear(r, r) ← 子空间内变换</td></tr>
+<tr><td><b>rank</b></td><td>8</td><td>1</td><td>4</td></tr>
+<tr><td><b>位置</b></td><td>attention proj</td><td>f4+l5 (9层)</td><td>all (32层)</td></tr>
+<tr><td><b>共享</b></td><td>N/A</td><td>是 (1个)</td><td>否 (32个)</td></tr>
+<tr><td><b>选择 token</b></td><td>所有</td><td>top 1% visual</td><td>所有 (可选 visual)</td></tr>
+<tr><td><b>参数</b></td><td>~2M</td><td>~8K</td><td>~530K</td></tr>
+<tr><td><b>实现方式</b></td><td>PEFT get_peft_model</td><td>register_forward_hook</td><td>register_forward_hook</td></tr>
+</table>
+
+<h3>3.2 LoReFTIntervention 完整源码</h3>
+<pre class="code"><span class="cm"># reft.py:32-83 LoReFTIntervention 完整代码</span>
+<span class="kw">class</span> <span class="fn">LoReFTIntervention</span>(nn.Module):
+    <span class="str">"""h' = h + R^T @ (W @ (R @ h) + b - R @ h)"""</span>
+
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, hidden_dim, rank=<span class="num">4</span>, dropout=<span class="num">0.0</span>):
+        super().__init__()
+        self.hidden_dim = hidden_dim   <span class="cm"># 4096</span>
+        self.rank = rank               <span class="cm"># 4</span>
+
+        <span class="cm"># R: 投影矩阵 [rank, hidden_dim] — 正交初始化</span>
+        self.R = nn.Parameter(torch.empty(rank, hidden_dim))
+        nn.init.orthogonal_(self.R)    <span class="cm"># shape (4, 4096)</span>
+
+        <span class="cm"># W: 子空间内的线性变换 [rank, rank]</span>
+        self.W = nn.Linear(rank, rank, bias=<span class="var">True</span>)
+        nn.init.eye_(self.W.weight)    <span class="cm"># 初始化为单位矩阵 → 初始 W(Rh) = Rh → delta = 0</span>
+        nn.init.zeros_(self.W.bias)
+
+        self.dropout = nn.Dropout(dropout) <span class="kw">if</span> dropout &gt; <span class="num">0</span> <span class="kw">else</span> nn.Identity()
+
+    <span class="kw">def</span> <span class="fn">orthogonal_penalty</span>(self):
+        <span class="cm">"""和 MoReS 一样的正交约束: ||R·R^T - I||²"""</span>
+        RRt = self.R @ self.R.t()                    <span class="cm"># (4, 4)</span>
+        I = torch.eye(self.rank, device=self.R.device)
+        <span class="kw">return</span> (RRt - I).pow(<span class="num">2</span>).sum()
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, h):
+        <span class="cm"># h: (batch, seq, 4096)</span>
+        Rh = F.linear(h, self.R)          <span class="cm"># (B, seq, 4)    投影到子空间</span>
+        Wh = self.W(Rh)                   <span class="cm"># (B, seq, 4)    子空间内变换</span>
+        delta_low = self.dropout(Wh - Rh) <span class="cm"># (B, seq, 4)    差值</span>
+        delta = F.linear(delta_low, self.R.t())  <span class="cm"># (B, seq, 4096) 投回原空间</span>
+        <span class="kw">return</span> h + delta
+
+<span class="cm"># 每个 intervention 的参数:</span>
+<span class="cm">#   R: 4 × 4096 = 16,384</span>
+<span class="cm">#   W.weight: 4 × 4 = 16</span>
+<span class="cm">#   W.bias: 4</span>
+<span class="cm">#   total = 16,404 / intervention</span></pre>
+
+<h3>3.3 用公交车例子走一遍 ReFT forward (Layer 0)</h3>
+
+<div class="example">
+<h3>📌 Layer 0 的 LoReFTIntervention 数据流</h3>
+<pre>输入: h = layer_0_output, shape (1, 620, 4096)
+
+Step 1: Rh = F.linear(h, R)    # R: (4, 4096)
+  (1, 620, 4096) × (4096, 4)^T → (1, 620, 4)
+  每个位置从 4096 维投影到 4 维
+  例: h[0, 32] (第一个 visual token, 4096 维)
+      → Rh[0, 32] = [-0.82, 0.45, 0.13, -0.67]  (4 维)
+
+Step 2: Wh = self.W(Rh)        # W: Linear(4, 4)
+  (1, 620, 4) → (1, 620, 4)
+  训练初期 W ≈ I → Wh ≈ Rh → delta ≈ 0
+  训练后: W 学到非单位变换
+  例: Wh[0, 32] = [-0.90, 0.52, 0.08, -0.71]
+
+Step 3: delta_low = Wh - Rh
+  (1, 620, 4)
+  例: delta_low[0, 32] = [-0.08, 0.07, -0.05, -0.04]
+
+Step 4: delta = F.linear(delta_low, R.t())
+  (1, 620, 4) × (4, 4096) → (1, 620, 4096)
+  把 4 维差值沿 R 的 4 个方向展开回 4096 维
+  例: delta[0, 32] = [0.003, -0.001, 0.005, ..., -0.002]  (4096 维, 很小)
+
+Step 5: h' = h + delta
+  (1, 620, 4096) + (1, 620, 4096) → (1, 620, 4096)
+  所有 620 个位置都被修正 (不像 MoReS 只改 6 个)</pre>
+</div>
+
+<h3>3.4 ReFT 在 LLaVA-7B 的 32 层注入</h3>
+
+<div class="layer-list">
+<div class="layer-row active"><span><b>Layer 0</b></span><span class="marker">★ ReFT intervention (独立, 16,404 params)</span></div>
+<div class="layer-row active"><span><b>Layer 1</b></span><span class="marker">★ ReFT intervention (独立, 16,404 params)</span></div>
+<div class="layer-row active"><span><b>Layer 2</b></span><span class="marker">★ ReFT intervention (独立, 16,404 params)</span></div>
+<div class="layer-skip">⋮ Layer 3~29: 每层都有独立的 intervention ⋮</div>
+<div class="layer-row active"><span><b>Layer 30</b></span><span class="marker">★ ReFT intervention (独立, 16,404 params)</span></div>
+<div class="layer-row active"><span><b>Layer 31</b></span><span class="marker">★ ReFT intervention (独立, 16,404 params)</span></div>
+</div>
+
+<div class="formula-box">
+<div class="title">参数计算 + 和 MoReS 对比</div>
+ReFT (all, rank=4, 不共享):
+  32 interventions × 16,404 = <span class="hl-num">524,928</span> (~530K)
+
+MoReS (f4+l5, rank=1, 共享):
+  1 intervention × 8,193 = <span class="hl-num">8,193</span> (~8K)
+
+差距 64×, 原因:
+  rank: 4 vs 1 → R 矩阵大 4×
+  layers: 32 vs 1 (共享) → 参数不共享, 32×
+  W shape: (4,4) vs (4096,1) → 但 R 的差异更大
+
+如果 ReFT 也用 MoReS 的配置 (f4+l5, rank=1, 共享):
+  1 intervention × 4,100 = ~4K → 比 MoReS 的 8K 还小
+  (因为 W 是 (1,1) 而不是 Linear(4096,1))
+</div>
+
+<h3>3.5 ReFT 的 hook 注册 + 训练时 loss</h3>
+<pre class="code"><span class="cm"># reft.py:181-211 注册 hook — 和 MoReS 几乎一样</span>
+<span class="kw">for</span> idx, iv <span class="kw">in</span> zip(target_indices, ivs_per_layer):
+    <span class="kw">def</span> <span class="fn">make_hook</span>(intervention):
+        <span class="kw">def</span> <span class="fn">hook</span>(module, input, output):
+            h = output[<span class="num">0</span>]                   <span class="cm"># (1, 620, 4096)</span>
+            h = intervention(h)              <span class="cm"># h' = h + R^T(W(Rh) - Rh)</span>
+            <span class="kw">return</span> (h,) + output[<span class="num">1</span>:]
+        <span class="kw">return</span> hook
+    layer_list[idx].register_forward_hook(make_hook(iv))
+
+<span class="cm"># reft.py:247-261 compute_loss — CE + 正交约束</span>
+<span class="kw">def</span> <span class="fn">compute_loss</span>(self, model, batch, outputs):
+    text_loss, metrics = _ce_loss.compute(model, batch, outputs)
+
+    <span class="cm"># 正交约束 (和 MoReS 完全一样)</span>
+    ortho_loss = <span class="num">0.0</span>
+    <span class="kw">for</span> iv <span class="kw">in</span> self._interventions:         <span class="cm"># 32 个</span>
+        ortho_loss = ortho_loss + iv.orthogonal_penalty()
+
+    total = text_loss + <span class="num">0.01</span> * ortho_loss
+    <span class="kw">return</span> total, metrics</pre>
+</div>
+
+<!-- ============================================================ -->
+<!-- 总览                                                          -->
+<!-- ============================================================ -->
+<div class="section">
+<h2>4. 总览对比表</h2>
+
+<table>
+<tr>
+<th>方法</th><th>改什么</th><th>怎么改</th><th>参数 (7B)</th><th>核心模块</th><th>论文</th>
+</tr>
+<tr><td>Full FT</td><td>所有 weight</td><td>直接更新</td><td>7B</td><td>-</td><td>-</td></tr>
+<tr><td><b>MoLE</b></td><td>MLP weight</td><td>N 个 LoRA expert + router + top-1</td><td><span class="hl-num">~56M</span></td><td>MoLELayer, MoERouter, LoRAExpert</td><td>Chen 2024</td></tr>
+<tr><td>LoRA</td><td>attn weight</td><td>B·A 低秩</td><td>~2M</td><td>LoraConfig</td><td>Hu 2022</td></tr>
+<tr><td>DoRA</td><td>attn weight</td><td>magnitude + direction 分解</td><td>~2M</td><td>LoraConfig(use_dora=True)</td><td>Liu 2024</td></tr>
+<tr><td><b>RandLoRA</b></td><td>attn weight</td><td>改 scaling: α/r → α/√r</td><td>~2M</td><td>LoraConfig(use_rslora=True)</td><td>Kalajdzievski 2025</td></tr>
+<tr><td><b>ReFT</b></td><td>hidden state</td><td>低秩子空间干预, 每层独立</td><td><span class="hl-num">~530K</span></td><td>LoReFTIntervention, forward_hook</td><td>Wu 2024</td></tr>
+<tr><td>MoReS</td><td>hidden state</td><td>正交干预, rank=1, 共享</td><td><span class="hl-num">~8K</span></td><td>OrthogonalIntervention, forward_hook</td><td>Bi 2025</td></tr>
+</table>
+
+<div class="note">
+<b>一句话总结每个方法的"电梯 pitch"：</b><br>
+<b>MoLE:</b> "同一个模型, 4 个专家各擅一类数据, router 分流" — 解决多数据集冲突<br>
+<b>RandLoRA:</b> "改一行 scaling factor, 效果白送 +3 点" — 零成本升级<br>
+<b>ReFT:</b> "MoReS 的通用版 — rank 更大, 每层独立, 不限视觉 token" — 参数效率 15-65× 优于 LoRA
+</div>
+</div>
+
+</body>
+</html>

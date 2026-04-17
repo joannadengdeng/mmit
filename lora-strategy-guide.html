@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>LoRAStrategy 逐行讲解</title>
+<style>
+:root{--bg:#0f1117;--s:#1a1d27;--s2:#242836;--bd:#2e3347;--t:#e2e8f0;--dim:#8892a8;
+--a:#6c8cff;--pk:#ff6c9a;--g:#4ade80;--o:#fb923c;--p:#a78bfa;--cy:#22d3ee;--y:#facc15;--r:#f87171;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--t);font-family:'SF Mono','Cascadia Code','Fira Code',monospace;overflow-x:hidden;}
+.wrap{max-width:960px;margin:0 auto;padding:28px 24px 120px;}
+h1{color:var(--a);font-size:1.35rem;margin-bottom:4px;}
+.sub{color:var(--dim);font-size:0.76rem;margin-bottom:28px;}
+
+/* Progress bar */
+.progress{display:flex;gap:4px;margin-bottom:24px;position:sticky;top:0;z-index:100;background:var(--bg);padding:12px 0;}
+.dot{width:100%;height:6px;border-radius:3px;background:var(--s2);cursor:pointer;transition:all .3s;}
+.dot.done{background:var(--a);}
+.dot.cur{background:var(--g);box-shadow:0 0 8px var(--g);}
+
+/* Steps */
+.step{display:none;animation:fadeIn .3s ease;}
+.step.on{display:block;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+h2{color:var(--a);font-size:1.1rem;margin-bottom:8px;}
+h3{color:var(--p);font-size:.88rem;margin:16px 0 6px;}
+p,.desc{font-size:.8rem;color:var(--dim);line-height:1.75;margin-bottom:10px;}
+strong{color:var(--t);}
+
+canvas{display:block;margin:14px auto;border-radius:10px;background:var(--s);border:1px solid var(--bd);}
+
+/* Code blocks */
+.code-box{background:var(--s2);border:1px solid var(--bd);border-radius:10px;padding:16px 20px;margin:10px 0 14px;overflow-x:auto;font-size:.72rem;line-height:1.7;position:relative;}
+.code-box .tag{position:absolute;top:8px;right:12px;font-size:.6rem;color:var(--dim);background:var(--s);padding:2px 8px;border-radius:4px;}
+.kw{color:var(--pk)}.fn{color:var(--a)}.cm{color:var(--dim);font-style:italic}.st{color:var(--g)}.ty{color:var(--cy)}.num{color:var(--o)}.var{color:var(--t)}.op{color:var(--pk)}
+
+/* Analogy cards */
+.analogy{background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.2);border-radius:10px;padding:14px 18px;margin:10px 0 14px;font-size:.78rem;line-height:1.7;}
+.analogy strong{color:var(--o);}
+
+/* Info cards */
+.info{background:rgba(108,140,255,.07);border:1px solid rgba(108,140,255,.18);border-radius:10px;padding:14px 18px;margin:10px 0 14px;font-size:.78rem;line-height:1.7;}
+.info strong{color:var(--a);}
+
+/* Warning cards */
+.warn{background:rgba(250,204,21,.06);border:1px solid rgba(250,204,21,.15);border-radius:10px;padding:14px 18px;margin:10px 0 14px;font-size:.78rem;line-height:1.7;}
+.warn strong{color:var(--y);}
+
+/* Quiz */
+.quiz{background:var(--s);border:1px solid var(--bd);border-radius:10px;padding:16px 20px;margin:14px 0;}
+.quiz p{color:var(--t);margin-bottom:10px;font-size:.82rem;}
+.quiz-opts{display:flex;flex-direction:column;gap:6px;}
+.quiz-btn{background:var(--s2);border:1px solid var(--bd);color:var(--dim);padding:8px 14px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:.74rem;text-align:left;transition:all .2s;}
+.quiz-btn:hover{border-color:var(--a);color:var(--t);}
+.quiz-btn.correct{background:rgba(74,222,128,.12);border-color:var(--g);color:var(--g);}
+.quiz-btn.wrong{background:rgba(248,113,113,.1);border-color:var(--r);color:var(--r);}
+.quiz-explain{display:none;margin-top:10px;font-size:.74rem;color:var(--dim);line-height:1.6;padding:8px 12px;background:var(--s2);border-radius:6px;}
+.quiz-explain.show{display:block;}
+
+/* Connector lines in diagrams */
+.connector{display:flex;align-items:center;gap:8px;margin:8px 0;}
+.conn-box{padding:6px 14px;border-radius:6px;font-size:.72rem;white-space:nowrap;}
+.conn-arrow{color:var(--dim);font-size:.9rem;}
+
+/* Nav buttons */
+.nav{display:flex;justify-content:space-between;margin-top:28px;}
+.btn{background:var(--s);border:1px solid var(--bd);color:var(--dim);padding:10px 24px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:.76rem;transition:all .2s;}
+.btn:hover{border-color:var(--a);color:var(--t);}
+.btn.primary{background:rgba(108,140,255,.12);border-color:var(--a);color:var(--a);}
+.btn:disabled{opacity:.3;cursor:default;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>LoRAStrategy 代码逐行讲解</h1>
+<p class="sub">像给 10 岁小孩一样，一步一步把每行代码讲明白</p>
+
+<div class="progress" id="prog"></div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- Step 0: 全景图 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="step on" id="s0">
+<h2>先看全景：LoRAStrategy 到底在干什么？</h2>
+
+<div class="analogy">
+<strong>类比：</strong>想象你是一个装修工人。房子（模型）已经建好了，你不能拆房子重建，但你可以：<br><br>
+1. 决定在哪面墙上贴壁纸（<strong>_get_llm</strong> — 找到要改的墙）<br>
+2. 把壁纸贴上去（<strong>wrap_model</strong> — 注入 LoRA）<br>
+3. 告诉油漆工只刷壁纸区域（<strong>trainable_params</strong> — 告诉优化器只训练 LoRA 部分）<br>
+4. 拍照存档（<strong>save_adapter</strong> — 保存 LoRA 权重）<br>
+5. 下次再贴回去（<strong>load_adapter</strong> — 加载 LoRA 权重）
+</div>
+
+<canvas id="cv_overview" width="900" height="360"></canvas>
+
+<div class="info">
+<strong>总共 6 个方法：</strong>2 个辅助方法（找 LLM、设 LLM）+ 4 个核心方法（贴壁纸、告诉训练谁、保存、加载）。接下来我们一个一个看。
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- Step 1: _get_llm -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="step" id="s1">
+<h2>第 1 步：_get_llm — "找到 LLM 在哪"</h2>
+
+<div class="analogy">
+<strong>类比：</strong>不同品牌的电脑，电池可能在不同位置 — 有的在底部，有的在侧面。<code>_get_llm</code> 就是"找到电池在哪"的工具。不管电池装在哪个位置，它都能找到。
+</div>
+
+<div class="code-box"><span class="tag">peft_strategy.py</span>
+<span class="kw">def</span> <span class="fn">_get_llm</span>(<span class="var">self</span>, <span class="var">method</span>):
+    <span class="kw">for</span> <span class="var">attr</span> <span class="kw">in</span> (<span class="st">"llm"</span>, <span class="st">"_llm"</span>, <span class="st">"model"</span>):
+        <span class="kw">if</span> <span class="fn">hasattr</span>(<span class="var">method</span>, <span class="var">attr</span>):
+            <span class="kw">return</span> <span class="fn">getattr</span>(<span class="var">method</span>, <span class="var">attr</span>)
+    <span class="kw">raise</span> <span class="ty">AttributeError</span>(<span class="st">"Cannot find LLM..."</span>)
+</div>
+
+<canvas id="cv_getllm" width="900" height="320"></canvas>
+
+<h3>逐行翻译</h3>
+<p><strong>第 1 行：</strong><code>for attr in ("llm", "_llm", "model")</code> — 按顺序猜三个名字</p>
+<p><strong>第 2 行：</strong><code>hasattr(method, attr)</code> — 问 method："你有叫这个名字的东西吗？"</p>
+<p><strong>第 3 行：</strong><code>getattr(method, attr)</code> — "有的话拿出来给我"</p>
+<p><strong>第 4 行：</strong>三个名字都没找到？报错："我找不到你的 LLM！"</p>
+
+<div class="warn">
+<strong>为什么要猜三个名字？</strong>因为不同的研究员给 LLM 取的属性名不同：<br>
+• LLaVA 用 <code>method.llm</code><br>
+• 有些模型用 <code>method._llm</code>（下划线表示"私有"）<br>
+• 还有些用 <code>method.model</code><br>
+这个函数兼容所有情况。
+</div>
+
+<div class="quiz" id="quiz1">
+<p>小测验：如果一个 Method 有 <code>.model</code> 属性但没有 <code>.llm</code>，<code>_get_llm</code> 会怎样？</p>
+<div class="quiz-opts">
+  <button class="quiz-btn" data-a="wrong" onclick="checkQuiz(this)">报错：找不到 LLM</button>
+  <button class="quiz-btn" data-a="correct" onclick="checkQuiz(this)">返回 method.model</button>
+  <button class="quiz-btn" data-a="wrong" onclick="checkQuiz(this)">返回 None</button>
+</div>
+<div class="quiz-explain" id="quiz1_exp">对！它会依次检查 "llm" → 没有 → "_llm" → 没有 → "model" → 有！返回 <code>method.model</code>。</div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- Step 2: _set_llm -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="step" id="s2">
+<h2>第 2 步：_set_llm — "把新 LLM 放回去"</h2>
+
+<div class="analogy">
+<strong>类比：</strong><code>_get_llm</code> 是"取出电池"，<code>_set_llm</code> 是"装回电池"。你取出了旧电池，改装了一下（加了 LoRA），然后要装回原来的位置。
+</div>
+
+<div class="code-box"><span class="tag">peft_strategy.py</span>
+<span class="kw">def</span> <span class="fn">_set_llm</span>(<span class="var">self</span>, <span class="var">method</span>, <span class="var">llm</span>):
+    <span class="kw">for</span> <span class="var">attr</span> <span class="kw">in</span> (<span class="st">"llm"</span>, <span class="st">"_llm"</span>, <span class="st">"model"</span>):
+        <span class="kw">if</span> <span class="fn">hasattr</span>(<span class="var">method</span>, <span class="var">attr</span>):
+            <span class="fn">setattr</span>(<span class="var">method</span>, <span class="var">attr</span>, <span class="var">llm</span>)
+            <span class="kw">return</span>
+</div>
+
+<canvas id="cv_setllm" width="900" height="260"></canvas>
+
+<h3>逐行翻译</h3>
+<p><strong><code>setattr(method, attr, llm)</code></strong> — 意思是 <code>method.llm = llm</code>，但用的是变量名。</p>
+<p>和 <code>_get_llm</code> 一样的逻辑：找到原来那个属性名，然后把新的 LLM 设置回去。</p>
+
+<div class="info">
+<strong>getattr vs setattr：</strong><br>
+• <code>getattr(method, "llm")</code> 等于 <code>method.llm</code> — 读取<br>
+• <code>setattr(method, "llm", new_llm)</code> 等于 <code>method.llm = new_llm</code> — 写入<br><br>
+为什么不直接写 <code>method.llm = llm</code>？因为属性名是<strong>变量</strong>（可能是 "llm"、"_llm" 或 "model"），所以必须用 <code>setattr</code>。
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- Step 3: wrap_model 上半 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="step" id="s3">
+<h2>第 3 步：wrap_model — 核心！注入 LoRA</h2>
+
+<div class="analogy">
+<strong>类比：</strong>这是整个装修的核心操作。你要：<br>
+1. 先找到要改的墙（LLM）<br>
+2. 选好要贴壁纸的位置（target_modules）<br>
+3. 配好壁纸的参数（颜色、厚度 → rank、alpha）<br>
+4. 让专业贴壁纸的公司来贴（HuggingFace peft 库）<br>
+5. 把贴好壁纸的墙装回去
+</div>
+
+<div class="code-box"><span class="tag">wrap_model — 上半部分：LoRA 注入</span>
+<span class="kw">def</span> <span class="fn">wrap_model</span>(<span class="var">self</span>, <span class="var">method</span>, <span class="var">config</span>):
+    <span class="kw">from</span> peft <span class="kw">import</span> LoraConfig, get_peft_model  <span class="cm"># ❶ 导入工具</span>
+
+    llm = <span class="var">self</span>.<span class="fn">_get_llm</span>(<span class="var">method</span>)               <span class="cm"># ❷ 找到 LLM</span>
+    target = config.target_modules <span class="kw">or</span> [<span class="st">"q_proj"</span>, <span class="st">"v_proj"</span>]  <span class="cm"># ❸ 选位置</span>
+
+    lora_cfg = <span class="ty">LoraConfig</span>(                    <span class="cm"># ❹ 配参数</span>
+        r=config.rank,                           <span class="cm">#    低秩维度</span>
+        lora_alpha=config.alpha,                 <span class="cm">#    缩放因子</span>
+        lora_dropout=config.dropout,             <span class="cm">#    防过拟合</span>
+        target_modules=target,                   <span class="cm">#    贴哪些层</span>
+        bias=<span class="st">"none"</span>,                            <span class="cm">#    不改 bias</span>
+        task_type=<span class="st">"CAUSAL_LM"</span>,                  <span class="cm">#    文本生成任务</span>
+    )
+
+    llm = <span class="fn">get_peft_model</span>(llm, lora_cfg)       <span class="cm"># ❺ 动手贴！</span>
+    <span class="var">self</span>.<span class="fn">_set_llm</span>(<span class="var">method</span>, llm)                <span class="cm"># ❻ 装回去</span>
+</div>
+
+<canvas id="cv_wrap1" width="900" height="440"></canvas>
+
+<h3>❶ <code>from peft import ...</code></h3>
+<p>导入 HuggingFace 的 peft 库。<strong>LoraConfig</strong> 是 LoRA 的"配方单"，<strong>get_peft_model</strong> 是"施工队"。</p>
+
+<h3>❷ <code>llm = self._get_llm(method)</code></h3>
+<p>用上一步学的方法，从 Method 里找到 LLM。</p>
+
+<h3>❸ <code>target = config.target_modules or ["q_proj", "v_proj"]</code></h3>
+<p>决定要在 LLM 的<strong>哪些层</strong>注入 LoRA。如果配置里没写，就默认用 <code>q_proj</code> 和 <code>v_proj</code>（这两个是 attention 里的 Query 和 Value 矩阵）。</p>
+
+<div class="info">
+<strong>or 的意思：</strong><code>A or B</code> = 如果 A 有值就用 A，否则用 B。<br>
+所以 <code>config.target_modules or ["q_proj", "v_proj"]</code> 意思是：用户指定了就用用户的，没指定就用默认值。
+</div>
+
+<h3>❹ <code>LoraConfig(...)</code> — 写"配方单"</h3>
+<p>把所有参数打包成一个配置对象，告诉 peft 库你要什么样的 LoRA。</p>
+
+<h3>❺ <code>get_peft_model(llm, lora_cfg)</code> — 最关键的一行！</h3>
+<p>这一行调用 HuggingFace 的 peft 库，它会自动做这些事：</p>
+<p>1. 遍历 LLM 的所有层，找到名字匹配 target_modules 的 nn.Linear<br>
+2. 在每个匹配的层旁边加一对小矩阵 A 和 B（就是 LoRA）<br>
+3. 冻结原始权重（requires_grad = False）<br>
+4. 返回一个"包装后的 LLM"</p>
+
+<h3>❻ <code>self._set_llm(method, llm)</code></h3>
+<p>把包装后的 LLM 放回 Method 里，替换原来的 LLM。</p>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- Step 4: wrap_model 下半 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="step" id="s4">
+<h2>第 4 步：wrap_model 的"可选项" — 要不要同时训练 Projector？</h2>
+
+<div class="code-box"><span class="tag">wrap_model — 下半部分：可选 Projector</span>
+    <span class="cm"># Optionally unfreeze projector</span>
+    <span class="kw">if</span> config.extra.<span class="fn">get</span>(<span class="st">"train_projector"</span>, <span class="kw">False</span>):
+        proj = <span class="fn">getattr</span>(<span class="var">method</span>, <span class="st">"projector"</span>, <span class="kw">None</span>)
+        <span class="kw">if</span> proj <span class="kw">is not None</span>:
+            <span class="kw">for</span> p <span class="kw">in</span> proj.<span class="fn">parameters</span>():
+                p.requires_grad = <span class="kw">True</span>
+</div>
+
+<canvas id="cv_wrap2" width="900" height="350"></canvas>
+
+<h3>逐行翻译</h3>
+
+<p><strong><code>config.extra.get("train_projector", False)</code></strong></p>
+<p>去 config 的 extra 字典里找 <code>"train_projector"</code> 这个键。找到了就用它的值，找不到就用 <code>False</code>。</p>
+
+<div class="analogy">
+<strong>类比：</strong>extra 就像一个"备注栏"。框架定义了一些标准字段（rank、alpha 等），但研究员可能有额外需求。extra 让他们自由加参数，框架不管里面有什么。<br><br>
+就像点外卖时的"备注"栏 — 店家不会预设你要写什么，但你可以写"不要辣"、"多加葱"之类的。
+</div>
+
+<p><strong><code>getattr(method, "projector", None)</code></strong></p>
+<p>尝试获取 <code>method.projector</code>。如果 method 没有 projector 属性，就返回 <code>None</code>（而不是报错）。</p>
+
+<p><strong><code>p.requires_grad = True</code></strong></p>
+<p>解冻 projector 的每个参数，让它们可以被训练。默认情况下 <code>get_peft_model</code> 会冻结所有非 LoRA 参数，所以这里需要手动解冻。</p>
+
+<div class="quiz" id="quiz2">
+<p>小测验：如果用户的配置是 <code>PEFTConfig(name="lora", rank=16)</code>，没有设 extra，Projector 会被训练吗？</p>
+<div class="quiz-opts">
+  <button class="quiz-btn" data-a="correct" onclick="checkQuiz(this)">不会 — extra 默认是空字典，get 返回 False</button>
+  <button class="quiz-btn" data-a="wrong" onclick="checkQuiz(this)">会 — 默认训练 Projector</button>
+  <button class="quiz-btn" data-a="wrong" onclick="checkQuiz(this)">报错 — extra 不存在</button>
+</div>
+<div class="quiz-explain" id="quiz2_exp">对！<code>config.extra</code> 默认是空字典 <code>{}</code>。调用 <code>{}.get("train_projector", False)</code> 找不到键，返回默认值 <code>False</code>。所以整个 if 块被跳过，Projector 保持冻结。</div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- Step 5: trainable_params -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="step" id="s5">
+<h2>第 5 步：trainable_params — "告诉优化器该训练谁"</h2>
+
+<div class="analogy">
+<strong>类比：</strong>装修完了，你给油漆工一份清单："这些地方需要上色（训练），其他地方别碰（冻结）"。而且不同区域可能用不同颜色（学习率）。
+</div>
+
+<div class="code-box"><span class="tag">trainable_params</span>
+<span class="kw">def</span> <span class="fn">trainable_params</span>(<span class="var">self</span>, <span class="var">method</span>):
+    groups = []                                <span class="cm"># 空清单</span>
+
+    <span class="cm"># LLM LoRA params</span>
+    llm = <span class="var">self</span>.<span class="fn">_get_llm</span>(<span class="var">method</span>)
+    llm_params = [p <span class="kw">for</span> p <span class="kw">in</span> llm.<span class="fn">parameters</span>()
+                  <span class="kw">if</span> p.requires_grad]          <span class="cm"># 只要"解冻"的参数</span>
+    <span class="kw">if</span> llm_params:
+        groups.<span class="fn">append</span>({<span class="st">"params"</span>: llm_params})  <span class="cm"># 加入清单</span>
+
+    <span class="cm"># Projector params (if unfrozen)</span>
+    proj = <span class="fn">getattr</span>(<span class="var">method</span>, <span class="st">"projector"</span>, <span class="kw">None</span>)
+    <span class="kw">if</span> proj <span class="kw">is not None</span>:
+        proj_params = [p <span class="kw">for</span> p <span class="kw">in</span> proj.<span class="fn">parameters</span>()
+                       <span class="kw">if</span> p.requires_grad]
+        <span class="kw">if</span> proj_params:
+            groups.<span class="fn">append</span>({<span class="st">"params"</span>: proj_params,
+                          <span class="st">"lr"</span>: <span class="num">1e-3</span>})   <span class="cm"># Projector 用大 lr！</span>
+
+    <span class="kw">return</span> groups
+</div>
+
+<canvas id="cv_params" width="900" height="340"></canvas>
+
+<h3>关键概念：param_groups</h3>
+<p>PyTorch 的优化器可以接收"参数组"列表。每个组是一个字典：</p>
+
+<div class="info">
+<strong>组 1 — LLM LoRA：</strong><code>{"params": [A矩阵们, B矩阵们]}</code> — 用 Trainer 默认 lr（如 2e-5）<br>
+<strong>组 2 — Projector：</strong><code>{"params": [proj参数们], "lr": 1e-3}</code> — 用更大的 lr
+</div>
+
+<p><strong>为什么 Projector 用大 lr？</strong>因为 Projector 参数量小，而且在 Stage 1 时可能是从零学的，需要更快的学习速度。LoRA 参数加在已有知识的 LLM 上，所以用小 lr 微调就够了。</p>
+
+<p><strong><code>if p.requires_grad</code> 是什么意思？</strong>只收集"解冻的"参数。<code>get_peft_model</code> 已经帮我们冻结了原始权重，只有 LoRA 的 A、B 矩阵是 <code>requires_grad=True</code> 的。所以这行代码自动过滤出 LoRA 参数。</p>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- Step 6: save_adapter -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="step" id="s6">
+<h2>第 6 步：save_adapter — "只保存壁纸，不保存整面墙"</h2>
+
+<div class="analogy">
+<strong>类比：</strong>你装修了一面墙，现在要搬家。你不需要把整面墙拆走（14GB），只需要把壁纸揭下来带走（20MB），到新家再贴上去就行。
+</div>
+
+<div class="code-box"><span class="tag">save_adapter</span>
+<span class="kw">def</span> <span class="fn">save_adapter</span>(<span class="var">self</span>, <span class="var">method</span>, <span class="var">path</span>):
+    os.<span class="fn">makedirs</span>(path, exist_ok=<span class="kw">True</span>)        <span class="cm"># 创建保存目录</span>
+
+    llm = <span class="var">self</span>.<span class="fn">_get_llm</span>(<span class="var">method</span>)
+    llm.<span class="fn">save_pretrained</span>(path)                 <span class="cm"># HF peft 自带的保存方法</span>
+
+    <span class="cm"># Save projector if it was trained</span>
+    proj = <span class="fn">getattr</span>(<span class="var">method</span>, <span class="st">"projector"</span>, <span class="kw">None</span>)
+    <span class="kw">if</span> proj <span class="kw">is not None</span>:
+        <span class="kw">if</span> <span class="fn">any</span>(p.requires_grad <span class="kw">for</span> p <span class="kw">in</span> proj.<span class="fn">parameters</span>()):
+            torch.<span class="fn">save</span>(proj.<span class="fn">state_dict</span>(),
+                       os.path.<span class="fn">join</span>(path, <span class="st">"projector.pt"</span>))
+</div>
+
+<canvas id="cv_save" width="900" height="300"></canvas>
+
+<h3>逐行翻译</h3>
+<p><strong><code>os.makedirs(path, exist_ok=True)</code></strong> — 创建目录，如果已存在就不报错。</p>
+
+<p><strong><code>llm.save_pretrained(path)</code></strong> — 这是 HuggingFace peft 库的方法！它<strong>只保存 LoRA 的 A/B 矩阵</strong>，不保存原始的大模型权重。这就是为什么文件只有 ~20MB 而不是 ~14GB。</p>
+
+<p><strong><code>any(p.requires_grad for p in proj.parameters())</code></strong> — 检查 Projector 的参数里有没有任何一个是被训练的。如果有，就额外保存 Projector 的权重。</p>
+
+<div class="warn">
+<strong>any() 是什么？</strong><br>
+<code>any([True, False, False])</code> → <code>True</code>（只要有一个 True 就行）<br>
+<code>any([False, False, False])</code> → <code>False</code>（全是 False 才返回 False）<br><br>
+这里用来检测"Projector 是否被训练过"。
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- Step 7: load_adapter -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="step" id="s7">
+<h2>第 7 步：load_adapter — "把壁纸贴回去"</h2>
+
+<div class="code-box"><span class="tag">load_adapter</span>
+<span class="kw">def</span> <span class="fn">load_adapter</span>(<span class="var">self</span>, <span class="var">method</span>, <span class="var">path</span>):
+    <span class="kw">from</span> peft <span class="kw">import</span> PeftModel
+
+    llm = <span class="var">self</span>.<span class="fn">_get_llm</span>(<span class="var">method</span>)
+    llm = PeftModel.<span class="fn">from_pretrained</span>(llm, path) <span class="cm"># 从文件加载 LoRA</span>
+    <span class="var">self</span>.<span class="fn">_set_llm</span>(<span class="var">method</span>, llm)                  <span class="cm"># 装回去</span>
+
+    <span class="cm"># 如果有 projector 权重也一起加载</span>
+    proj_path = os.path.<span class="fn">join</span>(path, <span class="st">"projector.pt"</span>)
+    <span class="kw">if</span> os.path.<span class="fn">exists</span>(proj_path):
+        proj = <span class="fn">getattr</span>(<span class="var">method</span>, <span class="st">"projector"</span>, <span class="kw">None</span>)
+        <span class="kw">if</span> proj <span class="kw">is not None</span>:
+            proj.<span class="fn">load_state_dict</span>(
+                torch.<span class="fn">load</span>(proj_path, weights_only=<span class="kw">True</span>))
+</div>
+
+<canvas id="cv_load" width="900" height="300"></canvas>
+
+<h3>逐行翻译</h3>
+<p><strong><code>PeftModel.from_pretrained(llm, path)</code></strong> — peft 库的方法：读取之前保存的 LoRA 权重文件，在 LLM 上重新注入 LoRA 层，并加载权重。和 <code>save_pretrained</code> 配对使用。</p>
+
+<p><strong><code>os.path.exists(proj_path)</code></strong> — 检查 projector.pt 文件是否存在。保存时如果 Projector 没有被训练，就不会有这个文件。</p>
+
+<p><strong><code>weights_only=True</code></strong> — 安全选项。只加载权重数据，不执行文件里可能包含的任意代码（防止恶意文件攻击）。</p>
+
+<div class="quiz" id="quiz3">
+<p>小测验：save 和 load 是怎么配对的？</p>
+<div class="quiz-opts">
+  <button class="quiz-btn" data-a="correct" onclick="checkQuiz(this)">save_pretrained ↔ PeftModel.from_pretrained（LoRA）; torch.save ↔ torch.load（Projector）</button>
+  <button class="quiz-btn" data-a="wrong" onclick="checkQuiz(this)">都用 torch.save / torch.load</button>
+  <button class="quiz-btn" data-a="wrong" onclick="checkQuiz(this)">都用 save_pretrained / from_pretrained</button>
+</div>
+<div class="quiz-explain" id="quiz3_exp">对！LoRA 部分用 HuggingFace peft 自带的方法（它知道怎么只保存 LoRA 参数），Projector 部分用 PyTorch 原生的 torch.save/load（因为它不是 LoRA，是普通参数）。</div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- Step 8: 完整流程 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="step" id="s8">
+<h2>完整串联：Trainer 怎么调用 LoRAStrategy 的？</h2>
+
+<p>现在你知道了每个方法的功能。让我们看看 Trainer 是怎么按顺序调用它们的：</p>
+
+<canvas id="cv_timeline" width="900" height="480"></canvas>
+
+<div class="code-box"><span class="tag">Trainer.train() 的简化版</span>
+<span class="cm"># 第 1 步：注入 LoRA</span>
+<span class="var">self</span>.peft.<span class="fn">wrap_model</span>(method, config.peft)
+
+<span class="cm"># 第 2 步：获取要训练的参数，创建优化器</span>
+param_groups = <span class="var">self</span>.peft.<span class="fn">trainable_params</span>(method)
+optimizer = <span class="ty">AdamW</span>(param_groups)
+
+<span class="cm"># 第 3 步：训练循环</span>
+<span class="kw">for</span> epoch <span class="kw">in</span> <span class="fn">range</span>(num_epochs):
+    <span class="kw">for</span> batch <span class="kw">in</span> dataloader:
+        loss = method.<span class="fn">forward_loss</span>(batch)    <span class="cm"># 前向传播</span>
+        loss.<span class="fn">backward</span>()                        <span class="cm"># 反向传播（只有 LoRA 有梯度）</span>
+        optimizer.<span class="fn">step</span>()                       <span class="cm"># 更新 LoRA 参数</span>
+
+<span class="cm"># 第 4 步：保存</span>
+<span class="var">self</span>.peft.<span class="fn">save_adapter</span>(method, <span class="st">"output/final"</span>)
+</div>
+
+<div class="info">
+<strong>关键洞察：</strong>Trainer 完全不知道 LoRA 是什么！它只调用 <code>wrap_model</code>、<code>trainable_params</code>、<code>save_adapter</code> 这几个接口。你可以把 LoRAStrategy 换成任何其他策略（Adapter、MoReS……），Trainer 的代码一行都不用改。<br><br>
+这就是<strong>策略模式</strong>的力量 — 把"变化的部分"（怎么注入适配器）从"不变的部分"（训练循环）中分离出来。
+</div>
+
+<div class="quiz" id="quiz4">
+<p>最终测验：如果你想把 LoRA 换成 Adapter Layer，需要改 Trainer 的代码吗？</p>
+<div class="quiz-opts">
+  <button class="quiz-btn" data-a="wrong" onclick="checkQuiz(this)">需要，Trainer 里硬编码了 LoRA</button>
+  <button class="quiz-btn" data-a="correct" onclick="checkQuiz(this)">不需要，只要新策略实现了 PEFTStrategy 的 4 个方法</button>
+  <button class="quiz-btn" data-a="wrong" onclick="checkQuiz(this)">需要改 Trainer 和 Method 两个文件</button>
+</div>
+<div class="quiz-explain" id="quiz4_exp">完全正确！Trainer 只认 PEFTStrategy 接口，不认具体实现。你写一个 AdapterLayerStrategy 继承 PEFTStrategy，实现 4 个方法，注册到 registry，改一下配置文件就行了。Trainer、Method、数据管道 — 全都不用动。</div>
+</div>
+</div>
+
+<div class="nav">
+  <button class="btn" id="btnPrev" onclick="go(-1)" disabled>← 上一步</button>
+  <span id="stepLabel" style="color:var(--dim);font-size:.76rem;"></span>
+  <button class="btn primary" id="btnNext" onclick="go(1)">下一步 →</button>
+</div>
+
+</div><!-- wrap -->
+
+<script>
+const dpr=window.devicePixelRatio||1;
+const TOTAL=9;
+let cur=0;
+
+// Helpers
+function cv(id){const c=document.getElementById(id);if(!c)return null;const w=+c.getAttribute('width'),h=+c.getAttribute('height');c.width=w*dpr;c.height=h*dpr;c.style.width=w+'px';c.style.height=h+'px';const x=c.getContext('2d');x.scale(dpr,dpr);x.clearRect(0,0,w,h);return x;}
+function rr(x,a,b,w,h,r,f,s,lw=1){x.beginPath();x.roundRect(a,b,w,h,r);if(f){x.fillStyle=f;x.fill();}if(s){x.strokeStyle=s;x.lineWidth=lw;x.stroke();}}
+function tx(x,t,a,b,c,sz=12,al='center'){x.fillStyle=c;x.font=`${sz}px "SF Mono","Cascadia Code",monospace`;x.textAlign=al;x.textBaseline='middle';t.split('\n').forEach((l,i)=>x.fillText(l,a,b+i*(sz+4)));}
+function ar(x,x1,y1,x2,y2,c,lw=1.5){x.beginPath();x.moveTo(x1,y1);x.lineTo(x2,y2);x.strokeStyle=c;x.lineWidth=lw;x.stroke();const a=Math.atan2(y2-y1,x2-x1),s=7;x.beginPath();x.moveTo(x2,y2);x.lineTo(x2-s*Math.cos(a-.35),y2-s*Math.sin(a-.35));x.lineTo(x2-s*Math.cos(a+.35),y2-s*Math.sin(a+.35));x.closePath();x.fillStyle=c;x.fill();}
+const cl={a:'#6c8cff',pk:'#ff6c9a',g:'#4ade80',o:'#fb923c',p:'#a78bfa',cy:'#22d3ee',dim:'#5a6078',t:'#c8cfe0',bg:'#1a1d27',bd:'#2e3347',y:'#facc15',r:'#f87171'};
+
+// ═══ Nav ═══
+function buildProgress(){
+  const p=document.getElementById('prog');
+  p.innerHTML='';
+  for(let i=0;i<TOTAL;i++){
+    const d=document.createElement('div');
+    d.className='dot'+(i<cur?' done':'')+(i===cur?' cur':'');
+    d.onclick=()=>{cur=i;render();};
+    p.appendChild(d);
+  }
+}
+
+function render(){
+  document.querySelectorAll('.step').forEach((s,i)=>{s.classList.toggle('on',i===cur);});
+  buildProgress();
+  document.getElementById('btnPrev').disabled=cur===0;
+  const next=document.getElementById('btnNext');
+  next.textContent=cur===TOTAL-1?'完成！':'下一步 →';
+  next.disabled=cur===TOTAL-1;
+  document.getElementById('stepLabel').textContent=`${cur+1} / ${TOTAL}`;
+  requestAnimationFrame(()=>drawStep(cur));
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function go(d){cur=Math.max(0,Math.min(TOTAL-1,cur+d));render();}
+
+function checkQuiz(btn){
+  const p=btn.parentElement;
+  p.querySelectorAll('.quiz-btn').forEach(b=>{
+    b.classList.add(b.dataset.a==='correct'?'correct':'wrong');
+    b.disabled=true;
+  });
+  btn.closest('.quiz').querySelector('.quiz-explain').classList.add('show');
+}
+
+// ═══ Drawings ═══
+const drawFns={};
+
+drawFns[0]=function(){
+  const x=cv('cv_overview');if(!x)return;
+  // Title
+  rr(x,20,15,860,330,12,'#ffffff04',cl.bd);
+  tx(x,'LoRAStrategy 的 6 个方法',450,12,cl.dim,10);
+
+  // Method object
+  rr(x,40,50,200,260,10,cl.a+'10',cl.a);
+  tx(x,'Method 对象',140,70,cl.a,12);
+  rr(x,60,95,160,45,6,cl.dim+'15',cl.dim);
+  tx(x,'vision (冻结)',140,118,cl.dim,9);
+  rr(x,60,150,160,45,6,cl.dim+'15',cl.dim);
+  tx(x,'projector',140,173,cl.dim,9);
+  rr(x,60,205,160,45,6,cl.g+'15',cl.g);
+  tx(x,'llm',140,228,cl.g,9);
+  rr(x,60,258,160,30,6,cl.p+'10',cl.p);
+  tx(x,'↑ LoRA 在这里',140,273,cl.p,8);
+
+  // Helper methods
+  ar(x,240,228,310,100,cl.y,1.5);
+  rr(x,310,70,180,55,8,cl.y+'12',cl.y);
+  tx(x,'_get_llm\n"找到 LLM"',400,90,cl.y,10);
+
+  ar(x,310,155,240,228,cl.y,1.5);
+  rr(x,310,135,180,55,8,cl.y+'12',cl.y);
+  tx(x,'_set_llm\n"放回 LLM"',400,155,cl.y,10);
+
+  // Core methods
+  rr(x,540,50,160,55,8,cl.pk+'12',cl.pk);
+  tx(x,'wrap_model\n"注入 LoRA"',620,70,cl.pk,10);
+
+  rr(x,540,120,160,55,8,cl.g+'12',cl.g);
+  tx(x,'trainable_params\n"训练谁？"',620,140,cl.g,10);
+
+  rr(x,540,190,160,55,8,cl.o+'12',cl.o);
+  tx(x,'save_adapter\n"保存 LoRA"',620,210,cl.o,10);
+
+  rr(x,540,260,160,55,8,cl.cy+'12',cl.cy);
+  tx(x,'load_adapter\n"加载 LoRA"',620,280,cl.cy,10);
+
+  // Flow arrows
+  ar(x,700,78,750,78,cl.dim);
+  ar(x,750,78,750,148,cl.dim);
+  ar(x,750,148,700,148,cl.dim);
+  ar(x,700,218,750,218,cl.dim);
+  ar(x,700,288,750,288,cl.dim);
+  tx(x,'Trainer\n按顺序\n调用',785,178,cl.dim,9);
+
+  // Labels
+  rr(x,810,50,60,25,5,cl.y+'15',cl.y);
+  tx(x,'辅助',840,62,cl.y,8);
+  rr(x,810,85,60,25,5,cl.pk+'15',cl.pk);
+  tx(x,'核心',840,97,cl.pk,8);
+};
+
+drawFns[1]=function(){
+  const x=cv('cv_getllm');if(!x)return;
+  rr(x,20,15,860,290,12,'#ffffff04',cl.bd);
+  tx(x,'_get_llm 的工作方式',450,12,cl.dim,10);
+
+  // Three possible method structures
+  const methods=[
+    {x:60,name:'LLaVA',attr:'llm',found:true},
+    {x:330,name:'某个模型',attr:'_llm',found:true},
+    {x:600,name:'另一个模型',attr:'model',found:true},
+  ];
+
+  methods.forEach((m,i)=>{
+    const col=cl.g;
+    rr(x,m.x,50,220,100,8,'#ffffff05',cl.bd);
+    tx(x,m.name,m.x+110,65,cl.t,11);
+
+    // Search process
+    const tries=['llm','_llm','model'];
+    tries.forEach((t,j)=>{
+      const match=t===m.attr;
+      const cy=95+j*25;
+      const c2=match?cl.g:cl.r;
+      tx(x,`"${t}"`,m.x+50,cy,c2,9,'left');
+      tx(x,match?'→ 找到了！':'→ 没有',m.x+140,cy,c2,9,'left');
+      if(match){
+        // highlight
+        rr(x,m.x+30,cy-10,175,20,4,cl.g+'10',cl.g);
+      }
+    });
+
+    // Result
+    rr(x,m.x+20,190,180,40,6,cl.g+'12',cl.g);
+    tx(x,`返回 method.${m.attr}`,m.x+110,210,cl.g,9);
+  });
+
+  // Failed case
+  rr(x,250,245,400,45,8,cl.r+'12',cl.r);
+  tx(x,'如果三个都没找到 → raise AttributeError',450,267,cl.r,10);
+};
+
+drawFns[2]=function(){
+  const x=cv('cv_setllm');if(!x)return;
+  rr(x,20,15,860,230,12,'#ffffff04',cl.bd);
+
+  // Before
+  rr(x,50,50,350,170,10,'#ffffff05',cl.bd);
+  tx(x,'取出来之前',225,45,cl.dim,10);
+  rr(x,80,80,120,50,6,cl.a+'15',cl.a);
+  tx(x,'method.llm',140,105,cl.a,9);
+  tx(x,'=',230,105,cl.dim,12);
+  rr(x,250,80,120,50,6,cl.dim+'15',cl.dim);
+  tx(x,'原始 LLM',310,105,cl.dim,9);
+
+  tx(x,'get_peft_model\n改装 LoRA',225,160,cl.pk,9);
+  rr(x,160,175,130,25,4,cl.pk+'15',cl.pk);
+
+  // After
+  rr(x,480,50,380,170,10,'#ffffff05',cl.bd);
+  tx(x,'装回去之后',670,45,cl.dim,10);
+  rr(x,510,80,120,50,6,cl.a+'15',cl.a);
+  tx(x,'method.llm',570,105,cl.a,9);
+  tx(x,'=',660,105,cl.dim,12);
+  rr(x,680,80,150,50,6,cl.g+'15',cl.g);
+  tx(x,'LLM + LoRA',755,105,cl.g,9);
+
+  tx(x,'_set_llm 做的事',670,160,cl.g,9);
+  ar(x,700,130,700,150,cl.g);
+
+  // Arrow between
+  ar(x,400,105,480,105,cl.pk,2);
+  tx(x,'wrap_model',440,90,cl.pk,8);
+};
+
+drawFns[3]=function(){
+  const x=cv('cv_wrap1');if(!x)return;
+  rr(x,20,15,860,410,12,'#ffffff04',cl.bd);
+  tx(x,'wrap_model 的 6 步流程',450,12,cl.dim,10);
+
+  const steps=[
+    {y:50,num:'❶',label:'导入 peft 工具',detail:'LoraConfig + get_peft_model',col:cl.dim},
+    {y:110,num:'❷',label:'找到 LLM',detail:'self._get_llm(method)',col:cl.y},
+    {y:170,num:'❸',label:'选择目标层',detail:'["q_proj", "v_proj"]',col:cl.a},
+    {y:230,num:'❹',label:'写配方单',detail:'LoraConfig(r=16, alpha=32, ...)',col:cl.p},
+    {y:290,num:'❺',label:'注入 LoRA！',detail:'get_peft_model(llm, config)',col:cl.pk},
+    {y:350,num:'❻',label:'装回 Method',detail:'self._set_llm(method, llm)',col:cl.g},
+  ];
+
+  steps.forEach((s,i)=>{
+    // Number circle
+    x.beginPath();x.arc(60,s.y+20,16,0,Math.PI*2);
+    x.fillStyle=s.col+'20';x.fill();
+    x.strokeStyle=s.col;x.lineWidth=1.5;x.stroke();
+    tx(x,s.num,60,s.y+20,s.col,12);
+
+    // Label
+    rr(x,90,s.y,300,40,6,s.col+'08',s.col);
+    tx(x,s.label,240,s.y+20,cl.t,11);
+
+    // Detail
+    rr(x,420,s.y,440,40,6,'#ffffff04',cl.bd);
+    tx(x,s.detail,640,s.y+20,cl.dim,10);
+
+    // Arrow
+    if(i<5) ar(x,60,s.y+40,60,steps[i+1].y,cl.dim+'40');
+  });
+
+  // Highlight step 5
+  x.shadowColor=cl.pk;x.shadowBlur=15;
+  rr(x,88,288,304,44,8,null,cl.pk,2);
+  x.shadowBlur=0;
+  tx(x,'← 最关键的一行！',830,310,cl.pk,10);
+};
+
+drawFns[4]=function(){
+  const x=cv('cv_wrap2');if(!x)return;
+  rr(x,20,15,860,320,12,'#ffffff04',cl.bd);
+
+  // Decision tree
+  tx(x,'config.extra 里有 "train_projector" 吗？',450,50,cl.t,12);
+
+  // No branch
+  ar(x,300,65,200,110,cl.dim,1.5);
+  rr(x,80,95,240,50,8,cl.dim+'10',cl.dim);
+  tx(x,'没有（默认情况）',200,120,cl.dim,10);
+  ar(x,200,145,200,180,cl.dim);
+  rr(x,100,175,200,45,6,cl.r+'10',cl.r);
+  tx(x,'Projector 保持冻结',200,198,cl.r,9);
+
+  // Yes branch
+  ar(x,600,65,700,110,cl.o,1.5);
+  rr(x,580,95,240,50,8,cl.o+'12',cl.o);
+  tx(x,'有！= True',700,120,cl.o,10);
+  ar(x,700,145,700,180,cl.o);
+  rr(x,580,175,240,80,6,cl.g+'12',cl.g);
+  tx(x,'解冻 Projector\n每个参数\nrequires_grad = True',700,210,cl.g,9);
+
+  // Config example
+  rr(x,120,250,660,60,8,'#ffffff05',cl.bd);
+  tx(x,'PEFTConfig(name="lora", extra={"train_projector": True})  ← 这样配就能训练 Projector',450,280,cl.dim,8);
+};
+
+drawFns[5]=function(){
+  const x=cv('cv_params');if(!x)return;
+  rr(x,20,15,860,310,12,'#ffffff04',cl.bd);
+  tx(x,'trainable_params 返回的参数组',450,12,cl.dim,10);
+
+  // Group 1: LLM LoRA
+  rr(x,40,45,400,120,10,cl.g+'10',cl.g);
+  tx(x,'组 1：LLM LoRA 参数',240,65,cl.g,11);
+
+  const loraParams=['q_proj.lora_A','q_proj.lora_B','v_proj.lora_A','v_proj.lora_B'];
+  loraParams.forEach((p,i)=>{
+    rr(x,60+i*95,85,85,25,4,cl.g+'20',cl.g);
+    tx(x,p,102+i*95,97,cl.g,7);
+  });
+  tx(x,'lr = Trainer 默认值 (2e-5)',240,140,cl.dim,9);
+
+  // Group 2: Projector
+  rr(x,460,45,400,120,10,cl.o+'10',cl.o);
+  tx(x,'组 2：Projector 参数（可选）',660,65,cl.o,11);
+  rr(x,480,85,130,25,4,cl.o+'20',cl.o);
+  tx(x,'proj.weight',545,97,cl.o,8);
+  rr(x,620,85,130,25,4,cl.o+'20',cl.o);
+  tx(x,'proj.bias',685,97,cl.o,8);
+  tx(x,'lr = 1e-3（大 50 倍！）',660,140,cl.pk,9);
+
+  // Why different lr
+  rr(x,40,185,820,120,10,'#ffffff05',cl.bd);
+  tx(x,'为什么学习率不同？',450,205,cl.t,11);
+
+  rr(x,60,225,380,60,6,cl.g+'08',cl.g+'30');
+  tx(x,'LoRA: 在已有知识上微调 → 小步走 (2e-5)\n怕把原来学到的东西改坏',250,248,cl.dim,8);
+
+  rr(x,460,225,380,60,6,cl.o+'08',cl.o+'30');
+  tx(x,'Projector: 可能从零开始学 → 大步走 (1e-3)\n参数少，不容易过拟合',650,248,cl.dim,8);
+};
+
+drawFns[6]=function(){
+  const x=cv('cv_save');if(!x)return;
+  rr(x,20,15,860,270,12,'#ffffff04',cl.bd);
+  tx(x,'save_adapter 保存了什么？',450,12,cl.dim,10);
+
+  // Full model
+  rr(x,50,50,250,200,10,cl.dim+'10',cl.dim);
+  tx(x,'完整 LLM',175,70,cl.dim,11);
+  tx(x,'~14 GB',175,95,cl.dim,10);
+  rr(x,70,115,210,50,6,cl.dim+'08',cl.dim+'30');
+  tx(x,'原始权重（不保存）',175,140,cl.dim,8);
+  rr(x,70,175,100,50,6,cl.g+'15',cl.g);
+  tx(x,'LoRA A/B',120,200,cl.g,8);
+  rr(x,180,175,100,50,6,cl.g+'15',cl.g);
+  tx(x,'LoRA A/B',230,200,cl.g,8);
+
+  // Arrow
+  ar(x,300,150,400,150,cl.g,2);
+  tx(x,'save_pretrained\n只保存绿色部分',350,120,cl.g,8);
+
+  // Saved files
+  rr(x,400,50,200,90,10,cl.g+'12',cl.g);
+  tx(x,'adapter_model.bin',500,80,cl.g,10);
+  tx(x,'~20 MB',500,100,cl.g,9);
+
+  // Projector (optional)
+  rr(x,400,160,200,70,10,cl.o+'12',cl.o);
+  tx(x,'projector.pt',500,185,cl.o,10);
+  tx(x,'（仅当训练了 Projector）',500,205,cl.dim,8);
+
+  // Comparison
+  rr(x,650,50,200,200,10,'#ffffff05',cl.bd);
+  tx(x,'对比',750,70,cl.t,11);
+  tx(x,'完整模型',750,105,cl.dim,9);
+  rr(x,670,115,70,20,4,cl.dim+'15',cl.dim);
+  tx(x,'14 GB',770,125,cl.dim,9);
+  tx(x,'LoRA 适配器',750,155,cl.g,9);
+  rr(x,670,165,70,20,4,cl.g+'15',cl.g);
+  tx(x,'20 MB',770,175,cl.g,9);
+  tx(x,'节省 99.86%!',750,210,cl.pk,10);
+};
+
+drawFns[7]=function(){
+  const x=cv('cv_load');if(!x)return;
+  rr(x,20,15,860,270,12,'#ffffff04',cl.bd);
+  tx(x,'load_adapter 的流程',450,12,cl.dim,10);
+
+  // Saved files
+  rr(x,40,55,160,80,8,cl.g+'12',cl.g);
+  tx(x,'adapter_model.bin\n(LoRA 权重)',120,85,cl.g,9);
+  rr(x,40,150,160,55,8,cl.o+'12',cl.o);
+  tx(x,'projector.pt\n(可能不存在)',120,172,cl.o,9);
+
+  ar(x,200,90,280,90,cl.g,1.5);
+  tx(x,'PeftModel\n.from_pretrained',240,60,cl.g,8);
+
+  // Original LLM
+  rr(x,280,50,180,100,8,cl.dim+'10',cl.dim);
+  tx(x,'原始 LLM\n(无 LoRA)',370,90,cl.dim,10);
+
+  ar(x,460,100,530,100,cl.pk,2);
+  tx(x,'注入 +\n加载权重',495,75,cl.pk,8);
+
+  // LLM with LoRA
+  rr(x,530,50,190,100,8,cl.g+'12',cl.g);
+  tx(x,'LLM + LoRA\n(训练好的)',625,90,cl.g,10);
+
+  ar(x,720,100,780,100,cl.g);
+  tx(x,'_set_llm',750,80,cl.y,8);
+
+  // Method
+  rr(x,780,45,100,115,8,cl.a+'10',cl.a);
+  tx(x,'Method',830,95,cl.a,10);
+
+  // Projector path
+  ar(x,200,178,530,178,cl.o,1.5);
+  tx(x,'os.path.exists? → 如果有就 load_state_dict',400,215,cl.dim,8);
+  rr(x,530,155,190,50,6,cl.o+'08',cl.o);
+  tx(x,'projector 也恢复',625,180,cl.o,9);
+};
+
+drawFns[8]=function(){
+  const x=cv('cv_timeline');if(!x)return;
+  rr(x,20,10,860,455,12,'#ffffff04',cl.bd);
+  tx(x,'Trainer 调用 LoRAStrategy 的完整时间线',450,8,cl.dim,10);
+
+  const timeline=[
+    {y:45,label:'wrap_model(method, config)',desc:'注入 LoRA 到 LLM\n冻结原始权重\n(可选) 解冻 Projector',col:cl.pk,icon:'1'},
+    {y:155,label:'trainable_params(method)',desc:'收集 LoRA 参数 → 组 1\n收集 Projector 参数 → 组 2\n交给 AdamW 优化器',col:cl.g,icon:'2'},
+    {y:265,label:'训练循环 × N 轮',desc:'forward_loss → 算 loss\nloss.backward → LoRA 参数有梯度\noptimizer.step → 更新 LoRA',col:cl.a,icon:'3'},
+    {y:375,label:'save_adapter(method, path)',desc:'save_pretrained → LoRA 权重\ntorch.save → Projector 权重',col:cl.o,icon:'4'},
+  ];
+
+  // Timeline line
+  x.setLineDash([4,4]);
+  x.strokeStyle=cl.dim+'40';x.lineWidth=2;
+  x.beginPath();x.moveTo(80,70);x.lineTo(80,440);x.stroke();
+  x.setLineDash([]);
+
+  timeline.forEach((s,i)=>{
+    // Dot on timeline
+    x.beginPath();x.arc(80,s.y+35,10,0,Math.PI*2);
+    x.fillStyle=s.col;x.fill();
+    tx(x,s.icon,80,s.y+35,'#0f1117',10);
+
+    // Box
+    rr(x,110,s.y,330,90,8,s.col+'10',s.col,1.5);
+    tx(x,s.label,275,s.y+18,s.col,10);
+    tx(x,s.desc,275,s.y+55,cl.dim,8);
+
+    // Right side - what LoRAStrategy does
+    ar(x,440,s.y+45,490,s.y+45,cl.dim);
+    rr(x,490,s.y,360,90,8,'#ffffff05',cl.bd);
+    tx(x,'LoRAStrategy 做了什么',670,s.y+15,cl.t,9);
+
+    if(i===0){
+      tx(x,'_get_llm → 找到 LLM\nLoraConfig → 写配方\nget_peft_model → 注入 LoRA 层\n_set_llm → 装回去',670,s.y+55,cl.dim,8);
+    }else if(i===1){
+      tx(x,'遍历 LLM 参数\n过滤 requires_grad=True 的\n分成两组（LLM + Projector）\n每组可设不同 lr',670,s.y+55,cl.dim,8);
+    }else if(i===2){
+      tx(x,'LoRAStrategy 不参与这一步！\nTrainer 自己跑训练循环\n只有 LoRA 参数有梯度\n原始权重不会被更新',670,s.y+55,cl.dim,8);
+    }else{
+      tx(x,'llm.save_pretrained → 只保存 LoRA\ntorch.save → 保存 Projector\n文件大小: ~20MB\n(完整模型: ~14GB)',670,s.y+55,cl.dim,8);
+    }
+  });
+};
+
+function drawStep(i){try{if(drawFns[i])drawFns[i]();}catch(e){console.error('draw error step',i,e);}}
+
+// Init
+buildProgress();
+render();
+</script>
+</body>
+</html>

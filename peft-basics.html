@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>从零理解 PEFT 与训练框架</title>
+<style>
+:root {
+  --bg: #0f1117; --surface: #1a1d27; --surface2: #242836;
+  --border: #2e3347; --text: #e2e8f0; --dim: #8892a8;
+  --accent: #6c8cff; --pink: #ff6c9a; --green: #4ade80;
+  --orange: #fb923c; --purple: #a78bfa; --cyan: #22d3ee;
+  --yellow: #facc15; --red: #f87171;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:'SF Mono','Cascadia Code','Fira Code',monospace; }
+
+.container { max-width:880px; margin:0 auto; padding:32px 24px 100px; }
+h1 { color:var(--accent); font-size:1.5rem; margin-bottom:4px; }
+.sub { color:var(--dim); font-size:0.8rem; margin-bottom:32px; }
+
+/* nav */
+.nav {
+  position:sticky; top:0; z-index:100; background:var(--bg);
+  padding:10px 0; border-bottom:1px solid var(--border);
+  display:flex; gap:4px; flex-wrap:wrap; margin-bottom:28px;
+}
+.nav button {
+  background:var(--surface); border:1px solid var(--border);
+  color:var(--dim); padding:6px 12px; border-radius:7px;
+  cursor:pointer; font-family:inherit; font-size:0.72rem;
+  transition:all 0.2s;
+}
+.nav button:hover { border-color:var(--accent); color:var(--text); }
+.nav button.on { background:rgba(108,140,255,0.12); border-color:var(--accent); color:var(--accent); }
+
+.sec { display:none; }
+.sec.on { display:block; }
+
+h2 { color:var(--accent); font-size:1.1rem; margin:28px 0 10px; }
+h3 { color:var(--purple); font-size:0.92rem; margin:20px 0 8px; }
+p { font-size:0.82rem; color:var(--dim); margin-bottom:12px; line-height:1.7; }
+strong { color:var(--text); }
+
+canvas { display:block; margin:16px auto; border-radius:10px; background:var(--surface); border:1px solid var(--border); }
+
+.card {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:10px; padding:18px 22px; margin:12px 0 16px;
+}
+.card-b { border-left:3px solid var(--accent); }
+.card-p { border-left:3px solid var(--pink); }
+.card-g { border-left:3px solid var(--green); }
+.card-o { border-left:3px solid var(--orange); }
+.card h4 { font-size:0.85rem; margin-bottom:6px; }
+
+.callout {
+  background:rgba(108,140,255,0.07); border:1px solid rgba(108,140,255,0.18);
+  border-radius:8px; padding:12px 16px; margin:10px 0 14px;
+  font-size:0.78rem; color:var(--dim);
+}
+.callout strong { color:var(--text); }
+
+pre {
+  background:var(--surface2); border:1px solid var(--border);
+  border-radius:8px; padding:14px 18px; margin:10px 0 14px;
+  overflow-x:auto; font-size:0.73rem; line-height:1.6;
+}
+.kw { color:var(--pink); } .fn { color:var(--accent); } .cm { color:var(--dim); font-style:italic; }
+.st { color:var(--green); } .ty { color:var(--cyan); }
+
+.ctrls { display:flex; gap:6px; margin:10px 0; flex-wrap:wrap; }
+.cb {
+  background:var(--surface2); border:1px solid var(--border);
+  color:var(--dim); padding:5px 12px; border-radius:6px;
+  cursor:pointer; font-family:inherit; font-size:0.72rem; transition:all 0.2s;
+}
+.cb:hover { border-color:var(--accent); color:var(--text); }
+.cb.on { background:rgba(108,140,255,0.12); border-color:var(--accent); color:var(--accent); }
+
+table { width:100%; border-collapse:collapse; margin:10px 0 14px; font-size:0.76rem; }
+th { background:var(--surface2); color:var(--accent); text-align:left; padding:7px 10px; border:1px solid var(--border); }
+td { padding:7px 10px; border:1px solid var(--border); color:var(--dim); }
+
+.analogy {
+  background:rgba(251,146,60,0.08); border:1px solid rgba(251,146,60,0.2);
+  border-radius:8px; padding:14px 18px; margin:12px 0 16px;
+  font-size:0.8rem;
+}
+.analogy strong { color:var(--orange); }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>从零理解 PEFT 与训练框架</h1>
+<p class="sub">从"什么是微调"开始，一步步到你的 mmit 训练框架</p>
+
+<div class="nav">
+  <button class="on" data-s="0">0 什么是微调</button>
+  <button data-s="1">1 为什么不全部训</button>
+  <button data-s="2">2 Adapter 是什么</button>
+  <button data-s="3">3 三种主流方法</button>
+  <button data-s="4">4 LoRA 详解</button>
+  <button data-s="5">5 多模态场景</button>
+  <button data-s="6">6 mmit 训练框架</button>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- 0: 什么是微调 -->
+<!-- ══════════════════════════════════════ -->
+<div class="sec on" id="s0">
+<h2>什么是微调（Fine-tuning）？</h2>
+
+<div class="analogy">
+  <strong>类比：</strong>一个人从小读了很多书（预训练），现在你想让他当一个眼科医生（下游任务）。<br>
+  你不需要让他重新从幼儿园学起，只需要让他去医学院进修（微调）。
+</div>
+
+<canvas id="c0" width="840" height="300"></canvas>
+
+<p>大语言模型（LLM）经过海量文本预训练后，已经"懂"了语言。<strong>微调</strong>就是在预训练好的模型基础上，用你的特定数据再训练一下，让它学会新技能。</p>
+
+<div class="card card-b">
+<h4>例子</h4>
+<p>预训练的 LLaMA 模型 → 用指令数据微调 → 变成能回答问题的 Vicuna<br>
+预训练的 CLIP + LLaMA → 用图文指令数据微调 → 变成能看图回答的 LLaVA</p>
+</div>
+
+<p>问题来了：模型有<strong>几十亿个参数</strong>。全部重新训练一遍，需要多大的代价？</p>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- 1: 为什么不全部训 -->
+<!-- ══════════════════════════════════════ -->
+<div class="sec" id="s1">
+<h2>为什么不能全部训练？</h2>
+
+<canvas id="c1" width="840" height="320"></canvas>
+<div class="ctrls" id="sizeCtrl">
+  <button class="cb on" data-m="7b">7B 模型</button>
+  <button class="cb" data-m="13b">13B 模型</button>
+  <button class="cb" data-m="70b">70B 模型</button>
+</div>
+
+<div id="sizeInfo" class="card card-o">
+  <h4>7B 参数模型</h4>
+  <p id="sizeText">约 70 亿个参数 · 存储需要 ~14GB (FP16) · 训练时显存需要 ~56GB（含梯度+优化器状态）· 需要 4 张 A100 (40GB)</p>
+</div>
+
+<div class="analogy">
+  <strong>类比：</strong>为了教一个大学教授做眼科手术，你不需要改变他所有的知识（语文、数学、历史……），只需要在他现有知识的基础上，添加一小部分新的手术技能。
+</div>
+
+<p><strong>全量微调（Full Fine-tuning）</strong>的问题：</p>
+<ul style="font-size:0.8rem; color:var(--dim); padding-left:20px; margin-bottom:14px;">
+  <li><strong>显存爆炸</strong> — 每个参数需要存储：权重 + 梯度 + 优化器状态 ≈ 4x 存储</li>
+  <li><strong>灾难性遗忘</strong> — 全部训练容易忘记预训练学到的知识</li>
+  <li><strong>存储浪费</strong> — 每个任务保存一份完整模型副本</li>
+</ul>
+
+<p>解决方案：<strong>冻结大部分参数，只训练一小部分</strong> → 这就是 PEFT。</p>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- 2: Adapter 是什么 -->
+<!-- ══════════════════════════════════════ -->
+<div class="sec" id="s2">
+<h2>Adapter（适配器）到底是什么？</h2>
+
+<div class="analogy">
+  <strong>类比：</strong>想象一个插座转换器。你不需要改变整个电力系统（预训练模型），只需要在插座上加一个小小的转换器（adapter），就能兼容新的设备（新任务）。
+</div>
+
+<canvas id="c2" width="840" height="400"></canvas>
+<div class="ctrls" id="adapterCtrl">
+  <button class="cb on" data-v="concept">概念</button>
+  <button class="cb" data-v="detail">内部结构</button>
+</div>
+
+<p><strong>Adapter</strong>（适配器）是一个统称，指的是<strong>插入到预训练模型中的一小块可训练模块</strong>。</p>
+
+<div class="card card-g">
+<h4>核心思想</h4>
+<p>
+  1. <strong>冻结</strong>原始模型的所有参数（不动它们）<br>
+  2. 在模型内部<strong>插入</strong>一些新的小模块（adapter）<br>
+  3. 只<strong>训练</strong>这些新插入的小模块<br>
+  4. 保存时只需要保存这些小模块（通常只有原模型的 0.1%~1%）
+</p>
+</div>
+
+<p>不同的 PEFT 方法，本质上就是：<strong>在模型的不同位置，用不同方式插入 adapter</strong>。</p>
+
+<table>
+  <tr><th>方面</th><th>全量微调</th><th>Adapter（PEFT）</th></tr>
+  <tr><td>训练参数量</td><td>100%</td><td>0.1% ~ 3%</td></tr>
+  <tr><td>显存需求</td><td>极高</td><td>低很多</td></tr>
+  <tr><td>保存大小</td><td>整个模型 (14GB+)</td><td>几十 MB</td></tr>
+  <tr><td>多任务</td><td>每个任务一份完整模型</td><td>每个任务只存一份 adapter</td></tr>
+  <tr><td>遗忘风险</td><td>高</td><td>低（原始权重不变）</td></tr>
+</table>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- 3: 三种主流方法 -->
+<!-- ══════════════════════════════════════ -->
+<div class="sec" id="s3">
+<h2>三种主流 Adapter 方法</h2>
+
+<p>所有 PEFT 方法都在做同一件事：<strong>在冻结的模型中插入可训练模块</strong>。区别在于<strong>插在哪里、怎么插</strong>。</p>
+
+<canvas id="c3" width="840" height="460"></canvas>
+<div class="ctrls" id="methodCtrl">
+  <button class="cb on" data-m="adapter">Adapter Layer（串联）</button>
+  <button class="cb" data-m="prefix">Prefix Tuning（前缀）</button>
+  <button class="cb" data-m="lora">LoRA（并联）</button>
+</div>
+
+<div id="methodDesc" class="card card-p">
+  <h4 id="methodTitle">Adapter Layer — 串联插入</h4>
+  <p id="methodText"></p>
+</div>
+
+<div class="callout">
+  <strong>不需要全部记住！</strong>实际中用得最多的是 <strong>LoRA</strong>，因为它不增加推理延迟、参数量少、效果好。下一节详细讲 LoRA。
+</div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- 4: LoRA 详解 -->
+<!-- ══════════════════════════════════════ -->
+<div class="sec" id="s4">
+<h2>LoRA — 最流行的 PEFT 方法</h2>
+
+<div class="analogy">
+  <strong>类比：</strong>一本教科书（原始权重矩阵）已经印好了，你不能改它。但你可以在旁边贴一张小便签纸（LoRA 矩阵），每次读的时候把便签上的内容也加进去。便签很小但很有效。
+</div>
+
+<canvas id="c4" width="840" height="420"></canvas>
+<div class="ctrls" id="loraCtrl">
+  <button class="cb on" data-v="basic">基本原理</button>
+  <button class="cb" data-v="math">矩阵分解</button>
+  <button class="cb" data-v="where">注入位置</button>
+</div>
+
+<div id="loraDesc" class="card card-b"></div>
+
+<h3>关键参数</h3>
+<table>
+  <tr><th>参数</th><th>含义</th><th>典型值</th></tr>
+  <tr><td><strong>rank (r)</strong></td><td>低秩矩阵的秩，越大表达能力越强但参数越多</td><td>8 ~ 64</td></tr>
+  <tr><td><strong>alpha (α)</strong></td><td>缩放因子，控制 LoRA 输出的权重（通常 α/r）</td><td>16 ~ 64</td></tr>
+  <tr><td><strong>target_modules</strong></td><td>在哪些层注入 LoRA（如 q_proj, v_proj）</td><td>注意力层的 Q 和 V</td></tr>
+  <tr><td><strong>dropout</strong></td><td>LoRA 层的 dropout 比率</td><td>0.05</td></tr>
+</table>
+
+<h3>为什么 LoRA 这么流行？</h3>
+<div class="card card-g">
+<p>
+  1. <strong>推理零开销</strong> — 训练完可以把 LoRA 矩阵 merge 回原权重，推理时没有额外计算<br>
+  2. <strong>参数极少</strong> — 7B 模型加 LoRA (r=16) 只需训练 ~4M 参数（0.06%）<br>
+  3. <strong>效果好</strong> — 在很多任务上接近全量微调的效果<br>
+  4. <strong>可叠加</strong> — 同一个基座模型可以加载不同的 LoRA adapter 做不同任务
+</p>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- 5: 多模态场景 -->
+<!-- ══════════════════════════════════════ -->
+<div class="sec" id="s5">
+<h2>多模态模型中的 Adapter</h2>
+
+<p>多模态模型不只有一个 LLM，还有 Vision Encoder 和 Projector。Adapter 可以插在<strong>不同的组件</strong>上：</p>
+
+<canvas id="c5" width="840" height="480"></canvas>
+<div class="ctrls" id="mmCtrl">
+  <button class="cb on" data-v="llm">只改 LLM（最常见）</button>
+  <button class="cb" data-v="proj">只训 Projector</button>
+  <button class="cb" data-v="both">LLM + Projector</button>
+  <button class="cb" data-v="all">全部组件</button>
+</div>
+
+<div id="mmDesc" class="card card-o"></div>
+
+<h3>你仓库里的模型都怎么训的？</h3>
+<table>
+  <tr><th>模型</th><th>Vision</th><th>Projector</th><th>LLM</th></tr>
+  <tr><td>LLaVA Stage 1</td><td style="color:var(--dim)">冻结</td><td style="color:var(--green)">全量训练</td><td style="color:var(--dim)">冻结</td></tr>
+  <tr><td>LLaVA Stage 2</td><td style="color:var(--dim)">冻结</td><td style="color:var(--green)">训练</td><td style="color:var(--green)">LoRA / 全量</td></tr>
+  <tr><td>MiniGPT-4</td><td style="color:var(--dim)">冻结</td><td style="color:var(--green)">只训 Linear</td><td style="color:var(--dim)">冻结</td></tr>
+  <tr><td>LaVIN</td><td style="color:var(--green)">加 RepAdapter</td><td>—</td><td style="color:var(--green)">加 RepAdapter</td></tr>
+  <tr><td>CogVLM</td><td style="color:var(--dim)">冻结</td><td style="color:var(--green)">训练</td><td style="color:var(--green)">Vision Expert 权重</td></tr>
+</table>
+
+<div class="callout">
+  <strong>关键发现：</strong>不同模型训练不同的组件！这就是为什么 mmit 框架的 <code>wrap_model(method)</code> 需要接收整个 Method — 让策略自己决定操作哪些组件。
+</div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- 6: mmit 训练框架 -->
+<!-- ══════════════════════════════════════ -->
+<div class="sec" id="s6">
+<h2>mmit 训练框架 — 把一切串起来</h2>
+
+<p>现在你理解了 adapter 的概念，来看 mmit 框架是怎么让研究员<strong>随意切换不同的 adapter 方法</strong>的：</p>
+
+<canvas id="c6" width="840" height="520"></canvas>
+
+<h3>核心思路：Trainer 不管具体策略</h3>
+<div class="analogy">
+  <strong>类比：</strong>Trainer 就像一个健身房教练。他负责安排你的训练计划（几组、几次、休息多久），但他不管你用什么器械（LoRA？Adapter？RepAdapter？）。器械的选择由 PEFTStrategy 决定。
+</div>
+
+<div class="card card-b">
+<h4>三个角色分工</h4>
+<table>
+  <tr><th>角色</th><th>类</th><th>做什么</th><th>谁实现</th></tr>
+  <tr><td>教练</td><td style="color:var(--accent)">Trainer</td><td>管理训练循环、optimizer、checkpoint</td><td>框架（已写好）</td></tr>
+  <tr><td>器械</td><td style="color:var(--pink)">PEFTStrategy</td><td>决定在模型哪里加什么 adapter</td><td>研究员</td></tr>
+  <tr><td>评分标准</td><td style="color:var(--pink)">LossFunction</td><td>计算 loss（模型表现多好）</td><td>研究员</td></tr>
+</table>
+</div>
+
+<h3>使用方式</h3>
+<pre><code><span class="cm"># 1. 选择策略（通过配置文件的 name 字段）</span>
+config = TrainingConfig(
+    peft = PEFTConfig(name=<span class="st">"lora"</span>, rank=16),  <span class="cm"># ← 换个名字就换策略</span>
+    loss = <span class="st">"causal_lm"</span>,
+)
+
+<span class="cm"># 2. Trainer 通过 Registry 自动找到对应的策略类</span>
+trainer = Trainer.from_config(method, config)
+<span class="cm">#   → Registry 查找 "lora" → 实例化 LoRAStrategy</span>
+<span class="cm">#   → Registry 查找 "causal_lm" → 实例化 CausalLMLoss</span>
+
+<span class="cm"># 3. 开始训练（Trainer 按顺序调用策略的方法）</span>
+trainer.train(dataset)
+<span class="cm">#   内部：</span>
+<span class="cm">#   peft.wrap_model(method, config)   → 策略注入 adapter</span>
+<span class="cm">#   peft.trainable_params(method)     → 策略返回要训练的参数</span>
+<span class="cm">#   for batch: forward → loss → backward → step</span>
+<span class="cm">#   peft.save_adapter(method, path)   → 策略保存 adapter</span></code></pre>
+
+<h3>换一个策略有多简单？</h3>
+<pre><code><span class="cm"># 想用 LoRA？</span>
+config.peft.name = <span class="st">"lora"</span>
+
+<span class="cm"># 想用 LoRA-in-LoRA？只需要：</span>
+<span class="cm"># 1. 研究员写好 LoRAInLoRAStrategy 类</span>
+<span class="cm"># 2. 注册：registry.register("peft", "lora-in-lora", LoRAInLoRAStrategy)</span>
+<span class="cm"># 3. 切换配置：</span>
+config.peft.name = <span class="st">"lora-in-lora"</span>
+
+<span class="cm"># Trainer 的代码？一行都不用改。</span></code></pre>
+</div>
+
+</div><!-- container -->
+
+<script>
+// ════════════════════════════════════════════
+// Navigation
+// ════════════════════════════════════════════
+document.querySelector('.nav').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  document.querySelectorAll('.sec').forEach(x=>x.classList.remove('on'));
+  document.getElementById('s'+b.dataset.s).classList.add('on');
+  window.scrollTo({top:0,behavior:'smooth'});
+  initSection(+b.dataset.s);
+});
+
+function initSection(i) {
+  if(i===0) draw0();
+  if(i===1) draw1('7b');
+  if(i===2) draw2('concept');
+  if(i===3) draw3('adapter');
+  if(i===4) draw4('basic');
+  if(i===5) draw5('llm');
+  if(i===6) draw6();
+}
+
+// ════════════════════════════════════════════
+// Canvas helpers
+// ════════════════════════════════════════════
+const dpr = window.devicePixelRatio||1;
+function C(id) {
+  const c = document.getElementById(id);
+  const w = +c.getAttribute('width'), h = +c.getAttribute('height');
+  c.width = w*dpr; c.height = h*dpr;
+  c.style.width = w+'px'; c.style.height = h+'px';
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr,dpr);
+  ctx.clearRect(0,0,w,h);
+  return ctx;
+}
+function rr(ctx,x,y,w,h,r,fill,stroke,lw=1){
+  ctx.beginPath();ctx.roundRect(x,y,w,h,r);
+  if(fill){ctx.fillStyle=fill;ctx.fill();}
+  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=lw;ctx.stroke();}
+}
+function txt(ctx,t,x,y,col,sz=12,al='center'){
+  ctx.fillStyle=col;ctx.font=sz+'px "SF Mono",monospace';
+  ctx.textAlign=al;ctx.textBaseline='middle';
+  t.split('\n').forEach((l,i)=>ctx.fillText(l,x,y+i*(sz+4)));
+}
+function arrow(ctx,x1,y1,x2,y2,col,lw=1.5){
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);
+  ctx.strokeStyle=col;ctx.lineWidth=lw;ctx.stroke();
+  const a=Math.atan2(y2-y1,x2-x1),s=7;
+  ctx.beginPath();ctx.moveTo(x2,y2);
+  ctx.lineTo(x2-s*Math.cos(a-.35),y2-s*Math.sin(a-.35));
+  ctx.lineTo(x2-s*Math.cos(a+.35),y2-s*Math.sin(a+.35));
+  ctx.closePath();ctx.fillStyle=col;ctx.fill();
+}
+
+const clr = {
+  accent:'#6c8cff',pink:'#ff6c9a',green:'#4ade80',
+  orange:'#fb923c',purple:'#a78bfa',cyan:'#22d3ee',
+  dim:'#5a6078',text:'#c8cfe0',bg:'#1a1d27',border:'#2e3347',
+};
+
+// ════════════════════════════════════════════
+// 0: 什么是微调
+// ════════════════════════════════════════════
+function draw0(){
+  const ctx=C('c0');
+  // Pre-trained model
+  rr(ctx,40,40,200,100,10,clr.accent+'15',clr.accent,2);
+  txt(ctx,'预训练模型',140,70,clr.text,13);
+  txt(ctx,'(已经"懂"语言)',140,92,clr.dim,10);
+
+  // Arrow
+  arrow(ctx,240,90,330,90,clr.dim);
+  txt(ctx,'+  微调数据',285,72,clr.orange,10);
+
+  // Fine-tuned model
+  rr(ctx,330,40,200,100,10,clr.green+'15',clr.green,2);
+  txt(ctx,'微调后模型',430,70,clr.text,13);
+  txt(ctx,'(学会了新技能)',430,92,clr.dim,10);
+
+  // Arrow to task
+  arrow(ctx,530,90,620,90,clr.dim);
+
+  // Task
+  rr(ctx,620,40,180,100,10,clr.purple+'15',clr.purple,2);
+  txt(ctx,'能做特定任务',710,70,clr.text,13);
+  txt(ctx,'看图回答问题',710,92,clr.dim,10);
+
+  // Bottom: what changes
+  rr(ctx,40,180,760,90,10,'#ffffff05',clr.border);
+  txt(ctx,'微调 = 在已有知识的基础上，学习新技能',420,210,clr.text,13);
+  txt(ctx,'不需要从零开始  ·  预训练的知识保留  ·  只需要少量新数据',420,238,clr.dim,10);
+}
+
+// ════════════════════════════════════════════
+// 1: 为什么不全部训
+// ════════════════════════════════════════════
+const sizeData = {
+  '7b': {n:'7B', params:'70亿', storage:'~14GB', vram:'~56GB', gpus:'4x A100 (40GB)'},
+  '13b': {n:'13B', params:'130亿', storage:'~26GB', vram:'~104GB', gpus:'8x A100 (40GB)'},
+  '70b': {n:'70B', params:'700亿', storage:'~140GB', vram:'~560GB', gpus:'16x A100 (80GB)'},
+};
+function draw1(m){
+  const ctx=C('c1');
+  const d=sizeData[m];
+  document.getElementById('sizeText').textContent =
+    `约 ${d.params} 个参数 · 存储需要 ${d.storage} (FP16) · 训练时显存需要 ${d.vram}（含梯度+优化器状态）· 需要 ${d.gpus}`;
+
+  const W=840,H=320;
+  // Bar chart: params vs adapter
+  const maxH = 220;
+  const fullH = m==='7b'? 140 : m==='13b'? 200 : maxH;
+  const adapterH = fullH * 0.02;
+
+  // Full fine-tune bar
+  rr(ctx,150,40+(maxH-fullH),160,fullH,6,clr.red+'30',clr.red,1.5);
+  txt(ctx,'全量微调',230,30+(maxH-fullH),clr.red,11);
+  txt(ctx,d.params+' 参数',230,50+(maxH-fullH),clr.dim,9);
+  txt(ctx,'全部训练',230,maxH+54,clr.red,10);
+
+  // PEFT bar
+  rr(ctx,530,40+(maxH-adapterH-2),160,Math.max(adapterH,6),6,clr.green+'50',clr.green,1.5);
+  txt(ctx,'PEFT',610,30+(maxH-adapterH-2),clr.green,11);
+  txt(ctx,'~0.1% 参数',610,50+(maxH-adapterH-2),clr.dim,9);
+  txt(ctx,'只训 adapter',610,maxH+54,clr.green,10);
+
+  // Frozen part for PEFT
+  rr(ctx,530,40+(maxH-fullH),160,fullH-adapterH-4,6,clr.dim+'15',clr.dim+'40');
+  txt(ctx,'冻结\n(不训练)',610,40+(maxH-fullH)+((fullH-adapterH)/2),clr.dim,10);
+
+  // vs label
+  txt(ctx,'vs',420,160,clr.text,16);
+}
+
+document.getElementById('sizeCtrl').addEventListener('click',e=>{
+  const b=e.target.closest('.cb'); if(!b) return;
+  document.querySelectorAll('#sizeCtrl .cb').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); draw1(b.dataset.m);
+});
+
+// ════════════════════════════════════════════
+// 2: Adapter 概念
+// ════════════════════════════════════════════
+function draw2(v){
+  const ctx=C('c2');
+
+  if(v==='concept'){
+    // Frozen model
+    rr(ctx,100,30,280,330,12,clr.dim+'10',clr.dim,1.5);
+    txt(ctx,'预训练模型（冻结）',240,20,clr.dim,11);
+
+    // Layers
+    for(let i=0;i<5;i++){
+      const y=60+i*62;
+      rr(ctx,130,y,220,44,6,clr.dim+'12',clr.dim+'40');
+      txt(ctx,`Transformer 层 ${i+1}`,240,y+22,clr.dim,10);
+    }
+
+    // Arrow
+    arrow(ctx,420,195,500,195,clr.orange,2);
+    txt(ctx,'插入 adapter',460,178,clr.orange,10);
+
+    // Model with adapters
+    rr(ctx,500,30,280,330,12,clr.dim+'10',clr.green,1.5);
+    txt(ctx,'加了 Adapter 的模型',640,20,clr.green,11);
+
+    for(let i=0;i<5;i++){
+      const y=60+i*62;
+      rr(ctx,530,y,220,44,6,clr.dim+'12',clr.dim+'40');
+      txt(ctx,`Transformer 层 ${i+1}`,640,y+15,clr.dim,10);
+      // Adapter highlight
+      rr(ctx,630,y+28,110,12,4,clr.green+'30',clr.green);
+      txt(ctx,'adapter',685,y+34,clr.green,8);
+    }
+  } else {
+    // Detail view
+    rr(ctx,60,20,720,360,12,'#ffffff05',clr.border);
+    txt(ctx,'Adapter 内部结构（一个典型的 Bottleneck Adapter）',420,14,clr.dim,10);
+
+    // Input
+    txt(ctx,'输入 x',420,60,clr.text,12);
+    arrow(ctx,420,72,420,100,clr.dim);
+
+    // Down project
+    rr(ctx,300,100,240,40,6,clr.green+'20',clr.green);
+    txt(ctx,'降维 (d → r)    例如 4096 → 64',420,120,clr.green,10);
+    arrow(ctx,420,140,420,165,clr.dim);
+
+    // Activation
+    rr(ctx,330,165,180,30,6,clr.orange+'20',clr.orange);
+    txt(ctx,'激活函数 (ReLU)',420,180,clr.orange,10);
+    arrow(ctx,420,195,420,220,clr.dim);
+
+    // Up project
+    rr(ctx,300,220,240,40,6,clr.green+'20',clr.green);
+    txt(ctx,'升维 (r → d)    例如 64 → 4096',420,240,clr.green,10);
+    arrow(ctx,420,260,420,290,clr.dim);
+
+    // Residual
+    txt(ctx,'输出 = 原始输出 + adapter输出',420,310,clr.text,11);
+
+    // Side annotation
+    rr(ctx,600,100,170,160,8,clr.purple+'10',clr.purple+'30');
+    txt(ctx,'参数量对比',685,115,clr.purple,10);
+    txt(ctx,'原始层: 4096×4096\n= 16M 参数\n\nadapter:\n4096×64 + 64×4096\n= 0.5M 参数\n\n只有原来的 3%',685,175,clr.dim,9);
+  }
+}
+document.getElementById('adapterCtrl').addEventListener('click',e=>{
+  const b=e.target.closest('.cb'); if(!b) return;
+  document.querySelectorAll('#adapterCtrl .cb').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); draw2(b.dataset.v);
+});
+
+// ════════════════════════════════════════════
+// 3: 三种方法
+// ════════════════════════════════════════════
+const methodInfo = {
+  adapter: {
+    title:'Adapter Layer — 串联插入',
+    text:'在每个 Transformer 层的后面（或中间）插入一个小的 bottleneck 网络。数据必须流经 adapter，所以叫"串联"。\n\n优点：简单直观\n缺点：增加推理延迟（数据要多走一步）'
+  },
+  prefix: {
+    title:'Prefix Tuning — 前缀令牌',
+    text:'在每层 attention 的 key/value 前面拼接一组可学习的"虚拟令牌"。模型在做 attention 时会关注这些虚拟令牌，从而改变行为。\n\n优点：不改变模型结构\n缺点：会占用一部分序列长度'
+  },
+  lora: {
+    title:'LoRA — 并联低秩矩阵',
+    text:'在原始权重矩阵旁边并联一对低秩矩阵 A 和 B。输出 = 原始输出 + A·B·输入。不改变数据流，训练完可以 merge 回去。\n\n优点：零推理开销、参数极少\n缺点：对每种层需要选择 target_modules'
+  },
+};
+function draw3(m){
+  const ctx=C('c3');
+  document.getElementById('methodTitle').textContent = methodInfo[m].title;
+  document.getElementById('methodText').textContent = methodInfo[m].text;
+
+  const W=840;
+  // Three columns
+  const cols = ['adapter','prefix','lora'];
+  const labels = ['Adapter Layer','Prefix Tuning','LoRA'];
+  const colW = 250, gap = 30, startX = (W - 3*colW - 2*gap)/2;
+
+  cols.forEach((c,i)=>{
+    const x = startX + i*(colW+gap);
+    const active = c === m;
+    const col = active ? clr.green : clr.dim;
+
+    rr(ctx,x,30,colW,390,10,active?col+'10':'#ffffff03',col,active?2:1);
+    txt(ctx,labels[i],x+colW/2,20,col,11);
+
+    if(c==='adapter'){
+      // Serial insertion
+      for(let j=0;j<3;j++){
+        const y=60+j*120;
+        rr(ctx,x+30,y,colW-60,44,6,clr.dim+'12',clr.dim+'40');
+        txt(ctx,'Transformer 层',x+colW/2,y+22,clr.dim,10);
+        if(j<3){
+          rr(ctx,x+60,y+54,colW-120,30,6,active?clr.green+'25':clr.dim+'10',active?clr.green:clr.dim+'40');
+          txt(ctx,'↓ adapter ↓',x+colW/2,y+69,active?clr.green:clr.dim,9);
+        }
+        if(j<2) arrow(ctx,x+colW/2,y+88,x+colW/2,y+120,clr.dim+'60');
+      }
+    } else if(c==='prefix'){
+      for(let j=0;j<3;j++){
+        const y=60+j*120;
+        rr(ctx,x+30,y,colW-60,80,6,clr.dim+'12',clr.dim+'40');
+        txt(ctx,'Attention',x+colW/2,y+20,clr.dim,10);
+        // Prefix tokens
+        rr(ctx,x+40,y+38,70,28,4,active?clr.green+'25':clr.dim+'10',active?clr.green:clr.dim+'40');
+        txt(ctx,'前缀',x+75,y+52,active?clr.green:clr.dim,8);
+        rr(ctx,x+120,y+38,colW-160,28,4,clr.dim+'10',clr.dim+'30');
+        txt(ctx,'原始 K/V',x+colW/2+20,y+52,clr.dim,8);
+        if(j<2) arrow(ctx,x+colW/2,y+84,x+colW/2,y+120,clr.dim+'60');
+      }
+    } else {
+      for(let j=0;j<3;j++){
+        const y=60+j*120;
+        // Original weight
+        rr(ctx,x+20,y,colW-40,44,6,clr.dim+'12',clr.dim+'40');
+        txt(ctx,'W (frozen)',x+colW/2,y+22,clr.dim,10);
+        // LoRA parallel
+        rr(ctx,x+20,y+54,55,30,4,active?clr.green+'25':clr.dim+'10',active?clr.green:clr.dim+'40');
+        txt(ctx,'A↓',x+47,y+69,active?clr.green:clr.dim,9);
+        rr(ctx,x+85,y+54,55,30,4,active?clr.green+'25':clr.dim+'10',active?clr.green:clr.dim+'40');
+        txt(ctx,'B↑',x+112,y+69,active?clr.green:clr.dim,9);
+        txt(ctx,'+',x+152,y+69,clr.dim,10);
+        txt(ctx,'并联',x+190,y+69,active?clr.green:clr.dim,9);
+        if(j<2) arrow(ctx,x+colW/2,y+88,x+colW/2,y+120,clr.dim+'60');
+      }
+    }
+  });
+}
+document.getElementById('methodCtrl').addEventListener('click',e=>{
+  const b=e.target.closest('.cb'); if(!b) return;
+  document.querySelectorAll('#methodCtrl .cb').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); draw3(b.dataset.m);
+});
+
+// ════════════════════════════════════════════
+// 4: LoRA 详解
+// ════════════════════════════════════════════
+function draw4(v){
+  const ctx=C('c4');
+  const desc = document.getElementById('loraDesc');
+
+  if(v==='basic'){
+    desc.innerHTML = '<h4>基本原理</h4><p>原始权重 <strong>W</strong> 被冻结。在旁边加两个小矩阵 <strong>A</strong> 和 <strong>B</strong>。<br>输出 = W·x + <strong style="color:#4ade80">B·A·x</strong>（绿色部分是 LoRA 的贡献）。<br>只训练 A 和 B，W 不变。</p>';
+
+    // Input
+    txt(ctx,'输入 x',80,50,clr.text,12);
+    arrow(ctx,120,50,200,50,clr.dim);
+
+    // Split
+    arrow(ctx,200,50,200,120,clr.dim);
+    arrow(ctx,200,50,200,280,clr.dim);
+
+    // Original path
+    rr(ctx,250,90,200,60,8,clr.dim+'12',clr.dim,1.5);
+    txt(ctx,'W (frozen)\n原始权重',350,120,clr.dim,11);
+    arrow(ctx,200,120,250,120,clr.dim);
+    arrow(ctx,450,120,560,120,clr.dim);
+
+    // LoRA path
+    rr(ctx,250,250,90,60,8,clr.green+'20',clr.green,2);
+    txt(ctx,'A↓\nd→r',295,280,clr.green,11);
+    arrow(ctx,200,280,250,280,clr.dim);
+
+    arrow(ctx,340,280,400,280,clr.green);
+
+    rr(ctx,400,250,90,60,8,clr.green+'20',clr.green,2);
+    txt(ctx,'B↑\nr→d',445,280,clr.green,11);
+    arrow(ctx,490,280,560,200,clr.green);
+
+    // Sum
+    ctx.beginPath();ctx.arc(580,165,20,0,Math.PI*2);
+    ctx.fillStyle=clr.orange+'20';ctx.fill();
+    ctx.strokeStyle=clr.orange;ctx.lineWidth=2;ctx.stroke();
+    txt(ctx,'+',580,165,clr.orange,16);
+
+    arrow(ctx,600,165,680,165,clr.orange);
+    txt(ctx,'输出\ny = Wx + BAx',740,165,clr.text,11);
+
+    // Annotation
+    rr(ctx,550,320,260,70,8,clr.green+'10',clr.green+'30');
+    txt(ctx,'只有 A 和 B 需要训练\nW 冻结不动',680,345,clr.green,10);
+    txt(ctx,'α/r 缩放',680,368,clr.dim,9);
+
+  } else if(v==='math'){
+    desc.innerHTML = '<h4>矩阵分解的直觉</h4><p>W 是一个 <strong>d×d</strong> 的大矩阵（如 4096×4096 = 16M 参数）。<br>LoRA 把权重的<strong>变化量 ΔW</strong> 分解为两个小矩阵的乘积：<strong>ΔW = B·A</strong><br>A 是 r×d，B 是 d×r。当 r=16 时，参数量 = 2×4096×16 = <strong>131K</strong>（原来的 0.8%）。</p>';
+
+    // Big W matrix
+    rr(ctx,60,40,180,180,6,clr.dim+'15',clr.dim,1.5);
+    txt(ctx,'W',150,80,clr.dim,24);
+    txt(ctx,'4096 × 4096',150,120,clr.dim,10);
+    txt(ctx,'16M 参数',150,140,clr.dim,10);
+    txt(ctx,'(冻结)',150,165,clr.dim,10);
+
+    txt(ctx,'+',280,130,clr.text,20);
+
+    // ΔW = B · A
+    rr(ctx,320,60,40,140,4,clr.green+'25',clr.green,2);
+    txt(ctx,'B',340,90,clr.green,13);
+    txt(ctx,'4096\n×\n16',340,130,clr.green,9);
+
+    txt(ctx,'·',375,130,clr.text,16);
+
+    rr(ctx,390,100,140,40,4,clr.green+'25',clr.green,2);
+    txt(ctx,'A     16 × 4096',460,120,clr.green,9);
+
+    txt(ctx,'=   ΔW',570,130,clr.orange,14);
+
+    // Parameter count
+    rr(ctx,60,260,740,120,10,'#ffffff05',clr.border);
+    txt(ctx,'参数量对比',430,280,clr.text,12);
+    // Full
+    rr(ctx,100,300,250,50,6,clr.red+'15',clr.red);
+    txt(ctx,'全量: 4096×4096 = 16,777,216',225,325,clr.red,10);
+    // LoRA
+    rr(ctx,400,300,350,50,6,clr.green+'15',clr.green);
+    txt(ctx,'LoRA (r=16): 4096×16×2 = 131,072 (0.8%)',575,325,clr.green,10);
+
+  } else {
+    desc.innerHTML = '<h4>LoRA 注入在哪里？</h4><p>Transformer 每一层有多个权重矩阵：Q/K/V/O（attention）和 FFN 的上下投影。<br>LoRA 通常注入到 <strong>Q 和 V</strong> 的投影矩阵上（效果最好且参数最少）。<br><code>target_modules=["q_proj", "v_proj"]</code></p>';
+
+    // Transformer layer
+    rr(ctx,120,30,600,360,12,'#ffffff05',clr.border);
+    txt(ctx,'一个 Transformer 层内部',420,22,clr.dim,10);
+
+    // Self-attention
+    rr(ctx,160,60,520,140,8,clr.dim+'10',clr.dim+'40');
+    txt(ctx,'Self-Attention',420,54,clr.dim,10);
+
+    const qkvos = ['Q proj','K proj','V proj','O proj'];
+    const lora_on = [true,false,true,false]; // Q and V
+    qkvos.forEach((name,i)=>{
+      const x = 190+i*120;
+      const has = lora_on[i];
+      rr(ctx,x,80,100,44,6,has?clr.green+'15':clr.dim+'10',has?clr.green:clr.dim+'30',has?2:1);
+      txt(ctx,name,x+50,95,has?clr.text:clr.dim,10);
+      if(has){
+        rr(ctx,x+10,128,80,20,4,clr.green+'25',clr.green);
+        txt(ctx,'+ LoRA',x+50,138,clr.green,8);
+      }
+    });
+
+    // FFN
+    rr(ctx,160,220,520,80,8,clr.dim+'10',clr.dim+'40');
+    txt(ctx,'Feed-Forward Network (FFN)',420,250,clr.dim,10);
+    txt(ctx,'通常不加 LoRA（也可以加）',420,270,clr.dim,9);
+
+    // Arrow
+    arrow(ctx,420,200,420,220,clr.dim);
+
+    // Legend
+    rr(ctx,200,320,120,30,6,clr.green+'15',clr.green);
+    txt(ctx,'加了 LoRA',260,335,clr.green,9);
+    rr(ctx,360,320,120,30,6,clr.dim+'10',clr.dim+'30');
+    txt(ctx,'未加 LoRA',420,335,clr.dim,9);
+  }
+}
+document.getElementById('loraCtrl').addEventListener('click',e=>{
+  const b=e.target.closest('.cb'); if(!b) return;
+  document.querySelectorAll('#loraCtrl .cb').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); draw4(b.dataset.v);
+});
+
+// ════════════════════════════════════════════
+// 5: 多模态
+// ════════════════════════════════════════════
+const mmInfo = {
+  llm: { text:'最常见的方式。Vision Encoder 和 Projector 都冻结，只在 LLM 上加 LoRA。\n适用于：LLaVA Stage 2、LAMM、PandaGPT 等。' },
+  proj: { text:'LLaVA Stage 1 的方式。LLM 和 Vision 都冻结，只训练 Projector。\n目的：让 Projector 学会把视觉特征"翻译"成 LLM 能理解的 embedding。' },
+  both: { text:'同时训练 LLM（LoRA）和 Projector（全量）。用不同的学习率。\n适用于：LLaVA Stage 2（完整版）。' },
+  all: { text:'甚至连 Vision Encoder 也可以加 adapter。\n适用于：LaVIN（在 CLIP 上加 RepAdapter）、Qwen-VL（解冻 attn_pool）。' },
+};
+function draw5(v){
+  const ctx=C('c5');
+  const info = mmInfo[v];
+  document.getElementById('mmDesc').innerHTML = '<p>'+info.text.replace(/\n/g,'<br>')+'</p>';
+
+  const comps = [
+    {x:60,y:80,w:200,h:120,label:'Vision Encoder\n(如 CLIP ViT)',key:'vision'},
+    {x:320,y:80,w:180,h:120,label:'Projector\n(如 MLP)',key:'proj'},
+    {x:560,y:80,w:220,h:120,label:'LLM\n(如 LLaMA)',key:'llm'},
+  ];
+
+  const states = {
+    llm:  {vision:'frozen',proj:'frozen',llm:'lora'},
+    proj: {vision:'frozen',proj:'train',llm:'frozen'},
+    both: {vision:'frozen',proj:'train',llm:'lora'},
+    all:  {vision:'adapter',proj:'train',llm:'lora'},
+  };
+  const st = states[v];
+
+  const stateColor = {frozen:clr.dim, train:clr.green, lora:clr.accent, adapter:clr.orange};
+  const stateLabel = {frozen:'冻结', train:'全量训练', lora:'LoRA', adapter:'加 Adapter'};
+
+  // Image input
+  txt(ctx,'图像',30,140,clr.text,11);
+  arrow(ctx,50,140,60,140,clr.dim);
+
+  comps.forEach(c=>{
+    const s = st[c.key];
+    const col = stateColor[s];
+    const active = s !== 'frozen';
+
+    rr(ctx,c.x,c.y,c.w,c.h,10,col+'12',col,active?2.5:1);
+    txt(ctx,c.label,c.x+c.w/2,c.y+c.h/2-10,active?'#fff':clr.dim,12);
+    txt(ctx,stateLabel[s],c.x+c.w/2,c.y+c.h/2+18,col,11);
+
+    if(active){
+      ctx.shadowColor=col; ctx.shadowBlur=12;
+      ctx.beginPath();ctx.roundRect(c.x,c.y,c.w,c.h,10);
+      ctx.strokeStyle=col;ctx.lineWidth=1;ctx.stroke();
+      ctx.shadowBlur=0;
+    }
+  });
+
+  // Arrows between
+  arrow(ctx,260,140,320,140,clr.dim);
+  arrow(ctx,500,140,560,140,clr.dim);
+  txt(ctx,'features',290,128,clr.dim,9);
+  txt(ctx,'embeddings',530,128,clr.dim,9);
+
+  // Text input
+  arrow(ctx,670,60,670,80,clr.dim);
+  txt(ctx,'文本',670,50,clr.text,10);
+
+  // Output
+  arrow(ctx,670,200,670,230,clr.dim);
+  txt(ctx,'回答',670,244,clr.text,11);
+
+  // Parameter count comparison
+  rr(ctx,60,280,720,80,10,'#ffffff05',clr.border);
+  const pcts = {
+    llm: ['Vision: 0%', 'Proj: 0%', 'LLM LoRA: ~0.1%', '总训练: ~0.1%'],
+    proj: ['Vision: 0%', 'Proj: 100%', 'LLM: 0%', '总训练: ~0.5%'],
+    both: ['Vision: 0%', 'Proj: 100%', 'LLM LoRA: ~0.1%', '总训练: ~0.6%'],
+    all: ['Vision adapter: ~0.05%', 'Proj: 100%', 'LLM LoRA: ~0.1%', '总训练: ~0.65%'],
+  };
+  pcts[v].forEach((t,i)=>{
+    const x = 100+i*180;
+    txt(ctx,t,x,320,clr.dim,9,'left');
+  });
+}
+document.getElementById('mmCtrl').addEventListener('click',e=>{
+  const b=e.target.closest('.cb'); if(!b) return;
+  document.querySelectorAll('#mmCtrl .cb').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); draw5(b.dataset.v);
+});
+
+// ════════════════════════════════════════════
+// 6: Framework
+// ════════════════════════════════════════════
+function draw6(){
+  const ctx=C('c6');
+
+  // Title
+  txt(ctx,'mmit 训练框架调度流程',420,18,clr.accent,13);
+
+  const steps = [
+    {x:60,y:50,w:300,h:46,label:'① Config 指定策略名 "lora"',col:clr.green},
+    {x:60,y:116,w:300,h:46,label:'② Registry 查找并创建 LoRAStrategy',col:clr.accent},
+    {x:60,y:182,w:300,h:46,label:'③ peft.wrap_model(method)',col:clr.pink},
+    {x:60,y:248,w:300,h:46,label:'④ method.forward_loss(batch)',col:clr.purple},
+    {x:60,y:314,w:300,h:46,label:'⑤ loss_fn.compute(logits, labels)',col:clr.pink},
+    {x:60,y:380,w:300,h:46,label:'⑥ loss.backward() + optimizer',col:clr.accent},
+    {x:60,y:446,w:300,h:46,label:'⑦ peft.save_adapter(method)',col:clr.green},
+  ];
+
+  steps.forEach((s,i)=>{
+    rr(ctx,s.x,s.y,s.w,s.h,8,s.col+'12',s.col,1.5);
+    txt(ctx,s.label,s.x+s.w/2,s.y+s.h/2,clr.text,10);
+    if(i<steps.length-1) arrow(ctx,s.x+s.w/2,s.y+s.h,s.x+s.w/2,steps[i+1].y,clr.dim+'60');
+  });
+
+  // Loop bracket
+  ctx.strokeStyle=clr.orange+'40';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+  ctx.beginPath();ctx.roundRect(50,240,320,135,8);ctx.stroke();ctx.setLineDash([]);
+  txt(ctx,'循环',375,305,clr.orange,10);
+
+  // Right side: who does what
+  const ann = [
+    {y:73,who:'数据',text:'PEFTConfig(name="lora", rank=16)',col:clr.green},
+    {y:139,who:'框架',text:'registry.build("peft", "lora")\n→ LoRAStrategy()',col:clr.accent},
+    {y:205,who:'策略',text:'策略决定对哪些组件\n加什么 adapter',col:clr.pink},
+    {y:271,who:'Method',text:'Vision → Projector → LLM\n返回 logits + labels',col:clr.purple},
+    {y:337,who:'策略',text:'计算标量 loss\n(可自定义)',col:clr.pink},
+    {y:403,who:'框架',text:'梯度只更新 adapter\n(其余冻结)',col:clr.accent},
+    {y:469,who:'策略',text:'只保存 adapter 权重\n(几十 MB)',col:clr.green},
+  ];
+
+  ann.forEach(a=>{
+    rr(ctx,420,a.y-20,30,16,4,a.col+'20',a.col);
+    txt(ctx,a.who,435,a.y-12,a.col,7);
+    txt(ctx,a.text,470,a.y,clr.dim,9,'left');
+  });
+}
+
+// ════════════════════════════════════════════
+// Init
+// ════════════════════════════════════════════
+draw0();
+</script>
+</body>
+</html>

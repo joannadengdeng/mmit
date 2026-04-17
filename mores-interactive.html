@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MoReS 交互式学习：Representation Steering</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Noto Sans SC", "PingFang SC", -apple-system, sans-serif;
+    background: #0f1117; color: #e2e8f0; min-height: 100vh;
+  }
+  .header {
+    text-align: center; padding: 20px 20px 12px;
+    background: linear-gradient(180deg, #1a1d2e 0%, #0f1117 100%);
+  }
+  .header h1 { font-size: 22px; color: #34d399; font-weight: 800; }
+  .header p { font-size: 13px; color: #64748b; margin-top: 4px; }
+
+  .tabs { display: flex; justify-content: center; gap: 6px; padding: 10px 20px; flex-wrap: wrap; }
+  .tab-btn {
+    padding: 8px 20px; border-radius: 8px; border: 2px solid #334155;
+    background: #1e293b; color: #94a3b8; cursor: pointer;
+    font-size: 13px; font-weight: 600; transition: all 0.2s; font-family: inherit;
+  }
+  .tab-btn:hover { border-color: #64748b; color: #e2e8f0; }
+  .tab-btn.active { border-color: #34d399; color: #34d399; background: #064e3b; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* Step controls */
+  .step-controls { display: flex; gap: 8px; justify-content: center; padding: 10px 20px; flex-wrap: wrap; }
+  .step-btn {
+    padding: 8px 20px; border-radius: 8px; border: 2px solid #334155;
+    background: #1e293b; color: #94a3b8; cursor: pointer;
+    font-size: 13px; font-weight: 700; transition: all 0.2s; font-family: inherit;
+  }
+  .step-btn:hover { border-color: #34d399; color: #34d399; }
+  .step-btn.active-step { border-color: #34d399; color: #0f1117; background: #34d399; }
+  .nav-btn {
+    padding: 8px 20px; border-radius: 8px; border: none;
+    background: #334155; color: #e2e8f0; cursor: pointer;
+    font-size: 14px; font-weight: 700; transition: all 0.15s; font-family: inherit;
+  }
+  .nav-btn:hover { background: #475569; }
+  .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  /* Layout */
+  .main-layout { display: flex; gap: 0; max-width: 1400px; margin: 0 auto; }
+  .canvas-wrap { flex: 1; min-width: 0; padding: 10px; }
+  .canvas-wrap canvas { width: 100%; border-radius: 12px; background: #141722; }
+  .side {
+    width: 370px; flex-shrink: 0; padding: 16px;
+    background: #1a1d2e; border-left: 1px solid #2d3348;
+    overflow-y: auto; max-height: calc(100vh - 120px);
+  }
+  .side-title { font-size: 15px; font-weight: 700; color: #34d399; margin-bottom: 10px; }
+  .side-card {
+    background: #141722; border-radius: 8px; padding: 12px;
+    margin-bottom: 10px; border: 1px solid #2d3348;
+    font-size: 12px; line-height: 1.8;
+  }
+  .side-card h4 { font-size: 13px; margin-bottom: 6px; color: #34d399; }
+  .side-card code {
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 11px; background: #0f1117; padding: 1px 5px;
+    border-radius: 3px; color: #93c5fd;
+  }
+  .side-card .dim { color: #64748b; font-size: 11px; }
+  .side-card pre {
+    background: #0f1117; border-radius: 6px; padding: 8px;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 10px; line-height: 1.6; overflow-x: auto;
+    margin-top: 6px; color: #cdd6f4;
+  }
+  .side-card pre .kw { color: #cba6f7; }
+  .side-card pre .cmt { color: #6c7086; font-style: italic; }
+  .side-card pre .num { color: #fab387; }
+
+  .tb { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; font-family: "JetBrains Mono", monospace; }
+  .tb-h { background: #1e3a5f; color: #93c5fd; }
+  .tb-R { background: #064e3b; color: #6ee7b7; }
+  .tb-W { background: #4c1d95; color: #c4b5fd; }
+  .tb-d { background: #7c2d12; color: #fdba74; }
+  .tb-out { background: #14532d; color: #86efac; }
+
+  @media (max-width: 900px) {
+    .main-layout { flex-direction: column; }
+    .side { width: 100%; max-height: none; border-left: none; border-top: 1px solid #2d3348; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>MoReS: Representation Steering</h1>
+  <p>Bi et al., "LLaVA Steering: Visual Instruction Tuning through Representation Steering", ACL 2025</p>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="idea">核心思想</button>
+  <button class="tab-btn" data-tab="proj">投影是什么</button>
+  <button class="tab-btn" data-tab="forward">Step-by-Step 计算</button>
+  <button class="tab-btn" data-tab="ortho">正交约束</button>
+  <button class="tab-btn" data-tab="where">挂在哪里</button>
+  <button class="tab-btn" data-tab="compare">vs LoRA 对比</button>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- TAB 1: Core Idea                    -->
+<!-- ════════════════════════════════════ -->
+<div class="panel active" id="panel-idea">
+  <div class="main-layout">
+    <div class="canvas-wrap"><canvas id="ideaCv" width="1400" height="850"></canvas></div>
+    <div class="side" id="ideaSide">
+      <div class="side-title">MoReS 在做什么？</div>
+      <div class="side-card">
+        <h4>一句话</h4>
+        不改模型权重，只在特定层的输出上"轻推"一下方向。<br><br>
+        想象 hidden state 是一个在高维空间飞行的球：<br>
+        &bull; <strong>LoRA</strong>：改变发射台（修改权重矩阵 W）<br>
+        &bull; <strong>MoReS</strong>：不改发射台，在飞行途中轻推球的方向<br><br>
+        这个"轻推"只在一个极小的子空间（rank=4）里发生，所以参数量比 LoRA 少 500 倍。
+      </div>
+      <div class="side-card">
+        <h4>公式</h4>
+        <pre>h' = h + R<sup>T</sup> &middot; (W&middot;h + b - R&middot;h)
+
+R: [d, D]  正交投影矩阵
+W: [d, D]  学习的"转向"矩阵
+d = 4      极低维子空间
+D = 1536   模型 hidden 维度</pre>
+      </div>
+      <div class="side-card">
+        <h4>为什么叫 "Steering"（转向）？</h4>
+        <code>W&middot;h</code> 是模型认为 h 应该去的方向<br>
+        <code>R&middot;h</code> 是 h 当前在子空间里的投影<br>
+        <code>W&middot;h - R&middot;h</code> = 两者的差 = 需要修正的量<br>
+        <code>R<sup>T</sup> &middot; (...)</code> = 把修正量映射回原始高维空间<br><br>
+        所以整个过程是：<strong>在低维空间里算出要修正多少，然后映射回去加上</strong>。
+      </div>
+      <div class="side-card">
+        <h4>关键数字（Qwen2.5-VL-3B）</h4>
+        <span class="dim">模型总参数:</span> ~3B<br>
+        <span class="dim">LoRA 参数 (r=8):</span> ~3.5M<br>
+        <span class="dim">MoReS 参数 (d=4, 9层):</span> <strong style="color:#fbbf24">~55K</strong> + projector<br>
+        <span class="dim">参数减少:</span> <strong style="color:#34d399">~60x fewer</strong>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- TAB 1.5: Projection Intuition       -->
+<!-- ════════════════════════════════════ -->
+<div class="panel" id="panel-proj">
+  <div class="main-layout">
+    <div class="canvas-wrap"><canvas id="projCv" width="1400" height="900"></canvas></div>
+    <div class="side" id="projSide">
+      <div class="side-title">投影到底在做什么？</div>
+      <div class="side-card">
+        <h4>日常类比</h4>
+        太阳照在你身上，地面上出现你的<strong>影子</strong>。<br><br>
+        你是 3D 的（高维），影子是 2D 的（低维）。<br>
+        影子保留了你的轮廓信息，但丢失了高度。<br><br>
+        <strong>R&middot;h</strong> 就是在做同样的事：<br>
+        h 是 1536 维的"你"，<br>
+        R&middot;h 是 4 维的"影子"。
+      </div>
+      <div class="side-card">
+        <h4>为什么 MoReS 需要投影？</h4>
+        直接在 1536 维上做修正 → 需要 1536&times;1536 的矩阵 → <strong>236 万参数</strong><br><br>
+        先投影到 4 维，在 4 维上修正，再投影回来：<br>
+        R: 4&times;1536 + W: 4&times;1536 = <strong>1.2 万参数</strong><br><br>
+        <strong style="color:#fbbf24">省了 200 倍！</strong>代价是：修正只能发生在 R 定义的 4 维子空间里。
+      </div>
+      <div class="side-card">
+        <h4>R&middot;h vs R<sup>T</sup>&middot;x 的关系</h4>
+        <code>R&middot;h</code>: 高维 → 低维（投影/压缩）<br>
+        <code>R<sup>T</sup>&middot;x</code>: 低维 → 高维（反投影/展开）<br><br>
+        如果 R 是正交的：<br>
+        <code>R<sup>T</sup>&middot;R&middot;h</code> = h 在子空间里的分量<br>
+        （不等于 h 本身！因为丢失了子空间外的信息）<br><br>
+        就像影子没法完全还原成 3D 的你。<br>
+        但 MoReS 不需要还原——它只需要在子空间里<strong>算出修正量</strong>，然后映射回去<strong>加上</strong>。
+      </div>
+      <div class="side-card">
+        <h4>拖动左图的滑块试试</h4>
+        改变投影方向（R 的方向），看看"影子"如何变化。<br>
+        不同的 R 会捕捉到 h 的不同方面。
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- TAB 2: Step-by-Step Forward         -->
+<!-- ════════════════════════════════════ -->
+<div class="panel" id="panel-forward">
+  <div class="step-controls">
+    <button class="nav-btn" id="prevBtn" disabled>&larr; 上一步</button>
+    <button class="step-btn active-step" data-step="0">0. 输入 h</button>
+    <button class="step-btn" data-step="1">1. R&middot;h</button>
+    <button class="step-btn" data-step="2">2. W&middot;h+b</button>
+    <button class="step-btn" data-step="3">3. 差值</button>
+    <button class="step-btn" data-step="4">4. R<sup>T</sup>&middot;&delta;</button>
+    <button class="step-btn" data-step="5">5. h + &delta;</button>
+    <button class="nav-btn" id="nextBtn">下一步 &rarr;</button>
+  </div>
+  <div class="main-layout">
+    <div class="canvas-wrap"><canvas id="fwdCv" width="1400" height="1000"></canvas></div>
+    <div class="side" id="fwdSide"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- TAB 3: Orthogonality Constraint     -->
+<!-- ════════════════════════════════════ -->
+<div class="panel" id="panel-ortho">
+  <div class="main-layout">
+    <div class="canvas-wrap"><canvas id="orthoCv" width="1400" height="850"></canvas></div>
+    <div class="side" id="orthoSide">
+      <div class="side-title">正交约束：为什么 R 必须正交？</div>
+      <div class="side-card">
+        <h4>什么是正交矩阵？</h4>
+        满足 R&middot;R<sup>T</sup> = I（单位矩阵）的矩阵。<br><br>
+        几何意义：R 的行向量互相垂直，且长度为 1。<br>
+        像一组完美的坐标轴——不重叠、不压缩。
+      </div>
+      <div class="side-card">
+        <h4>正交为什么重要？</h4>
+        <strong>1. 投影不丢信息：</strong><br>
+        R&middot;h 把 h 投影到低维空间，R<sup>T</sup> 再投影回来。<br>
+        如果 R 正交，R<sup>T</sup>&middot;R&middot;h 只会保留 h 在子空间中的分量，不会引入畸变。<br><br>
+        <strong>2. 修正量不泄漏：</strong><br>
+        &delta; = R<sup>T</sup>&middot;(...)，如果 R 正交，&delta; 严格落在 R 定义的子空间内。<br>
+        不会意外修改子空间外的维度。<br><br>
+        <strong>3. 训练稳定：</strong><br>
+        正交约束防止 R 退化（比如所有行变成同一个方向）。
+      </div>
+      <div class="side-card">
+        <h4>软约束 vs 硬约束</h4>
+        <strong>硬约束</strong>：每步训练后强制正交化（Gram-Schmidt）—— 计算贵<br>
+        <strong>软约束</strong>（MoReS 用的）：加一个惩罚项到 loss<br>
+        <pre>L_ortho = ||R&middot;R<sup>T</sup> - I||<sub>F</sub><sup>2</sup>
+
+L_total = L_task + &lambda; &middot; L_ortho
+
+<span class="cmt"># 代码：</span>
+<span class="kw">def</span> orthogonal_penalty(self):
+    RRt = self.R @ self.R.t()
+    I = torch.eye(self.rank)
+    <span class="kw">return</span> (RRt - I).pow(<span class="num">2</span>).sum()</pre>
+        当 R 完美正交时，RR<sup>T</sup>=I，惩罚=0。<br>
+        偏离越多，惩罚越大。
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- TAB 4: Where to hook                -->
+<!-- ════════════════════════════════════ -->
+<div class="panel" id="panel-where">
+  <div class="main-layout">
+    <div class="canvas-wrap"><canvas id="whereCv" width="1400" height="850"></canvas></div>
+    <div class="side" id="whereSide">
+      <div class="side-title">Hook 挂在哪里？</div>
+      <div class="side-card">
+        <h4>MoReS vs LoRA 的挂载点不同</h4>
+        <strong>LoRA</strong>：挂在每个 <code>nn.Linear</code> 上（q/k/v/o/gate/up/down_proj）<br>
+        每层 7 个挂载点<br><br>
+        <strong>MoReS</strong>：挂在<strong>整个 Transformer Layer 的输出</strong>上<br>
+        每层只有 1 个挂载点<br><br>
+        而且 MoReS 不是每层都挂——只选前几层 + 后几层：<br>
+        <code>"f4+l5"</code> = 前 4 层 + 后 5 层 = 9 个 intervention
+      </div>
+      <div class="side-card">
+        <h4>为什么只选部分层？</h4>
+        论文发现：<br>
+        &bull; <strong>前几层</strong>：处理视觉信息的编码<br>
+        &bull; <strong>后几层</strong>：生成语言输出的关键<br>
+        &bull; <strong>中间层</strong>：更通用的表示，改动收益小<br><br>
+        选 f4+l5 是 accuracy-efficiency 的最佳平衡。
+      </div>
+      <div class="side-card">
+        <h4>对应代码</h4>
+        <pre><span class="cmt"># 位置解析</span>
+positions = _parse_positions("f4+l5", 36)
+<span class="cmt"># → [0,1,2,3, 31,32,33,34,35]</span>
+
+<span class="cmt"># 在这些层上挂 hook</span>
+<span class="kw">for</span> idx <span class="kw">in</span> positions:
+  iv = OrthogonalIntervention(
+      hidden_dim=1536, rank=4)
+  layer_list[idx].register_forward_hook(
+      make_hook(iv))</pre>
+      </div>
+      <div class="side-card">
+        <h4>还训练了什么？</h4>
+        除了 9 个 intervention 模块，MoReS 还解冻了<br>
+        <strong>vision-language projector</strong>（视觉→语言的桥梁）。<br><br>
+        LLM 的所有权重完全不动。
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- TAB 5: vs LoRA comparison           -->
+<!-- ════════════════════════════════════ -->
+<div class="panel" id="panel-compare">
+  <div class="main-layout">
+    <div class="canvas-wrap"><canvas id="compCv" width="1400" height="850"></canvas></div>
+    <div class="side" id="compSide">
+      <div class="side-title">MoReS vs LoRA</div>
+      <div class="side-card">
+        <h4>本质区别</h4>
+        <strong>LoRA</strong>：改变 <code>W</code> 的行为（W+&Delta;W）<br>
+        → 改变线性变换本身<br>
+        → 影响 attention pattern / FFN 映射<br><br>
+        <strong>MoReS</strong>：不改 <code>W</code>，改 hidden state <code>h</code><br>
+        → 在层与层之间"拐弯"<br>
+        → W 的行为完全不变，只是输入被微调了
+      </div>
+      <div class="side-card">
+        <h4>参数量对比</h4>
+        <pre>LoRA (r=8, 252 个 Linear):
+  每个: 1536*8 + 8*1536 = 24,576
+  总计: 252 * 24,576 = <strong>6.19M</strong>
+
+MoReS (d=4, 9 层):
+  R: 4 * 1536 = 6,144
+  W: 4 * 1536 + 4 = 6,148
+  每层: 12,292
+  总计: 9 * 12,292 = <strong>110K</strong>
+
+<span style="color:#fbbf24">MoReS 约为 LoRA 的 1/56</span></pre>
+      </div>
+      <div class="side-card">
+        <h4>什么时候用哪个？</h4>
+        <strong>用 LoRA</strong>：<br>
+        &bull; 需要大幅改变模型行为<br>
+        &bull; 任务和预训练差距大<br>
+        &bull; GPU 显存充足<br><br>
+        <strong>用 MoReS</strong>：<br>
+        &bull; 微调幅度小（如领域适配）<br>
+        &bull; 极度省参数/省显存<br>
+        &bull; 想保留更多预训练知识
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════
+// SHARED DRAWING
+// ═══════════════════════════════════════
+const C = {
+  bg: '#141722', text: '#e2e8f0', dim: '#64748b', arrow: '#4b5563',
+  h: '#3b82f6', R: '#34d399', W: '#a78bfa', delta: '#fb923c',
+  out: '#4ade80', frozen: '#475569', ortho: '#f59e0b',
+  lora: '#a78bfa', loraBg: '#2e1065',
+};
+
+function rr(ctx,x,y,w,h,r,f,s,lw){ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(f){ctx.fillStyle=f;ctx.fill();}if(s){ctx.strokeStyle=s;ctx.lineWidth=lw||1.5;ctx.stroke();}}
+function arr(ctx,x1,y1,x2,y2,c,lw){ctx.save();ctx.strokeStyle=c||C.arrow;ctx.lineWidth=lw||2;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();const a=Math.atan2(y2-y1,x2-x1),sz=8;ctx.fillStyle=c||C.arrow;ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-sz*Math.cos(a-0.4),y2-sz*Math.sin(a-0.4));ctx.lineTo(x2-sz*Math.cos(a+0.4),y2-sz*Math.sin(a+0.4));ctx.fill();ctx.restore();}
+function txt(ctx,s,x,y,sz,c,al,wt){ctx.fillStyle=c||C.text;ctx.font=`${wt||'600'} ${sz||13}px "Noto Sans SC",-apple-system,sans-serif`;ctx.textAlign=al||'center';ctx.textBaseline='middle';ctx.fillText(s,x,y);}
+function mono(ctx,s,x,y,sz,c,al){ctx.fillStyle=c||'#93c5fd';ctx.font=`600 ${sz||11}px "JetBrains Mono",Consolas,monospace`;ctx.textAlign=al||'center';ctx.textBaseline='middle';ctx.fillText(s,x,y);}
+function glow(ctx,x,y,w,h,r,c,lw){ctx.save();ctx.shadowColor=c;ctx.shadowBlur=16;rr(ctx,x,y,w,h,r,null,c,lw||2.5);ctx.restore();rr(ctx,x,y,w,h,r,null,c,lw||2.5);}
+
+function drawTensor(ctx,x,y,rows,cols,cW,cH,color,label){
+  const w=cols*cW,h=rows*cH;
+  rr(ctx,x,y,w,h,4,color+'18',color,1.5);
+  ctx.strokeStyle=color+'44';ctx.lineWidth=0.5;
+  for(let r=1;r<rows;r++){ctx.beginPath();ctx.moveTo(x,y+r*cH);ctx.lineTo(x+w,y+r*cH);ctx.stroke();}
+  for(let c=1;c<cols;c++){ctx.beginPath();ctx.moveTo(x+c*cW,y);ctx.lineTo(x+c*cW,y+h);ctx.stroke();}
+  if(label)txt(ctx,label,x+w/2,y-14,12,color,'center','700');
+}
+function drawGlowTensor(ctx,x,y,rows,cols,cW,cH,color,label,t){
+  ctx.save();ctx.shadowColor=color;ctx.shadowBlur=12*(0.6+0.4*Math.sin(t*3));
+  drawTensor(ctx,x,y,rows,cols,cW,cH,color,label);
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════
+// TAB 1: IDEA CANVAS
+// ═══════════════════════════════════════
+const ideaCv=document.getElementById('ideaCv');
+const ideaCtx=ideaCv.getContext('2d');
+let aT=0;
+
+function drawIdea(){
+  const ctx=ideaCtx,W=ideaCv.width,H=ideaCv.height;
+  ctx.clearRect(0,0,W,H);ctx.fillStyle=C.bg;ctx.fillRect(0,0,W,H);
+
+  const cx=W/2;
+
+  txt(ctx,'MoReS 核心直觉：在飞行途中轻推方向',cx,30,18,C.text,'center','800');
+
+  // Draw 2D representation of h being steered
+  const originX=300, originY=450;
+
+  // Axes
+  ctx.save();ctx.strokeStyle='#334155';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(100,originY);ctx.lineTo(W-100,originY);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(originX,100);ctx.lineTo(originX,H-50);ctx.stroke();
+  ctx.restore();
+  txt(ctx,'高维空间的 2D 简化示意',cx,H-20,11,C.dim);
+
+  // Original h vector
+  const hEndX=originX+350, hEndY=originY-200;
+  ctx.save();ctx.strokeStyle=C.h;ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(originX,originY);ctx.lineTo(hEndX,hEndY);ctx.stroke();
+  // Arrow head
+  const hAngle=Math.atan2(hEndY-originY,hEndX-originX);
+  ctx.fillStyle=C.h;ctx.beginPath();
+  ctx.moveTo(hEndX,hEndY);
+  ctx.lineTo(hEndX-12*Math.cos(hAngle-0.3),hEndY-12*Math.sin(hAngle-0.3));
+  ctx.lineTo(hEndX-12*Math.cos(hAngle+0.3),hEndY-12*Math.sin(hAngle+0.3));
+  ctx.fill();ctx.restore();
+  txt(ctx,'h (原始 hidden state)',hEndX+20,hEndY-10,14,C.h,'left','700');
+
+  // Steered h' vector (slightly different direction)
+  const pulse=0.6+0.4*Math.sin(aT*2);
+  const h2EndX=originX+300, h2EndY=originY-280;
+  ctx.save();ctx.strokeStyle=C.out;ctx.lineWidth=3;ctx.shadowColor=C.out;ctx.shadowBlur=8*pulse;
+  ctx.beginPath();ctx.moveTo(originX,originY);ctx.lineTo(h2EndX,h2EndY);ctx.stroke();
+  const h2Angle=Math.atan2(h2EndY-originY,h2EndX-originX);
+  ctx.fillStyle=C.out;ctx.beginPath();
+  ctx.moveTo(h2EndX,h2EndY);
+  ctx.lineTo(h2EndX-12*Math.cos(h2Angle-0.3),h2EndY-12*Math.sin(h2Angle-0.3));
+  ctx.lineTo(h2EndX-12*Math.cos(h2Angle+0.3),h2EndY-12*Math.sin(h2Angle+0.3));
+  ctx.fill();ctx.restore();
+  txt(ctx,"h' (被 steer 后的 state)",h2EndX+20,h2EndY-10,14,C.out,'left','700');
+
+  // Delta arrow (from h to h')
+  ctx.save();ctx.strokeStyle=C.delta;ctx.lineWidth=2.5;ctx.setLineDash([6,4]);
+  ctx.beginPath();ctx.moveTo(hEndX,hEndY);ctx.lineTo(h2EndX,h2EndY);ctx.stroke();
+  ctx.restore();
+  // Delta arrow head
+  const dAngle=Math.atan2(h2EndY-hEndY,h2EndX-hEndX);
+  ctx.fillStyle=C.delta;ctx.beginPath();
+  ctx.moveTo(h2EndX,h2EndY);
+  ctx.lineTo(h2EndX-10*Math.cos(dAngle-0.3),h2EndY-10*Math.sin(dAngle-0.3));
+  ctx.lineTo(h2EndX-10*Math.cos(dAngle+0.3),h2EndY-10*Math.sin(dAngle+0.3));
+  ctx.fill();
+  txt(ctx,'\u03B4 = R\u1D40\u00b7(W\u00b7h - R\u00b7h)',hEndX+30,hEndY-50,13,C.delta,'left','700');
+  txt(ctx,'(极小的修正量)',hEndX+30,hEndY-34,11,C.dim,'left');
+
+  // R subspace indication
+  ctx.save();ctx.strokeStyle=C.R+'66';ctx.lineWidth=1.5;ctx.setLineDash([4,4]);
+  const rAngle=-0.5;
+  ctx.beginPath();ctx.moveTo(originX-100*Math.cos(rAngle),originY+100*Math.sin(rAngle));
+  ctx.lineTo(originX+500*Math.cos(rAngle),originY-500*Math.sin(rAngle));ctx.stroke();
+  ctx.restore();
+  txt(ctx,'R 定义的低维子空间 (d=4)',originX+420,originY-180,11,C.R,'left');
+
+  // Right side: pipeline
+  const pipeX=W-380, pipeY=120;
+  txt(ctx,'Transformer Layer 内部',pipeX+150,pipeY,14,C.text,'center','700');
+
+  const steps=[
+    {label:'Attention',color:C.frozen,y:pipeY+40},
+    {label:'Add & Norm',color:C.frozen,y:pipeY+100},
+    {label:'FFN',color:C.frozen,y:pipeY+160},
+    {label:'Add & Norm',color:C.frozen,y:pipeY+220},
+    {label:'Layer Output: h',color:C.h,y:pipeY+280},
+    {label:'MoReS Intervention',color:C.out,y:pipeY+360},
+    {label:"Steered Output: h'",color:C.out,y:pipeY+440},
+  ];
+  steps.forEach((s,i)=>{
+    const isIntervention=i===5;
+    if(isIntervention){
+      glow(ctx,pipeX,s.y,300,40,8,C.out,2);
+      rr(ctx,pipeX,s.y,300,40,8,C.out+'22',null);
+    } else {
+      rr(ctx,pipeX,s.y,300,40,8,s.color+'22',s.color,1.5);
+    }
+    txt(ctx,s.label,pipeX+150,s.y+20,12,s.color);
+    if(i<steps.length-1)arr(ctx,pipeX+150,s.y+42,pipeX+150,steps[i+1].y-2,i===4?C.out:C.arrow,i===4?2.5:1.5);
+  });
+
+  txt(ctx,'Hook 挂在这里',pipeX+330,pipeY+380,12,C.delta,'left','700');
+  ctx.save();ctx.strokeStyle=C.delta;ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(pipeX+302,pipeY+380);ctx.lineTo(pipeX+325,pipeY+380);ctx.stroke();
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════
+// TAB 2: STEP-BY-STEP FORWARD
+// ═══════════════════════════════════════
+const fwdCv=document.getElementById('fwdCv');
+const fwdCtx=fwdCv.getContext('2d');
+let curStep=0;
+
+const STEPS=[
+  {title:'输入 h: Layer 的输出 hidden state',
+   desc:'一个 Transformer Layer 执行完 Attention + FFN 后的输出。每个 token（图像 patch 或文字）都有一个 1536 维的向量。',
+   example:`<strong>具体例子</strong>：输入 "这张图片里有什么？" + 一张图<br><br>
+<code>h: [1, 203, 1536]</code><br>
+&bull; batch=1（一条数据）<br>
+&bull; seq=203（196 个图像 patch + 7 个文字 token）<br>
+&bull; 1536 = 每个 token 的向量维度<br><br>
+<pre style="font-size:10px;color:#94a3b8;line-height:1.5">位置 [0]   &lt;img_patch_1&gt;   → [1536 维向量]
+位置 [1]   &lt;img_patch_2&gt;   → [1536 维向量]
+...
+位置 [195] &lt;img_patch_196&gt; → [1536 维向量]
+位置 [196] 这              → [1536 维向量]
+位置 [197] 张              → [1536 维向量]
+位置 [198] 图片            → [1536 维向量]
+位置 [199] 里              → [1536 维向量]
+位置 [200] 有              → [1536 维向量]
+位置 [201] 什么            → [1536 维向量]
+位置 [202] ？              → [1536 维向量]</pre>`,
+   code:`# Hook 拦截整个 Layer 的 output
+def hook(module, input, output):
+    h = output[0]  # [1, 203, 1536]
+    h_new = intervention(h)
+    return (h_new,) + output[1:]`,
+   shapes:{'h':'[1, 203, 1536]'}},
+  {title:'Step 1: R\u00b7h — 投影到低维子空间',
+   desc:'R 是 [4, 1536] 的正交矩阵。对每个 token 的 1536 维向量各自独立做投影，压缩到 4 维。203 个 token 各做一次，互不影响。',
+   example:`<strong>R 对每个 token 独立操作</strong>：<br><br>
+<code>h: [1, 203, 1536]</code> &times; <code>R\u1D40: [1536, 4]</code><br><br>
+<pre style="font-size:10px;color:#94a3b8;line-height:1.5">token[0]   的 [1536] × R\u1D40 [1536,4] → [4]
+token[1]   的 [1536] × R\u1D40 [1536,4] → [4]
+...
+token[202] 的 [1536] × R\u1D40 [1536,4] → [4]
+
+堆起来 → Rh: [1, 203, 4]</pre>
+seq 维度只是被"批量处理"了，R 不知道 seq 的存在。<br>
+相当于同一个 R 矩阵复制 203 次，各自处理一个 token。`,
+   code:`# self.R: [4, 1536]  正交初始化
+Rh = F.linear(h, self.R)
+# h:  [1, 203, 1536]
+# R:  [4, 1536]
+# Rh: [1, 203, 4]
+
+# F.linear(h, R) = h @ R.T
+# 矩阵乘法只作用在最后一维 (1536)
+# batch 和 seq 维度自动 broadcast`,
+   shapes:{'R':'[4, 1536]','h':'[1, 203, 1536]','Rh':'[1, 203, 4]'}},
+  {title:'Step 2: W\u00b7h + b — 学习目标位置',
+   desc:'W 也是对每个 token 独立操作。W\u00b7h+b 表示"模型认为每个 token 在子空间里应该在的位置"。',
+   example:`<strong>同样对每个 token 独立</strong>：<br><br>
+<pre style="font-size:10px;color:#94a3b8;line-height:1.5">token[0]   "img_patch_1" → W 认为它应在 [0.12, -0.03, 0.08, 0.01]
+token[196] "这"          → W 认为它应在 [0.05, 0.11, -0.02, 0.09]
+token[201] "什么"        → W 认为它应在 [-0.01, 0.15, 0.03, -0.06]
+
+Wh: [1, 203, 4]</pre>
+训练开始时 W=0，所以 Wh 全是零。<br>
+随着训练，W 学到每类 token 应该被推到哪里。`,
+   code:`# self.W: nn.Linear(1536, 4, bias=True)
+# 初始化: W.weight = zeros, W.bias = zeros
+Wh = self.W(h)
+# h:  [1, 203, 1536]
+# Wh: [1, 203, 4]
+
+# 训练开始: Wh ≈ 0 (全零初始化)
+# 训练结束: Wh = 每个 token 的"目标位置"`,
+   shapes:{'W':'nn.Linear(1536 → 4)','h':'[1, 203, 1536]','Wh':'[1, 203, 4]'}},
+  {title:'Step 3: \u03B4_low = Wh - Rh（在低维空间算差值）',
+   desc:'对每个 token：Wh 是"目标位置"，Rh 是"当前位置"，差值就是"这个 token 需要修正多少"。只有 4 维。',
+   example:`<strong>逐 token 做减法</strong>：<br><br>
+<pre style="font-size:10px;color:#94a3b8;line-height:1.5">token[0]:
+  Wh = [0.12, -0.03, 0.08, 0.01]  "目标"
+  Rh = [0.45,  0.12, 0.03, 0.22]  "当前"
+  差 = [-0.33, -0.15, 0.05, -0.21] "要推多远"
+
+token[201] "什么":
+  Wh = [-0.01, 0.15, 0.03, -0.06]
+  Rh = [0.08,  0.20, 0.01,  0.03]
+  差 = [-0.09, -0.05, 0.02, -0.09]
+
+\u03B4_low: [1, 203, 4]</pre>
+每个 token 的修正量不同！模型学到对图像 patch 推一个方向，对文字 token 推另一个方向。`,
+   code:`delta_low = self.dropout(Wh - Rh)
+# Wh:        [1, 203, 4]
+# Rh:        [1, 203, 4]
+# delta_low: [1, 203, 4]
+
+# 直觉：每个 token 各自被修正
+# 图像 token 的修正 ≠ 文字 token 的修正
+# 模型通过 W 学到了区别对待`,
+   shapes:{'Wh':'[1, 203, 4]','Rh':'[1, 203, 4]','\u03B4_low':'[1, 203, 4]'}},
+  {title:'Step 4: \u03B4 = R\u1D40\u00b7\u03B4_low（映射回高维）',
+   desc:'R\u1D40 把每个 token 的 4 维修正量各自独立地映射回 1536 维。修正量严格落在 R 定义的 4 维子空间内。',
+   example:`<strong>展开回 1536 维</strong>：<br><br>
+<pre style="font-size:10px;color:#94a3b8;line-height:1.5">token[0] 的 \u03B4_low: [4 维]
+  × R\u1D40: [1536, 4]
+  → \u03B4: [1536 维]
+  （1536 维中只有 4 个方向被修改）
+
+token[201] 的 \u03B4_low: [4 维]
+  × R\u1D40: [1536, 4]
+  → \u03B4: [1536 维]
+
+\u03B4: [1, 203, 1536]</pre>
+虽然 \u03B4 是 1536 维的，但它的"有效维度"只有 4。<br>
+就像影子虽然画在 2D 平面上，但只沿一条线有变化。`,
+   code:`delta = F.linear(delta_low, self.R.t())
+# delta_low: [1, 203, 4]
+# R.t():     [1536, 4]
+# delta:     [1, 203, 1536]
+
+# 正交性保证:
+# delta 只在 R 的列空间内有值
+# 1536 维中有 1532 维完全不受影响`,
+   shapes:{'R\u1D40':'[1536, 4]','\u03B4_low':'[1, 203, 4]','\u03B4':'[1, 203, 1536]'}},
+  {title:"Step 5: h' = h + \u03B4（轻推完成）",
+   desc:'每个 token 的 hidden state 都被加上了各自的修正量。图像 token 和文字 token 被推向不同的方向。',
+   example:`<strong>最终效果</strong>：<br><br>
+<pre style="font-size:10px;color:#94a3b8;line-height:1.5">token[0] "img_patch_1":
+  h  = [0.23, -1.45, 0.67, ...]  (1536 维)
+  \u03B4  = [0.01, -0.02, 0.00, ...]  (极小的修正)
+  h' = [0.24, -1.47, 0.67, ...]  (轻推后)
+
+token[201] "什么":
+  h  = [-0.89, 2.34, -0.12, ...]
+  \u03B4  = [-0.01, 0.01, 0.00, ...]
+  h' = [-0.90, 2.35, -0.12, ...]</pre>
+修正量很小（\u03B4 &lt;&lt; h），这就是"轻推"的含义。<br>
+但这些小修正足以让模型生成更好的回答。`,
+   code:`return h + delta
+# h:  [1, 203, 1536]
+# \u03B4:  [1, 203, 1536]  (很小的值)
+# h': [1, 203, 1536]
+
+# 完整: h' = h + R\u1D40·(W·h + b - R·h)
+# 训练开始: W=0 → \u03B4=0 → h'=h (不改变)
+# 训练结束: 每个 token 被精确调整`,
+   shapes:{'h':'[1, 203, 1536]','\u03B4':'[1, 203, 1536]',"h'":'[1, 203, 1536]'}},
+];
+
+function drawFwd(){
+  const ctx=fwdCtx,W=fwdCv.width,H=fwdCv.height;
+  ctx.clearRect(0,0,W,H);ctx.fillStyle=C.bg;ctx.fillRect(0,0,W,H);
+  const s=curStep, cx=W/2, cW=36, cH=24;
+
+  txt(ctx,'MoReS Forward Pass \u2014 OrthogonalIntervention \u5185\u90e8',cx,28,16,C.text,'center','800');
+  txt(ctx,`Step ${s} / 5`,cx,48,12,C.dim);
+
+  // Wider spacing layout — no overlaps
+  const midX=500;
+  const leftX=240, rightX=760;
+  const yH=80;
+  const ySplit=yH+4*cH+30;       // split point after h
+  const yBranch=ySplit+60;        // R·h and W·h tensors
+  const yMinus=yBranch+4*cH+60;  // minus operation
+  const yDelta=yMinus+50;        // delta_low tensor
+  const yBack=yDelta+4*cH+50;    // R^T projection
+  const yPlus=yBack+4*cH+40;     // plus operation
+  const yOut=yPlus+50;           // final output
+
+  // ── h input (always) ──
+  if(s===0) drawGlowTensor(ctx,midX-3*cW,yH,4,6,cW,cH,C.h,'h  [1, 203, 1536]  \u2190 196 img patches + 7 text tokens',aT);
+  else drawTensor(ctx,midX-3*cW,yH,4,6,cW,cH,s>0?C.dim:C.h,'h  [1, 203, 1536]');
+
+  // ── Split arrows (step >= 1) ──
+  if(s>=1){
+    arr(ctx,midX-2*cW,yH+4*cH+4,leftX,yBranch-18,s===1?C.R:C.arrow,s===1?2.5:1.5);
+    arr(ctx,midX+2*cW,yH+4*cH+4,rightX,yBranch-18,s===2?C.W:C.arrow,s===2?2.5:1.5);
+
+    // ── R·h (left branch) ──
+    if(s===1) drawGlowTensor(ctx,leftX-cW/2,yBranch,4,1,cW,cH,C.R,'Rh  [1, 203, 4]',aT);
+    else drawTensor(ctx,leftX-cW/2,yBranch,4,1,cW,cH,s>1?C.dim:C.R,'Rh  [203, 4]');
+
+    // Step 1 annotation
+    if(s===1){
+      rr(ctx,leftX-160,yBranch+4*cH+10,320,46,6,'#064e3b44',C.R+'66',1);
+      txt(ctx,'R: [4, 1536] \u6b63\u4ea4\u77e9\u9635',leftX,yBranch+4*cH+24,11,C.R);
+      txt(ctx,'1536 \u7ef4 \u2192 4 \u7ef4\uff08\u6295\u5f71\u5230\u5b50\u7a7a\u95f4\uff09',leftX,yBranch+4*cH+42,11,'#fbbf24');
+    }
+  }
+
+  // ── W·h+b (right branch, step >= 2) ──
+  if(s>=2){
+    if(s===2) drawGlowTensor(ctx,rightX-cW/2,yBranch,4,1,cW,cH,C.W,'Wh  [1, 203, 4]',aT);
+    else drawTensor(ctx,rightX-cW/2,yBranch,4,1,cW,cH,s>2?C.dim:C.W,'Wh  [203, 4]');
+
+    if(s===2){
+      rr(ctx,rightX-160,yBranch+4*cH+10,320,46,6,'#4c1d9544',C.W+'66',1);
+      txt(ctx,'W: nn.Linear(1536, 4) \u53ef\u5b66\u4e60',rightX,yBranch+4*cH+24,11,C.W);
+      txt(ctx,'\u96f6\u521d\u59cb\u5316 \u2192 \u8bad\u7ec3\u5f00\u59cb\u65f6 Wh \u2248 0',rightX,yBranch+4*cH+42,11,'#fbbf24');
+    }
+  }
+
+  // ── Subtract (step >= 3) ──
+  if(s>=3){
+    // Arrows from both branches to minus
+    arr(ctx,leftX,yBranch+4*cH+4,midX-20,yMinus,s===3?C.delta:C.arrow,s===3?2.5:1.5);
+    arr(ctx,rightX,yBranch+4*cH+4,midX+20,yMinus,s===3?C.delta:C.arrow,s===3?2.5:1.5);
+
+    // Minus circle
+    const minusColor=s===3?C.delta:C.dim;
+    ctx.beginPath();ctx.arc(midX,yMinus,16,0,Math.PI*2);
+    ctx.fillStyle=s===3?'#7c2d12':'#1e293b';ctx.fill();
+    ctx.strokeStyle=minusColor;ctx.lineWidth=2;ctx.stroke();
+    txt(ctx,'Wh\u2212Rh',midX,yMinus,10,minusColor,'center','700');
+
+    // Arrow to delta_low
+    arr(ctx,midX,yMinus+18,midX,yDelta-18,s===3?C.delta:C.arrow,s===3?2.5:1.5);
+
+    // delta_low tensor
+    if(s===3){
+      drawGlowTensor(ctx,midX-cW/2,yDelta,4,1,cW,cH,C.delta,'\u03B4_low  [1, 203, 4]',aT);
+      rr(ctx,midX-170,yDelta+4*cH+10,340,30,6,'#7c2d1244',C.delta+'66',1);
+      txt(ctx,'\u201c\u76ee\u6807\u201d \u2212 \u201c\u5f53\u524d\u201d = \u9700\u8981\u4fee\u6b63\u591a\u5c11',midX,yDelta+4*cH+25,11,C.delta);
+    } else {
+      drawTensor(ctx,midX-cW/2,yDelta,4,1,cW,cH,C.dim,'\u03B4_low [4]');
+    }
+  }
+
+  // ── R^T back-projection (step >= 4) ──
+  if(s>=4){
+    arr(ctx,midX,yDelta+4*cH+4,midX,yBack-18,s===4?C.R:C.arrow,s===4?3:1.5);
+
+    if(s===4){
+      drawGlowTensor(ctx,midX-3*cW,yBack,4,6,cW,cH,C.R,'\u03B4 = R\u1D40\u00b7\u03B4_low  [1, 203, 1536]',aT);
+      rr(ctx,midX+3*cW+20,yBack+10,200,46,6,'#064e3b44',C.R+'66',1);
+      txt(ctx,'4 \u2192 1536 \u7ef4',midX+3*cW+120,yBack+24,12,C.R);
+      txt(ctx,'R\u1D40 \u628a\u4fee\u6b63\u91cf\u6620\u5c04\u56de\u9ad8\u7ef4',midX+3*cW+120,yBack+42,11,'#fbbf24');
+    } else {
+      drawTensor(ctx,midX-3*cW,yBack,4,6,cW,cH,C.dim,'\u03B4 [1536]');
+    }
+  }
+
+  // ── h + delta output (step >= 5) ──
+  if(s>=5){
+    // Plus circle
+    ctx.save();ctx.shadowColor=C.out;ctx.shadowBlur=14;
+    ctx.beginPath();ctx.arc(midX,yPlus,16,0,Math.PI*2);ctx.fillStyle='#14532d';ctx.fill();
+    ctx.strokeStyle=C.out;ctx.lineWidth=2;ctx.stroke();ctx.restore();
+    ctx.beginPath();ctx.arc(midX,yPlus,16,0,Math.PI*2);ctx.fillStyle='#14532d';ctx.fill();
+    ctx.strokeStyle=C.out;ctx.lineWidth=2;ctx.stroke();
+    txt(ctx,'+',midX,yPlus,18,C.out,'center','800');
+
+    // Arrow from delta to plus
+    arr(ctx,midX,yBack+4*cH+4,midX,yPlus-18,C.out,2.5);
+
+    // h bypass (skip connection)
+    ctx.save();ctx.strokeStyle=C.h+'88';ctx.lineWidth=2;ctx.setLineDash([6,4]);
+    const bypassX=midX+3*cW+10;
+    ctx.beginPath();
+    ctx.moveTo(midX+3*cW,yH+2*cH);
+    ctx.lineTo(bypassX+40,yH+2*cH);
+    ctx.lineTo(bypassX+40,yPlus);
+    ctx.lineTo(midX+18,yPlus);
+    ctx.stroke();ctx.restore();
+    txt(ctx,'h (\u8df3\u8fde)',bypassX+50,(yH+2*cH+yPlus)/2,11,C.h,'left');
+
+    // Arrow from plus to output
+    arr(ctx,midX,yPlus+18,midX,yOut-18,C.out,3);
+
+    drawGlowTensor(ctx,midX-3*cW,yOut,4,6,cW,cH,C.out,"h' = h + \u03B4  [1, 203, 1536]",aT);
+
+    rr(ctx,midX-190,yOut+4*cH+10,380,30,8,'#14532d44',C.out+'66',1);
+    txt(ctx,'Hook \u8fd4\u56de h\' \u2192 \u4e0b\u4e00\u5c42\u6536\u5230\u7684\u662f steer \u8fc7\u7684 state',midX,yOut+4*cH+25,11,C.out);
+  }
+
+  // ── Param legend (top-right, always visible) ──
+  const lgX=W-260,lgY=70;
+  rr(ctx,lgX,lgY,230,100,8,'#1e293b','#334155',1);
+  txt(ctx,'\u53ef\u8bad\u7ec3\u53c2\u6570',lgX+115,lgY+16,12,C.text,'center','700');
+  mono(ctx,'R: [4, 1536]  \u2190 \u6b63\u4ea4',lgX+115,lgY+38,10,C.R);
+  mono(ctx,'W: [4, 1536]  \u2190 \u96f6',lgX+115,lgY+56,10,C.W);
+  mono(ctx,'b: [4]        \u2190 \u96f6',lgX+115,lgY+74,10,C.W);
+  mono(ctx,'\u603b\u8ba1: ~12K / \u5c42',lgX+115,lgY+92,10,'#fbbf24');
+}
+
+function updateFwdSide(){
+  const step=STEPS[curStep];
+  const side=document.getElementById('fwdSide');
+  let html=`<div class="side-title">${step.title}</div>`;
+  html+=`<div class="side-card"><h4>\u53d1\u751f\u4e86\u4ec0\u4e48</h4>${step.desc}</div>`;
+
+  // Concrete example (new!)
+  if(step.example){
+    html+=`<div class="side-card" style="border-color:#334155;background:#0f1117;">${step.example}</div>`;
+  }
+
+  html+=`<div class="side-card"><h4>\u5bf9\u5e94\u4ee3\u7801</h4><pre>${step.code}</pre></div>`;
+  html+=`<div class="side-card"><h4>\u5f20\u91cf\u5f62\u72b6</h4>`;
+  for(const[k,v]of Object.entries(step.shapes)){
+    const cls=k.includes('h')&&!k.includes("h'")&&!k.includes('Rh')&&!k.includes('Wh')?'tb-h':k.includes('R')?'tb-R':k.includes('W')?'tb-W':k.includes('\u03B4')?'tb-d':'tb-out';
+    html+=`<span class="tb ${cls}">${k}</span> <span class="dim">${v}</span><br>`;
+  }
+  html+=`</div>`;
+
+  if(curStep>=1){
+    html+=`<div class="side-card"><h4>\u53c2\u6570\u72b6\u6001</h4>`;
+    [{n:'R',t:true,note:'\u6b63\u4ea4\u521d\u59cb\u5316, requires_grad=True',c:'#6ee7b7'},
+     {n:'W.weight',t:true,note:'\u96f6\u521d\u59cb\u5316, requires_grad=True',c:'#c4b5fd'},
+     {n:'W.bias',t:true,note:'\u96f6\u521d\u59cb\u5316, requires_grad=True',c:'#c4b5fd'},
+     {n:'Layer \u5185\u90e8\u6240\u6709 W',t:false,note:'frozen, requires_grad=False',c:'#64748b'},
+    ].forEach(p=>{
+      const icon=p.t?'\u25cf':'\u25cb';
+      html+=`<span style="color:${p.c}">${icon}</span> <code>${p.n}</code> <span class="dim">\u2014 ${p.note}</span><br>`;
+    });
+    html+=`</div>`;
+  }
+  side.innerHTML=html;
+}
+
+function setStep(s){
+  curStep=Math.max(0,Math.min(5,s));
+  document.querySelectorAll('#panel-forward .step-btn').forEach(b=>b.classList.toggle('active-step',parseInt(b.dataset.step)===curStep));
+  document.getElementById('prevBtn').disabled=curStep===0;
+  document.getElementById('nextBtn').disabled=curStep===5;
+  updateFwdSide();
+}
+
+document.querySelectorAll('#panel-forward .step-btn').forEach(b=>b.addEventListener('click',()=>setStep(parseInt(b.dataset.step))));
+document.getElementById('prevBtn').addEventListener('click',()=>setStep(curStep-1));
+document.getElementById('nextBtn').addEventListener('click',()=>setStep(curStep+1));
+document.addEventListener('keydown',e=>{
+  if(document.getElementById('panel-forward').classList.contains('active')){
+    if(e.key==='ArrowRight'||e.key===' '){e.preventDefault();setStep(curStep+1);}
+    if(e.key==='ArrowLeft'){e.preventDefault();setStep(curStep-1);}
+  }
+});
+
+// ═══════════════════════════════════════
+// TAB 3: ORTHOGONALITY
+// ═══════════════════════════════════════
+function drawOrtho(){
+  const ctx=document.getElementById('orthoCv').getContext('2d');
+  const W=1400,H=850;
+  ctx.clearRect(0,0,W,H);ctx.fillStyle=C.bg;ctx.fillRect(0,0,W,H);
+
+  txt(ctx,'\u6b63\u4ea4\u7ea6\u675f\u53ef\u89c6\u5316\uff1aR\u00b7R\u1D40 \u5e94\u8be5\u7b49\u4e8e I',W/2,30,18,C.text,'center','800');
+
+  // Draw 3 scenarios
+  const scenarios=[
+    {title:'\u5b8c\u7f8e\u6b63\u4ea4 (penalty=0)',x:120,color:C.R,
+     desc:'R \u7684\u884c\u5411\u91cf\u4e92\u76f8\u5782\u76f4\uff0c\u957f\u5ea6\u4e3a 1',
+     matrix:['1.00','0.00','0.00','0.00','0.00','1.00','0.00','0.00','0.00','0.00','1.00','0.00','0.00','0.00','0.00','1.00'],
+     arrows:[[1,0],[0,1]],good:true},
+    {title:'\u8f7b\u5fae\u504f\u79bb (penalty \u2248 0.02)',x:520,color:'#fbbf24',
+     desc:'\u8bad\u7ec3\u4e2d\u4f1a\u7565\u5fae\u504f\u79bb\uff0c\u8f6f\u7ea6\u675f\u62c9\u56de',
+     matrix:['0.98','0.12','0.12','0.97','0.03','-0.01','-0.01','0.04','0.03','-0.01','0.99','0.08','-0.01','0.04','0.08','0.96'],
+     arrows:[[1,0.12],[0.12,1]],good:null},
+    {title:'\u4e25\u91cd\u9000\u5316 (penalty \u2191\u2191)',x:920,color:'#ef4444',
+     desc:'\u884c\u5411\u91cf\u53d8\u6210\u540c\u4e00\u65b9\u5411\uff0c\u5b50\u7a7a\u95f4\u574d\u7f29',
+     matrix:['0.95','0.90','0.90','0.95','0.90','0.85','0.85','0.90','0.05','0.10','0.10','0.05','0.05','0.10','0.10','0.05'],
+     arrows:[[1,0.9],[0.9,1]],good:false},
+  ];
+
+  scenarios.forEach(sc=>{
+    const cx=sc.x+180, baseY=90;
+    // Title
+    txt(ctx,sc.title,cx,baseY,14,sc.color,'center','700');
+    txt(ctx,sc.desc,cx,baseY+20,11,C.dim,'center');
+
+    // R·R^T matrix visualization
+    const mX=sc.x+80,mY=baseY+50,cellSz=50;
+    for(let r=0;r<4;r++){
+      for(let c=0;c<4;c++){
+        const val=parseFloat(sc.matrix[r*4+c]);
+        const intensity=Math.abs(val);
+        const isdiag=r===c;
+        let bg;
+        if(isdiag) bg=`rgba(52,211,153,${intensity*0.4})`;
+        else bg=`rgba(251,146,60,${Math.min(1,intensity*3)*0.4})`;
+        rr(ctx,mX+c*cellSz,mY+r*cellSz,cellSz-2,cellSz-2,4,bg,sc.color+'44',1);
+        mono(ctx,sc.matrix[r*4+c],mX+c*cellSz+cellSz/2-1,mY+r*cellSz+cellSz/2-1,10,sc.color);
+      }
+    }
+    txt(ctx,'R\u00b7R\u1D40',mX-30,mY+2*cellSz,12,sc.color,'center','700');
+
+    // Target I matrix for reference
+    if(sc.good===true){
+      txt(ctx,'= I \u2713',mX+4*cellSz+20,mY+2*cellSz,14,C.R,'left','700');
+    }else if(sc.good===false){
+      txt(ctx,'\u2260 I \u2717',mX+4*cellSz+20,mY+2*cellSz,14,'#ef4444','left','700');
+    }
+
+    // 2D vector visualization
+    const vCx=cx,vCy=baseY+330,vScale=80;
+    // Axes
+    ctx.save();ctx.strokeStyle='#334155';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(vCx-100,vCy);ctx.lineTo(vCx+100,vCy);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(vCx,vCy+100);ctx.lineTo(vCx,vCy-100);ctx.stroke();
+    ctx.restore();
+
+    // Draw row vectors of R (2D simplified)
+    sc.arrows.forEach((a,i)=>{
+      const c=i===0?C.R:C.W;
+      const ex=vCx+a[0]*vScale, ey=vCy-a[1]*vScale;
+      ctx.save();ctx.strokeStyle=c;ctx.lineWidth=3;
+      ctx.beginPath();ctx.moveTo(vCx,vCy);ctx.lineTo(ex,ey);ctx.stroke();
+      const ang=Math.atan2(-(a[1]),a[0]);
+      ctx.fillStyle=c;ctx.beginPath();
+      ctx.moveTo(ex,ey);
+      ctx.lineTo(ex-10*Math.cos(ang-0.3),ey+10*Math.sin(ang-0.3));
+      ctx.lineTo(ex-10*Math.cos(ang+0.3),ey+10*Math.sin(ang+0.3));
+      ctx.fill();ctx.restore();
+      txt(ctx,`r${i+1}`,ex+(i===0?10:-10),ey-15,11,c);
+    });
+
+    // Angle indicator
+    if(sc.good===true) txt(ctx,'90\u00b0 \u2714',vCx+5,vCy-105,11,C.R,'left');
+    else if(sc.good===null) txt(ctx,'~83\u00b0',vCx+5,vCy-105,11,'#fbbf24','left');
+    else txt(ctx,'~26\u00b0 \u2718',vCx+5,vCy-105,11,'#ef4444','left');
+  });
+
+  // Bottom: loss formula
+  const fY=580;
+  rr(ctx,200,fY,W-400,140,12,'#1e293b','#334155',1.5);
+  txt(ctx,'\u8bad\u7ec3\u65f6\u7684\u603b Loss',W/2,fY+24,15,C.text,'center','700');
+  mono(ctx,'L_total = L_task + \u03BB \u00b7 L_ortho',W/2,fY+52,16,C.ortho);
+  mono(ctx,'        = CrossEntropy(logits, labels) + 0.01 \u00b7 ||R\u00b7R\u1D40 - I||\u00b2',W/2,fY+78,12,C.dim);
+  txt(ctx,'\u03BB = 0.01\uff1a\u8db3\u591f\u8ba9 R \u4fdd\u6301\u8fd1\u4f3c\u6b63\u4ea4\uff0c\u4f46\u4e0d\u4f1a\u538b\u5236\u4e3b\u4efb\u52a1\u7684\u5b66\u4e60',W/2,fY+108,12,'#fbbf24');
+}
+
+// ═══════════════════════════════════════
+// TAB 4: WHERE TO HOOK
+// ═══════════════════════════════════════
+function drawWhere(){
+  const ctx=document.getElementById('whereCv').getContext('2d');
+  const W=1400,H=850;
+  ctx.clearRect(0,0,W,H);ctx.fillStyle=C.bg;ctx.fillRect(0,0,W,H);
+
+  txt(ctx,'MoReS \u6302\u8f7d\u4f4d\u7f6e\uff1a\u54ea\u4e9b\u5c42\u6709 Intervention',W/2,30,18,C.text,'center','800');
+  txt(ctx,'Qwen2.5-VL-3B: 36 \u5c42, \u4f7f\u7528 "f4+l5" = 9 \u4e2a intervention',W/2,52,12,C.dim);
+
+  const startY=90, layerH=20, gap=2;
+  const barX=200, barW=600;
+  const positions=new Set([0,1,2,3,31,32,33,34,35]);
+
+  for(let i=0;i<36;i++){
+    const y=startY+i*(layerH+gap);
+    const active=positions.has(i);
+    const bg=active?C.R+'33':'#1e293b';
+    const border=active?C.R:C.frozen+'44';
+    rr(ctx,barX,y,barW,layerH,3,bg,border,active?2:0.5);
+    if(active){
+      // Glow
+      ctx.save();ctx.shadowColor=C.R;ctx.shadowBlur=8;
+      rr(ctx,barX,y,barW,layerH,3,null,C.R,2);
+      ctx.restore();
+      // Intervention label
+      txt(ctx,`Layer ${i}`,barX-60,y+layerH/2,11,C.R,'right','700');
+      rr(ctx,barX+barW+10,y-2,180,layerH+4,4,C.R+'22',C.R,1.5);
+      mono(ctx,'OrthogonalIntervention',barX+barW+100,y+layerH/2,9,C.R);
+    } else {
+      if(i%5===0||i===35) txt(ctx,`Layer ${i}`,barX-60,y+layerH/2,10,C.dim,'right');
+    }
+  }
+
+  // Brackets
+  ctx.save();ctx.strokeStyle=C.R;ctx.lineWidth=2;
+  // f4
+  ctx.beginPath();
+  ctx.moveTo(barX+barW+200,startY);
+  ctx.lineTo(barX+barW+220,startY);
+  ctx.lineTo(barX+barW+220,startY+4*(layerH+gap)-gap);
+  ctx.lineTo(barX+barW+200,startY+4*(layerH+gap)-gap);
+  ctx.stroke();
+  txt(ctx,'f4 (\u524d 4 \u5c42)',barX+barW+240,startY+2*(layerH+gap),12,C.R,'left','700');
+
+  // l5
+  const l5Start=startY+31*(layerH+gap);
+  ctx.beginPath();
+  ctx.moveTo(barX+barW+200,l5Start);
+  ctx.lineTo(barX+barW+220,l5Start);
+  ctx.lineTo(barX+barW+220,l5Start+5*(layerH+gap)-gap);
+  ctx.lineTo(barX+barW+200,l5Start+5*(layerH+gap)-gap);
+  ctx.stroke();
+  txt(ctx,'l5 (\u540e 5 \u5c42)',barX+barW+240,l5Start+2.5*(layerH+gap),12,C.R,'left','700');
+  ctx.restore();
+
+  // Middle layers label
+  txt(ctx,'\u4e2d\u95f4 27 \u5c42\uff1a\u65e0 intervention\uff08frozen\uff09',barX+barW/2,startY+17*(layerH+gap),12,C.frozen);
+}
+
+// ═══════════════════════════════════════
+// TAB 5: COMPARISON
+// ═══════════════════════════════════════
+function drawComp(){
+  const ctx=document.getElementById('compCv').getContext('2d');
+  const W=1400,H=850;
+  ctx.clearRect(0,0,W,H);ctx.fillStyle=C.bg;ctx.fillRect(0,0,W,H);
+
+  txt(ctx,'MoReS vs LoRA\uff1a\u4e24\u79cd\u5b8c\u5168\u4e0d\u540c\u7684\u601d\u8def',W/2,30,18,C.text,'center','800');
+
+  const leftX=100,rightX=740,colW=520,topY=70;
+
+  // LoRA side
+  rr(ctx,leftX,topY,colW,700,12,C.lora+'0a',C.lora,1.5);
+  txt(ctx,'LoRA',leftX+colW/2,topY+24,16,C.lora,'center','800');
+  txt(ctx,'\u201c\u6539\u53d8\u53d1\u5c04\u53f0\u201d \u2014\u2014 \u4fee\u6539\u6743\u91cd\u77e9\u9635 W',leftX+colW/2,topY+48,12,C.dim);
+
+  // LoRA diagram
+  const ly=topY+80;
+  rr(ctx,leftX+30,ly,180,40,8,C.frozen+'22',C.frozen,1.5);txt(ctx,'W (frozen)',leftX+120,ly+20,12,C.frozen);
+  rr(ctx,leftX+240,ly,200,40,8,C.lora+'22',C.lora,1.5);txt(ctx,'\u0394W = B\u00b7A (trainable)',leftX+340,ly+20,11,C.lora);
+
+  arr(ctx,leftX+colW/2,ly+42,leftX+colW/2,ly+72,C.arrow);
+  rr(ctx,leftX+100,ly+74,260,36,8,C.lora+'22',C.lora,1.5);txt(ctx,'output = (W + \u0394W) \u00b7 x',leftX+230,ly+92,12,C.lora);
+
+  // LoRA stats
+  const lsY=ly+140;
+  [{l:'\u6302\u8f7d\u70b9',v:'252 \u4e2a nn.Linear'},{l:'\u53c2\u6570/\u5c42',v:'24,576'},{l:'\u603b\u53c2\u6570',v:'~6.19M'},{l:'\u6539\u53d8\u4e86\u4ec0\u4e48',v:'\u6bcf\u4e2a Linear \u7684\u8f93\u5165\u8f93\u51fa\u6620\u5c04'},{l:'\u521d\u59cb\u5316\u65f6',v:'\u0394W=0, output\u4e0d\u53d8'},{l:'Rank',v:'r=8 (per Linear)'},
+  ].forEach((item,i)=>{
+    const iy=lsY+i*42;
+    rr(ctx,leftX+30,iy,colW-60,36,6,'#1e293b',C.lora+'44',1);
+    txt(ctx,item.l,leftX+140,iy+18,12,C.dim,'right');
+    txt(ctx,item.v,leftX+160,iy+18,12,C.lora,'left','700');
+  });
+
+  // MoReS side
+  rr(ctx,rightX,topY,colW,700,12,C.R+'0a',C.R,1.5);
+  txt(ctx,'MoReS',rightX+colW/2,topY+24,16,C.R,'center','800');
+  txt(ctx,'\u201c\u98de\u884c\u4e2d\u8f7b\u63a8\u201d \u2014\u2014 \u4fee\u6539 hidden state h',rightX+colW/2,topY+48,12,C.dim);
+
+  // MoReS diagram
+  rr(ctx,rightX+30,ly,180,40,8,C.frozen+'22',C.frozen,1.5);txt(ctx,'W (frozen)',rightX+120,ly+20,12,C.frozen);
+  rr(ctx,rightX+240,ly,200,40,8,C.R+'22',C.R,1.5);txt(ctx,'Intervention (trainable)',rightX+340,ly+20,11,C.R);
+
+  arr(ctx,rightX+colW/2,ly+42,rightX+colW/2,ly+72,C.arrow);
+  rr(ctx,rightX+100,ly+74,260,36,8,C.R+'22',C.R,1.5);txt(ctx,"output = h + R\u1D40\u00b7(W\u00b7h-R\u00b7h)",rightX+230,ly+92,12,C.R);
+
+  // MoReS stats
+  [{l:'\u6302\u8f7d\u70b9',v:'9 \u4e2a Transformer Layer'},{l:'\u53c2\u6570/\u5c42',v:'12,292'},{l:'\u603b\u53c2\u6570',v:'~110K'},{l:'\u6539\u53d8\u4e86\u4ec0\u4e48',v:'\u5c42\u4e0e\u5c42\u4e4b\u95f4\u7684 hidden state'},{l:'\u521d\u59cb\u5316\u65f6',v:'W=0 \u2192 \u03B4=0, h\u4e0d\u53d8'},{l:'Rank',v:'d=4 (per Layer)'},
+  ].forEach((item,i)=>{
+    const iy=lsY+i*42;
+    rr(ctx,rightX+30,iy,colW-60,36,6,'#1e293b',C.R+'44',1);
+    txt(ctx,item.l,rightX+140,iy+18,12,C.dim,'right');
+    txt(ctx,item.v,rightX+160,iy+18,12,C.R,'left','700');
+  });
+
+  // Bottom comparison
+  const bY=topY+620;
+  rr(ctx,leftX,bY,W-200,60,8,'#1e293b','#334155',1);
+  txt(ctx,'\u6838\u5fc3\u533a\u522b',W/2,bY+16,13,C.text,'center','700');
+  txt(ctx,'LoRA \u6539\u53d8\u201c\u53d8\u6362\u672c\u8eab\u201d\uff08W+\u0394W\uff09\uff0cMoReS \u6539\u53d8\u201c\u53d8\u6362\u7684\u8f93\u5165\u201d\uff08h+\u03b4\uff09\u2014\u2014 \u4e24\u8005\u90fd\u80fd\u8fbe\u5230\u76f8\u4f3c\u7684\u6548\u679c\uff0c\u4f46 MoReS \u7528\u7684\u53c2\u6570\u5c11 56 \u500d',W/2,bY+42,12,'#fbbf24');
+}
+
+// ═══════════════════════════════════════
+// ═══════════════════════════════════════
+// TAB 1.5: PROJECTION INTUITION
+// ═══════════════════════════════════════
+const projCv=document.getElementById('projCv');
+const projCtx=projCv.getContext('2d');
+let projAngle=Math.PI/6; // draggable R direction
+let projDragging=false;
+
+function drawProj(){
+  const ctx=projCtx,W=projCv.width,H=projCv.height;
+  ctx.clearRect(0,0,W,H);ctx.fillStyle=C.bg;ctx.fillRect(0,0,W,H);
+
+  // ── SECTION 1: 2D → 1D projection (left half) ──
+  const cx1=320, cy1=350, scale=120;
+
+  txt(ctx,'2D \u2192 1D \u6295\u5f71\uff08\u62d6\u62fd\u7eff\u7ebf\u6539\u53d8 R \u65b9\u5411\uff09',cx1,40,16,C.text,'center','800');
+  txt(ctx,'\u7c7b\u6bd4\uff1a\u592a\u9633\u7167\u5c04\u7269\u4f53\uff0c\u5f71\u5b50\u843d\u5728\u7eff\u8272\u7ebf\u4e0a',cx1,62,12,C.dim);
+
+  // Axes
+  ctx.save();ctx.strokeStyle='#334155';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(cx1-200,cy1);ctx.lineTo(cx1+200,cy1);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx1,cy1-200);ctx.lineTo(cx1,cy1+200);ctx.stroke();
+  ctx.restore();
+
+  // R direction line (draggable)
+  const rDirX=Math.cos(projAngle), rDirY=-Math.sin(projAngle);
+  ctx.save();ctx.strokeStyle=C.R;ctx.lineWidth=2.5;
+  ctx.beginPath();ctx.moveTo(cx1-rDirX*180,cy1-rDirY*180);ctx.lineTo(cx1+rDirX*180,cy1+rDirY*180);ctx.stroke();
+  ctx.restore();
+  txt(ctx,'R \u65b9\u5411 (\u62d6\u62fd\u6211)',cx1+rDirX*190,cy1+rDirY*190-10,11,C.R);
+
+  // Sample vectors to project
+  const vectors=[
+    {x:0.8,y:0.6,label:'h\u2081',color:'#60a5fa'},
+    {x:-0.3,y:0.9,label:'h\u2082',color:'#f472b6'},
+    {x:0.9,y:-0.4,label:'h\u2083',color:'#fbbf24'},
+  ];
+
+  vectors.forEach(v=>{
+    const vx=v.x*scale, vy=-v.y*scale;
+    // Original vector
+    ctx.save();ctx.strokeStyle=v.color;ctx.lineWidth=3;
+    ctx.beginPath();ctx.moveTo(cx1,cy1);ctx.lineTo(cx1+vx,cy1+vy);ctx.stroke();
+    const a=Math.atan2(vy,vx);
+    ctx.fillStyle=v.color;ctx.beginPath();
+    ctx.moveTo(cx1+vx,cy1+vy);
+    ctx.lineTo(cx1+vx-10*Math.cos(a-0.3),cy1+vy-10*Math.sin(a-0.3));
+    ctx.lineTo(cx1+vx-10*Math.cos(a+0.3),cy1+vy-10*Math.sin(a+0.3));
+    ctx.fill();ctx.restore();
+    txt(ctx,v.label,cx1+vx+12,cy1+vy-8,12,v.color,'left','700');
+
+    // Projection onto R: proj = (v·r)r
+    const dot=v.x*Math.cos(projAngle)+v.y*Math.sin(projAngle);
+    const px=dot*Math.cos(projAngle)*scale, py=-dot*Math.sin(projAngle)*scale;
+
+    // Dashed line from vector tip to projection
+    ctx.save();ctx.strokeStyle=v.color+'66';ctx.lineWidth=1.5;ctx.setLineDash([4,4]);
+    ctx.beginPath();ctx.moveTo(cx1+vx,cy1+vy);ctx.lineTo(cx1+px,cy1+py);ctx.stroke();ctx.restore();
+
+    // Projection dot
+    ctx.beginPath();ctx.arc(cx1+px,cy1+py,6,0,Math.PI*2);
+    ctx.fillStyle=v.color;ctx.fill();
+    ctx.strokeStyle=C.R;ctx.lineWidth=2;ctx.stroke();
+  });
+
+  // Labels
+  rr(ctx,cx1-200,cy1+220,400,90,8,'#1e293b','#334155',1);
+  txt(ctx,'R\u00b7h = h \u5728 R \u65b9\u5411\u4e0a\u7684\u201c\u5f71\u5b50\u201d',cx1,cy1+240,13,C.R,'center','700');
+  txt(ctx,'\u5706\u70b9 = \u6295\u5f71\u7ed3\u679c\uff0c\u865a\u7ebf = \u4e22\u5931\u7684\u4fe1\u606f',cx1,cy1+260,11,C.dim);
+  txt(ctx,'\u6539\u53d8 R \u65b9\u5411 \u2192 \u6355\u6349\u5230 h \u7684\u4e0d\u540c\u65b9\u9762',cx1,cy1+280,11,'#fbbf24');
+
+  // ── SECTION 2: Why low-rank works (right half) ──
+  const cx2=950, topY=40;
+  txt(ctx,'MoReS \u7684\u6295\u5f71\u903b\u8f91',cx2,topY,16,C.text,'center','800');
+
+  const steps=[
+    {y:topY+50, label:'h (1536 \u7ef4)', sub:'\u539f\u59cb hidden state', color:C.h, w:400},
+    {y:topY+140, label:'R\u00b7h (4 \u7ef4)', sub:'\u201c\u5f71\u5b50\u201d: h \u5728\u5b50\u7a7a\u95f4\u7684\u5206\u91cf', color:C.R, w:120},
+    {y:topY+230, label:'W\u00b7h (4 \u7ef4)', sub:'\u201c\u76ee\u6807\u5f71\u5b50\u201d: \u6a21\u578b\u5b66\u5230\u7684\u7406\u60f3\u4f4d\u7f6e', color:C.W, w:120},
+    {y:topY+320, label:'\u03B4_low = Wh - Rh (4 \u7ef4)', sub:'\u201c\u5f71\u5b50\u8981\u79fb\u52a8\u591a\u5c11\u201d', color:C.delta, w:120},
+    {y:topY+410, label:'R\u1D40\u00b7\u03B4_low (1536 \u7ef4)', sub:'\u628a 4 \u7ef4\u4fee\u6b63\u91cf\u5c55\u5f00\u56de 1536 \u7ef4', color:C.R, w:400},
+    {y:topY+500, label:"h' = h + \u03B4 (1536 \u7ef4)", sub:'\u201c\u8f7b\u63a8\u201d\u540e\u7684\u7ed3\u679c', color:C.out, w:400},
+  ];
+
+  steps.forEach((st,i)=>{
+    // Bar representing dimensionality
+    const barX=cx2-st.w/2;
+    rr(ctx,barX,st.y,st.w,36,6,st.color+'22',st.color,1.5);
+    txt(ctx,st.label,cx2,st.y+13,12,st.color,'center','700');
+    txt(ctx,st.sub,cx2,st.y+28,10,C.dim);
+    if(i<steps.length-1) arr(ctx,cx2,st.y+38,cx2,steps[i+1].y-2,C.arrow,1.5);
+  });
+
+  // Dimension compression visual
+  rr(ctx,cx2-220,topY+600,440,70,8,'#1e293b','#334155',1);
+  txt(ctx,'\u4e3a\u4ec0\u4e48\u53ef\u4ee5\u7528 4 \u7ef4\u4ee3\u66ff 1536 \u7ef4\uff1f',cx2,topY+618,13,C.text,'center','700');
+  txt(ctx,'\u8bba\u6587\u53d1\u73b0\uff1aVLM \u7684\u5fae\u8c03\u53ea\u9700\u8981\u5728\u6781\u5c0f\u7684\u5b50\u7a7a\u95f4\u91cc\u8c03\u6574',cx2,topY+638,11,'#fbbf24');
+  txt(ctx,'d=4 \u5c31\u591f\u4e86\uff01\u591a\u4e86\u53cd\u800c\u8fc7\u62df\u5408\uff0c\u5c11\u4e86\u4e0d\u591f\u8868\u8fbe',cx2,topY+656,11,C.dim);
+}
+
+// Drag interaction for projection angle
+projCv.addEventListener('mousedown',e=>{
+  const rect=projCv.getBoundingClientRect();
+  const sx=projCv.width/rect.width, sy=projCv.height/rect.height;
+  const mx=(e.clientX-rect.left)*sx, my=(e.clientY-rect.top)*sy;
+  const cx1=320,cy1=350;
+  if(Math.hypot(mx-cx1,my-cy1)<250) projDragging=true;
+});
+projCv.addEventListener('mousemove',e=>{
+  if(!projDragging)return;
+  const rect=projCv.getBoundingClientRect();
+  const sx=projCv.width/rect.width, sy=projCv.height/rect.height;
+  const mx=(e.clientX-rect.left)*sx, my=(e.clientY-rect.top)*sy;
+  projAngle=Math.atan2(-(my-350),mx-320);
+});
+projCv.addEventListener('mouseup',()=>projDragging=false);
+projCv.addEventListener('mouseleave',()=>projDragging=false);
+
+// ═══════════════════════════════════════
+// TAB SWITCHING + ANIMATION
+// ═══════════════════════════════════════
+let activeTab='idea';
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    const t=btn.dataset.tab;
+    document.getElementById('panel-'+t).classList.add('active');
+    activeTab=t;
+    if(t==='ortho')drawOrtho();
+    if(t==='where')drawWhere();
+    if(t==='compare')drawComp();
+  });
+});
+
+function animate(){
+  aT+=0.016;
+  if(activeTab==='idea')drawIdea();
+  if(activeTab==='forward')drawFwd();
+  if(activeTab==='proj')drawProj();
+  requestAnimationFrame(animate);
+}
+
+setStep(0);
+drawIdea();
+animate();
+</script>
+</body>
+</html>

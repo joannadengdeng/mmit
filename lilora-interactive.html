@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LiLoRA 交互式计算可视化</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Noto Sans SC", "PingFang SC", -apple-system, sans-serif;
+    background: #0f1117; color: #e2e8f0;
+    min-height: 100vh; overflow-x: hidden;
+  }
+
+  .header {
+    text-align: center; padding: 20px 20px 12px;
+    background: linear-gradient(180deg, #1a1d2e 0%, #0f1117 100%);
+  }
+  .header h1 { font-size: 22px; color: #fb923c; font-weight: 800; }
+  .header p { font-size: 13px; color: #64748b; margin-top: 4px; }
+
+  /* ── Tab bar ── */
+  .tabs {
+    display: flex; justify-content: center; gap: 6px;
+    padding: 10px 20px; flex-wrap: wrap;
+  }
+  .tab-btn {
+    padding: 8px 20px; border-radius: 8px; border: 2px solid #334155;
+    background: #1e293b; color: #94a3b8; cursor: pointer;
+    font-size: 13px; font-weight: 600; transition: all 0.2s;
+    font-family: inherit;
+  }
+  .tab-btn:hover { border-color: #64748b; color: #e2e8f0; }
+  .tab-btn.active { border-color: #fb923c; color: #fb923c; background: #431407; }
+
+  /* ── Panels ── */
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* ══════════════════════════════════════ */
+  /* PANEL 1: Forward Pass Step-by-Step    */
+  /* ══════════════════════════════════════ */
+  .fwd-layout {
+    display: flex; gap: 0; max-width: 1400px; margin: 0 auto;
+  }
+  .fwd-canvas-wrap { flex: 1; min-width: 0; padding: 10px; }
+  .fwd-canvas-wrap canvas { width: 100%; border-radius: 12px; background: #141722; }
+  .fwd-side {
+    width: 360px; flex-shrink: 0; padding: 16px;
+    background: #1a1d2e; border-left: 1px solid #2d3348;
+    overflow-y: auto; max-height: calc(100vh - 120px);
+  }
+
+  /* Step controls */
+  .step-controls {
+    display: flex; gap: 8px; justify-content: center;
+    padding: 10px 20px; flex-wrap: wrap;
+  }
+  .step-btn {
+    padding: 8px 24px; border-radius: 8px; border: 2px solid #334155;
+    background: #1e293b; color: #94a3b8; cursor: pointer;
+    font-size: 14px; font-weight: 700; transition: all 0.2s;
+    font-family: inherit;
+  }
+  .step-btn:hover { border-color: #fb923c; color: #fb923c; }
+  .step-btn.active-step { border-color: #fb923c; color: #0f1117; background: #fb923c; }
+  .step-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .nav-btn {
+    padding: 8px 20px; border-radius: 8px; border: none;
+    background: #334155; color: #e2e8f0; cursor: pointer;
+    font-size: 14px; font-weight: 700; transition: all 0.15s;
+    font-family: inherit;
+  }
+  .nav-btn:hover { background: #475569; }
+  .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  /* Side panel content */
+  .side-title { font-size: 15px; font-weight: 700; color: #fb923c; margin-bottom: 10px; }
+  .side-card {
+    background: #141722; border-radius: 8px; padding: 12px;
+    margin-bottom: 10px; border: 1px solid #2d3348;
+    font-size: 12px; line-height: 1.8;
+  }
+  .side-card h4 { font-size: 13px; margin-bottom: 6px; color: #fb923c; }
+  .side-card code {
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 11px; background: #0f1117; padding: 1px 5px;
+    border-radius: 3px; color: #93c5fd;
+  }
+  .side-card .dim { color: #64748b; font-size: 11px; }
+  .side-card .highlight { color: #fbbf24; font-weight: 600; }
+  .side-card pre {
+    background: #0f1117; border-radius: 6px; padding: 8px;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 10px; line-height: 1.6; overflow-x: auto;
+    margin-top: 6px; color: #cdd6f4;
+  }
+  .side-card pre .kw { color: #cba6f7; }
+  .side-card pre .fn { color: #89b4fa; }
+  .side-card pre .cmt { color: #6c7086; font-style: italic; }
+  .side-card pre .num { color: #fab387; }
+  .side-card pre .str { color: #a6e3a1; }
+
+  .tensor-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 600; font-family: "JetBrains Mono", monospace;
+  }
+  .tb-input { background: #1e3a5f; color: #93c5fd; }
+  .tb-shared { background: #2e1065; color: #c4b5fd; }
+  .tb-task { background: #431407; color: #fdba74; }
+  .tb-alpha { background: #064e3b; color: #6ee7b7; }
+  .tb-output { background: #14532d; color: #86efac; }
+
+  /* ══════════════════════════════════════ */
+  /* PANEL 2: Injection / Hook Panel       */
+  /* ══════════════════════════════════════ */
+  .inject-layout {
+    max-width: 1100px; margin: 0 auto; padding: 20px;
+  }
+  .inject-canvas-wrap { width: 100%; }
+  .inject-canvas-wrap canvas { width: 100%; border-radius: 12px; background: #141722; }
+
+  /* ══════════════════════════════════════ */
+  /* PANEL 3: Training                     */
+  /* ══════════════════════════════════════ */
+  .train-layout {
+    max-width: 1100px; margin: 0 auto; padding: 20px;
+  }
+  .train-canvas-wrap canvas { width: 100%; border-radius: 12px; background: #141722; }
+
+  @media (max-width: 900px) {
+    .fwd-layout { flex-direction: column; }
+    .fwd-side { width: 100%; max-height: none; border-left: none; border-top: 1px solid #2d3348; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>LiLoRA 交互式计算可视化</h1>
+  <p>一步一步看到每个张量如何计算、如何变形、最终如何改变模型输出</p>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="forward">Step-by-Step 前向传播</button>
+  <button class="tab-btn" data-tab="inject">Hook 注入全景</button>
+  <button class="tab-btn" data-tab="train">训练：梯度怎么流</button>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- PANEL 1: Forward Pass                       -->
+<!-- ════════════════════════════════════════════ -->
+<div class="panel active" id="panel-forward">
+  <div class="step-controls">
+    <button class="nav-btn" id="prevBtn" disabled>&larr; 上一步</button>
+    <button class="step-btn active-step" data-step="0">0. 输入</button>
+    <button class="step-btn" data-step="1">1. A&middot;x</button>
+    <button class="step-btn" data-step="2">2. B&#8320;&middot;Ax</button>
+    <button class="step-btn" data-step="3">3. A&#771;&middot;Ax</button>
+    <button class="step-btn" data-step="4">4. B&#771;&middot;(A&#771;&middot;Ax)</button>
+    <button class="step-btn" data-step="5">5. &alpha; 融合</button>
+    <button class="step-btn" data-step="6">6. 输出</button>
+    <button class="nav-btn" id="nextBtn">下一步 &rarr;</button>
+  </div>
+  <div class="fwd-layout">
+    <div class="fwd-canvas-wrap">
+      <canvas id="fwdCanvas" width="1400" height="900"></canvas>
+    </div>
+    <div class="fwd-side" id="fwdSide"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- PANEL 2: Hook Injection                     -->
+<!-- ════════════════════════════════════════════ -->
+<div class="panel" id="panel-inject">
+  <div class="inject-layout">
+    <div class="inject-canvas-wrap">
+      <canvas id="injectCanvas" width="1400" height="1000"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- PANEL 3: Training                           -->
+<!-- ════════════════════════════════════════════ -->
+<div class="panel" id="panel-train">
+  <div class="train-layout">
+    <div class="train-canvas-wrap">
+      <canvas id="trainCanvas" width="1400" height="900"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// SHARED DRAWING UTILS
+// ═══════════════════════════════════════════════
+function roundRect(ctx, x, y, w, h, r, fill, stroke, lw) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1.5; ctx.stroke(); }
+}
+
+function drawArrow(ctx, x1, y1, x2, y2, color, lw) {
+  ctx.save();
+  ctx.strokeStyle = color || '#4b5563'; ctx.lineWidth = lw || 2;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const sz = 8;
+  ctx.fillStyle = color || '#4b5563';
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - sz * Math.cos(angle - 0.4), y2 - sz * Math.sin(angle - 0.4));
+  ctx.lineTo(x2 - sz * Math.cos(angle + 0.4), y2 - sz * Math.sin(angle + 0.4));
+  ctx.fill(); ctx.restore();
+}
+
+function text(ctx, str, x, y, size, color, align, weight) {
+  ctx.fillStyle = color || '#e2e8f0';
+  ctx.font = `${weight || '600'} ${size || 13}px "Noto Sans SC", -apple-system, sans-serif`;
+  ctx.textAlign = align || 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(str, x, y);
+}
+
+function mono(ctx, str, x, y, size, color, align) {
+  ctx.fillStyle = color || '#93c5fd';
+  ctx.font = `600 ${size || 11}px "JetBrains Mono", Consolas, monospace`;
+  ctx.textAlign = align || 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(str, x, y);
+}
+
+function glowRect(ctx, x, y, w, h, r, color, lw) {
+  ctx.save();
+  ctx.shadowColor = color; ctx.shadowBlur = 18;
+  roundRect(ctx, x, y, w, h, r, null, color, lw || 2.5);
+  ctx.restore();
+  roundRect(ctx, x, y, w, h, r, null, color, lw || 2.5);
+}
+
+// Draw a tensor block with cells
+function drawTensor(ctx, x, y, rows, cols, cellW, cellH, values, color, label, labelColor) {
+  const w = cols * cellW, h = rows * cellH;
+  // Background
+  roundRect(ctx, x, y, w, h, 4, color + '18', color, 1.5);
+  // Grid lines
+  ctx.strokeStyle = color + '44'; ctx.lineWidth = 0.5;
+  for (let r = 1; r < rows; r++) {
+    ctx.beginPath(); ctx.moveTo(x, y + r * cellH); ctx.lineTo(x + w, y + r * cellH); ctx.stroke();
+  }
+  for (let c = 1; c < cols; c++) {
+    ctx.beginPath(); ctx.moveTo(x + c * cellW, y); ctx.lineTo(x + c * cellW, y + h); ctx.stroke();
+  }
+  // Values
+  if (values) {
+    const maxShow = Math.min(rows * cols, values.length);
+    for (let i = 0; i < maxShow; i++) {
+      const r = Math.floor(i / cols), c = i % cols;
+      if (r < rows && c < cols) {
+        mono(ctx, values[i], x + c * cellW + cellW / 2, y + r * cellH + cellH / 2, 10, color);
+      }
+    }
+  }
+  // Label
+  if (label) {
+    text(ctx, label, x + w / 2, y - 14, 12, labelColor || color, 'center', '700');
+  }
+}
+
+// Animated tensor block (pulsing glow)
+function drawActiveTensor(ctx, x, y, rows, cols, cellW, cellH, values, color, label, t) {
+  const pulse = 0.6 + 0.4 * Math.sin(t * 3);
+  ctx.save();
+  ctx.shadowColor = color; ctx.shadowBlur = 12 * pulse;
+  drawTensor(ctx, x, y, rows, cols, cellW, cellH, values, color, label, color);
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════
+// PANEL 1: FORWARD PASS STEP-BY-STEP
+// ═══════════════════════════════════════════════
+const fwdCv = document.getElementById('fwdCanvas');
+const fwdCtx = fwdCv.getContext('2d');
+const fwdW = fwdCv.width, fwdH = fwdCv.height;
+
+let currentStep = 0;
+let animT = 0;
+let animId = null;
+
+// Colors
+const COL = {
+  bg: '#141722',
+  input: '#3b82f6',
+  shared: '#a78bfa',
+  task: '#fb923c',
+  alpha: '#34d399',
+  output: '#4ade80',
+  frozen: '#475569',
+  dim: '#64748b',
+  text: '#e2e8f0',
+  arrow: '#4b5563',
+};
+
+// Example values for visualization (simplified 4x4 matrices)
+const VALS = {
+  x: ['0.12', '-0.34', '0.56', '0.78', '-0.91', '0.23', '0.45', '-0.67', '0.89', '-0.11', '0.33', '0.55', '-0.77', '0.99', '-0.22', '0.44'],
+  A: ['0.01', '-0.02', '0.01', '0.00', '0.00', '0.01', '-0.01', '0.02', '-0.01', '0.00', '0.02', '-0.01'],
+  Ax: ['0.03', '-0.01', '0.02', '0.04', '-0.02', '0.01', '0.03', '-0.03', '0.01'],
+  B0: ['0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00'],
+  B0Ax: ['0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00'],
+  At: ['0.01', '-0.01', '0.02', '-0.02', '0.01', '0.00'],
+  AtAx: ['0.001', '-0.002', '0.003', '0.001', '-0.001', '0.002'],
+  Bt: ['0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00'],
+  BtAtAx: ['0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00'],
+  delta: ['0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00'],
+  Wx: ['1.23', '-0.45', '0.67', '-0.89', '2.34', '-1.56', '0.78', '-0.12'],
+  out: ['1.23', '-0.45', '0.67', '-0.89', '2.34', '-1.56', '0.78', '-0.12'],
+};
+
+// ── Step definitions ──
+const STEPS = [
+  {
+    title: 'Step 0: 输入 x 进入 Linear 层',
+    desc: '一个 token 的 hidden state 向量 x 进入 q_proj Linear 层。原始路径 W·x 照常执行，同时 x 也被 Hook 拦截并送入 LiLoRA。',
+    code: `# 原始 Linear 层正常执行
+# output = W @ x + bias
+# 同时 Hook 拦截到 (input, output)
+
+def hook(mod, inp, out):
+    x = inp[0]        # 拦截输入
+    base_out = out     # 拦截输出
+    return lilora(x, base_out)`,
+    shapes: { x: '[1, seq, 1536]', W: '[1536, 1536]', Wx: '[1, seq, 1536]' },
+  },
+  {
+    title: 'Step 1: 共享下投影 Ax = A · x',
+    desc: '共享矩阵 A 把高维输入 x (1536维) 压缩到低维空间 (128维)。这一步是所有路径共享的起点——无论共享路径还是任务路径，都从 Ax 开始。',
+    code: `# self.shared_A: [128, 1536]  <- nn.Parameter
+# x:             [1, seq, 1536]
+
+Ax = F.linear(x, self.shared_A)
+# Ax:            [1, seq, 128]
+
+# F.linear(x, W) = x @ W.T
+# 等价于 Ax = x @ shared_A.T`,
+    shapes: { A: '[r=128, d_in=1536]', x: '[1, seq, 1536]', Ax: '[1, seq, 128]' },
+  },
+  {
+    title: 'Step 2: 共享路径 B₀ · Ax',
+    desc: '共享矩阵 B₀ 把低维表示 Ax (128维) 映射回高维 (1536维)。B₀ 初始化为全零，所以训练开始时这条路径输出为 0。随着训练进行，B₀ 会学到所有任务共享的通用模式。',
+    code: `# self.shared_B0: [1536, 128]  <- nn.Parameter
+# Ax:              [1, seq, 128]
+
+shared_path = F.linear(Ax, self.shared_B0)
+# shared_path:     [1, seq, 1536]
+
+# 初始化: torch.zeros(out_features, rank)
+# -> 训练开始时 shared_path = 全零`,
+    shapes: { B0: '[d_out=1536, r=128]', Ax: '[1, seq, 128]', B0Ax: '[1, seq, 1536]' },
+  },
+  {
+    title: 'Step 3: 任务路径 (a) — A&#771; · Ax',
+    desc: 'Ax (128维) 被进一步压缩到更低维 (64维)。A&#771; 是任务特定矩阵，每个任务各一份。这是 "LoRA in LoRA" 的第一步——在已经低秩的空间里再做一次低秩分解。',
+    code: `# self.A_tilde: nn.Linear(128, 64, bias=False)
+# A_tilde.weight: [64, 128]
+# Ax:             [1, seq, 128]
+
+temp = self.A_tilde(Ax)
+# temp:           [1, seq, 64]
+
+# nn.Linear(in, out) 的 weight 形状是 [out, in]
+# forward: output = input @ weight.T`,
+    shapes: { At: '[r&#771;=64, r=128]', Ax: '[1, seq, 128]', AtAx: '[1, seq, 64]' },
+  },
+  {
+    title: 'Step 4: 任务路径 (b) — B&#771; · (A&#771; · Ax)',
+    desc: 'B&#771; 把 64 维映射回 1536 维。B&#771; 初始化为全零，所以任务路径也从零开始。合起来，任务路径 = B&#771;·A&#771;·Ax：128→64→1536，是一个"内部 LoRA"。',
+    code: `# self.B_tilde: nn.Linear(64, 1536, bias=False)
+# B_tilde.weight: [1536, 64]
+# temp:           [1, seq, 64]
+
+task_path = self.B_tilde(temp)
+# = self.B_tilde(self.A_tilde(Ax))
+# task_path:      [1, seq, 1536]
+
+# 完整写法:
+task_BA = self.B_tilde(self.A_tilde(Ax))`,
+    shapes: { Bt: '[d_out=1536, r&#771;=64]', AtAx: '[1, seq, 64]', BtAtAx: '[1, seq, 1536]' },
+  },
+  {
+    title: 'Step 5: alpha 融合两条路径',
+    desc: 'alpha = sigmoid(learnable_logit)，值在 (0, 1) 之间。它决定共享路径和任务路径的混合比例。初始时 alpha ≈ 0.5，模型自己学习该信任哪条路径更多。',
+    code: `# self._alpha_logit: nn.Parameter(randn(1))
+alpha = torch.sigmoid(self._alpha_logit)
+# alpha ∈ (0, 1)，例如 0.53
+
+# 加权融合
+delta = (alpha * shared_path        # 共享路径
+       + (1 - alpha) * task_path)   # 任务路径
+
+# delta:  [1, seq, 1536]
+# = 0.53 * B0·Ax + 0.47 * B̃·Ã·Ax`,
+    shapes: { alpha: 'scalar ∈ (0,1)', shared: '[1, seq, 1536]', task: '[1, seq, 1536]', delta: '[1, seq, 1536]' },
+  },
+  {
+    title: 'Step 6: 最终输出 = W·x + delta',
+    desc: 'Hook 把 delta 加到原始 Linear 层的输出上。整个过程不修改原模型的任何代码或权重。原始 W 的参数完全冻结，梯度只流向 LiLoRA 的 5 个参数。',
+    code: `def forward(self, x, base_output):
+    # base_output = W·x  (原始 Linear 输出)
+    Ax = F.linear(x, self.shared_A)
+    alpha = self.alpha  # sigmoid(logit)
+    task_BA = self.B_tilde(self.A_tilde(Ax))
+    delta = (alpha * F.linear(Ax, self.shared_B0)
+           + (1 - alpha) * task_BA)
+    return base_output + delta
+
+# Hook 调用:
+# hook(mod, inp, out) -> lilora(inp[0], out)`,
+    shapes: { Wx: '[1, seq, 1536]', delta: '[1, seq, 1536]', output: '[1, seq, 1536]' },
+  },
+];
+
+// ── Draw forward pass canvas ──
+function drawForward() {
+  const ctx = fwdCtx;
+  ctx.clearRect(0, 0, fwdW, fwdH);
+  ctx.fillStyle = COL.bg; ctx.fillRect(0, 0, fwdW, fwdH);
+
+  const s = currentStep;
+  const cx = fwdW / 2;
+  const cW = 38, cH = 28; // cell size
+
+  // ── Always show the architecture skeleton ──
+  // Title
+  text(ctx, 'LiLoRA Forward Pass — 一个 Linear 层的计算过程', cx, 28, 16, COL.text, 'center', '800');
+  text(ctx, `当前: Step ${s} / 6`, cx, 50, 12, COL.dim);
+
+  // Layout positions
+  const xStart = 80;
+  const yInput = 100;   // input x
+  const yA = 210;       // A matrix
+  const yAx = 320;      // Ax result
+  const ySplit = 390;    // split point
+  const yShared = 470;   // B0 path
+  const yTask1 = 470;    // A_tilde
+  const yTask2 = 570;    // B_tilde
+  const yMerge = 670;    // merge
+  const yOut = 790;      // output
+
+  const leftX = 200;     // shared path center
+  const rightX = 620;    // task path center
+  const midX = 410;      // center
+
+  // ─── INPUT x ───
+  const xTensorX = midX - 3 * cW;
+  const xActive = (s === 0);
+  if (xActive) {
+    drawActiveTensor(ctx, xTensorX, yInput, 4, 4, cW, cH, VALS.x, COL.input, 'x  [batch, seq, 1536]', animT);
+  } else {
+    drawTensor(ctx, xTensorX, yInput, 4, 4, cW, cH, VALS.x, s > 0 ? COL.dim : COL.input, 'x  [batch, seq, 1536]');
+  }
+
+  // Original W·x path (always shown faintly on far left)
+  const wxX = 30;
+  roundRect(ctx, wxX, yInput + 10, 100, 36, 6, '#1e293b', COL.frozen, 1);
+  text(ctx, 'W (frozen)', wxX + 50, yInput + 28, 11, COL.frozen);
+  if (s >= 0) {
+    drawArrow(ctx, wxX + 50, yInput + 48, wxX + 50, yOut - 10, COL.frozen + '44', 1.5);
+    roundRect(ctx, wxX, yOut, 100, 32, 6, '#1e293b22', COL.frozen + '66', 1);
+    text(ctx, 'W·x', wxX + 50, yOut + 16, 11, COL.frozen);
+  }
+
+  // ─── STEP 1: A · x ───
+  if (s >= 1) {
+    // Arrow from x to A
+    drawArrow(ctx, midX, yInput + 4 * cH + 4, midX, yA - 18, s === 1 ? COL.shared : COL.arrow, s === 1 ? 3 : 2);
+
+    // A matrix
+    const aX = midX - 3 * cW;
+    if (s === 1) {
+      drawActiveTensor(ctx, aX, yA, 3, 4, cW, cH, VALS.A, COL.shared, 'shared_A  [128, 1536]', animT);
+      // Multiply symbol
+      text(ctx, 'F.linear(x, A)', midX + 100, yA + 30, 13, COL.shared, 'left', '700');
+    } else {
+      drawTensor(ctx, aX, yA, 3, 4, cW, cH, VALS.A, s > 1 ? COL.dim : COL.shared, 'shared_A  [128, 1536]');
+    }
+
+    // Arrow from A to Ax
+    drawArrow(ctx, midX, yA + 3 * cH + 4, midX, yAx - 18, s === 1 ? COL.shared : COL.arrow, s === 1 ? 3 : 2);
+
+    // Ax result
+    const axX = midX - 1.5 * cW;
+    if (s === 1) {
+      drawActiveTensor(ctx, axX, yAx, 3, 3, cW, cH, VALS.Ax, COL.shared, 'Ax  [batch, seq, 128]', animT);
+      // Dimension annotation
+      roundRect(ctx, midX + 80, yAx + 10, 200, 50, 6, '#2e106544', COL.shared + '66', 1);
+      text(ctx, '1536 维 → 128 维', midX + 180, yAx + 25, 12, COL.shared);
+      text(ctx, '压缩了 12 倍!', midX + 180, yAx + 45, 11, '#fbbf24');
+    } else {
+      drawTensor(ctx, axX, yAx, 3, 3, cW, cH, VALS.Ax, COL.dim, 'Ax  [batch, seq, 128]');
+    }
+  }
+
+  // ─── SPLIT ───
+  if (s >= 2) {
+    // Split lines from Ax
+    const splitY = yAx + 3 * cH + 10;
+    // Left (shared path)
+    ctx.save();
+    ctx.strokeStyle = s === 2 ? COL.shared : COL.arrow;
+    ctx.lineWidth = s === 2 ? 3 : 1.5;
+    ctx.beginPath();
+    ctx.moveTo(midX, splitY); ctx.lineTo(leftX, ySplit - 10);
+    ctx.stroke(); ctx.restore();
+    // Right (task path)
+    ctx.save();
+    ctx.strokeStyle = (s === 3 || s === 4) ? COL.task : COL.arrow;
+    ctx.lineWidth = (s === 3 || s === 4) ? 3 : 1.5;
+    ctx.beginPath();
+    ctx.moveTo(midX, splitY); ctx.lineTo(rightX, ySplit - 10);
+    ctx.stroke(); ctx.restore();
+
+    // Labels
+    text(ctx, '共享路径', leftX, ySplit - 24, 12, COL.shared, 'center', '700');
+    text(ctx, '任务路径', rightX, ySplit - 24, 12, COL.task, 'center', '700');
+  }
+
+  // ─── STEP 2: B0 · Ax (shared path) ───
+  if (s >= 2) {
+    const b0X = leftX - 2 * cW;
+    if (s === 2) {
+      drawActiveTensor(ctx, b0X, yShared, 4, 3, cW, cH, VALS.B0, COL.shared, 'shared_B₀  [1536, 128]', animT);
+      // Operation label
+      text(ctx, 'F.linear(Ax, B₀)', leftX + 80, yShared + 30, 12, COL.shared, 'left', '700');
+      // Result
+      drawActiveTensor(ctx, b0X, yShared + 140, 4, 2, cW, cH, VALS.B0Ax, COL.shared, 'B₀·Ax  [batch, seq, 1536]', animT);
+      drawArrow(ctx, leftX, yShared + 4 * cH + 4, leftX, yShared + 126, COL.shared, 3);
+      // Annotation
+      roundRect(ctx, leftX - 120, yShared + 190, 240, 36, 6, '#2e106544', COL.shared + '66', 1);
+      text(ctx, '全零初始化 → 训练开始时输出 = 0', leftX, yShared + 208, 11, COL.shared);
+    } else {
+      drawTensor(ctx, b0X, yShared, 4, 3, cW, cH, VALS.B0, COL.dim, 'shared_B₀  [1536, 128]');
+      drawTensor(ctx, b0X, yShared + 140, 4, 2, cW, cH, VALS.B0Ax, COL.dim, 'B₀·Ax');
+      drawArrow(ctx, leftX, yShared + 4 * cH + 4, leftX, yShared + 126, COL.arrow, 1.5);
+    }
+  }
+
+  // ─── STEP 3: A_tilde · Ax ───
+  if (s >= 3) {
+    const atX = rightX - 1.5 * cW;
+    if (s === 3) {
+      drawActiveTensor(ctx, atX, yTask1, 2, 3, cW, cH, VALS.At, COL.task, 'A\u0303 (A_tilde)  [64, 128]', animT);
+      text(ctx, 'A\u0303(Ax)', rightX + 80, yTask1 + 20, 12, COL.task, 'left', '700');
+      // Result
+      drawActiveTensor(ctx, atX, yTask1 + 80, 2, 3, cW, cH, VALS.AtAx, COL.task, 'A\u0303·Ax  [batch, seq, 64]', animT);
+      drawArrow(ctx, rightX, yTask1 + 2 * cH + 4, rightX, yTask1 + 66, COL.task, 3);
+      // Annotation
+      roundRect(ctx, rightX - 100, yTask1 + 130, 200, 36, 6, '#43140744', COL.task + '66', 1);
+      text(ctx, '128 维 → 64 维（再压缩）', rightX, yTask1 + 148, 11, COL.task);
+    } else {
+      drawTensor(ctx, atX, yTask1, 2, 3, cW, cH, VALS.At, COL.dim, 'A\u0303  [64, 128]');
+      drawTensor(ctx, atX, yTask1 + 80, 2, 3, cW, cH, VALS.AtAx, COL.dim, 'A\u0303·Ax  [64]');
+      drawArrow(ctx, rightX, yTask1 + 2 * cH + 4, rightX, yTask1 + 66, COL.arrow, 1.5);
+    }
+  }
+
+  // ─── STEP 4: B_tilde · (A_tilde · Ax) ───
+  if (s >= 4) {
+    const btX = rightX - 2 * cW;
+    const btY = yTask2 + 30;
+    if (s === 4) {
+      drawActiveTensor(ctx, btX, btY, 4, 2, cW, cH, VALS.Bt, COL.task, 'B\u0303 (B_tilde)  [1536, 64]', animT);
+      text(ctx, 'B\u0303(A\u0303·Ax)', rightX + 80, btY + 30, 12, COL.task, 'left', '700');
+      drawArrow(ctx, rightX, yTask1 + 80 + 2 * cH + 4, rightX, btY - 18, COL.task, 3);
+      // Result
+      drawActiveTensor(ctx, btX, btY + 140, 4, 2, cW, cH, VALS.BtAtAx, COL.task, 'B\u0303·A\u0303·Ax  [batch, seq, 1536]', animT);
+      drawArrow(ctx, rightX, btY + 4 * cH + 4, rightX, btY + 126, COL.task, 3);
+      // LoRA-in-LoRA annotation
+      roundRect(ctx, rightX - 130, btY + 190, 260, 52, 6, '#43140744', COL.task + '66', 1);
+      text(ctx, '"LoRA in LoRA" = 在已经低秩的', rightX, btY + 206, 11, COL.task);
+      text(ctx, '128 维空间里再做 128→64→1536 低秩分解', rightX, btY + 224, 11, '#fbbf24');
+    } else {
+      drawTensor(ctx, btX, btY, 4, 2, cW, cH, VALS.Bt, COL.dim, 'B\u0303  [1536, 64]');
+      drawArrow(ctx, rightX, yTask1 + 80 + 2 * cH + 4, rightX, btY - 18, COL.arrow, 1.5);
+      drawTensor(ctx, btX, btY + 140, 4, 2, cW, cH, VALS.BtAtAx, COL.dim, 'B\u0303·A\u0303·Ax');
+      drawArrow(ctx, rightX, btY + 4 * cH + 4, rightX, btY + 126, COL.arrow, 1.5);
+    }
+  }
+
+  // ─── STEP 5: Alpha merge ───
+  if (s >= 5) {
+    const mergeY = yMerge + 60;
+    // Alpha badge
+    if (s === 5) {
+      // Draw alpha in center
+      ctx.save();
+      ctx.shadowColor = COL.alpha; ctx.shadowBlur = 16;
+      roundRect(ctx, midX - 50, mergeY - 10, 100, 40, 20, '#064e3b', COL.alpha, 2);
+      ctx.restore();
+      roundRect(ctx, midX - 50, mergeY - 10, 100, 40, 20, '#064e3b', COL.alpha, 2);
+      mono(ctx, '\u03B1 = 0.53', midX, mergeY + 10, 14, COL.alpha);
+
+      // Arrows from both paths
+      drawArrow(ctx, leftX, yShared + 140 + 4 * cH + 4, midX - 40, mergeY - 12, COL.shared, 2.5);
+      drawArrow(ctx, rightX, yTask2 + 30 + 140 + 4 * cH + 4, midX + 40, mergeY - 12, COL.task, 2.5);
+
+      // Labels on arrows
+      text(ctx, '\u03B1 = 0.53', leftX + 30, mergeY - 30, 11, COL.shared, 'left');
+      text(ctx, '1-\u03B1 = 0.47', rightX - 30, mergeY - 30, 11, COL.task, 'right');
+
+      // Result delta
+      drawActiveTensor(ctx, midX - 2 * cW, mergeY + 50, 4, 2, cW, cH, VALS.delta, COL.alpha, '\u03B4  [batch, seq, 1536]', animT);
+      drawArrow(ctx, midX, mergeY + 32, midX, mergeY + 36, COL.alpha, 3);
+
+      // Formula
+      roundRect(ctx, midX - 180, mergeY + 170, 360, 30, 6, '#064e3b44', COL.alpha + '66', 1);
+      mono(ctx, '\u03B4 = 0.53 * B\u2080\u00b7Ax + 0.47 * B\u0303\u00b7\u00c3\u00b7Ax', midX, mergeY + 185, 11, COL.alpha);
+    } else {
+      roundRect(ctx, midX - 50, mergeY - 10, 100, 40, 20, '#064e3b', COL.alpha, 1.5);
+      mono(ctx, '\u03B1 = 0.53', midX, mergeY + 10, 13, COL.alpha);
+      drawArrow(ctx, leftX, yShared + 140 + 4 * cH + 4, midX - 40, mergeY - 12, COL.arrow, 1.5);
+      drawArrow(ctx, rightX, yTask2 + 30 + 140 + 4 * cH + 4, midX + 40, mergeY - 12, COL.arrow, 1.5);
+      drawTensor(ctx, midX - 2 * cW, mergeY + 50, 4, 2, cW, cH, VALS.delta, COL.dim, '\u03B4');
+      drawArrow(ctx, midX, mergeY + 32, midX, mergeY + 36, COL.arrow, 1.5);
+    }
+  }
+
+  // ─── STEP 6: Output ───
+  if (s >= 6) {
+    const outY = yOut + 10;
+    // Plus symbol
+    const plusY = outY - 30;
+    if (s === 6) {
+      // Arrow from W·x
+      drawArrow(ctx, wxX + 50, yOut + 34, midX - 80, plusY, COL.output, 2.5);
+      // Arrow from delta
+      drawArrow(ctx, midX, yMerge + 60 + 50 + 4 * cH + 4, midX, plusY - 4, COL.output, 2.5);
+
+      // Plus circle
+      ctx.save();
+      ctx.shadowColor = COL.output; ctx.shadowBlur = 14;
+      ctx.beginPath(); ctx.arc(midX, plusY + 16, 16, 0, Math.PI * 2);
+      ctx.fillStyle = '#14532d'; ctx.fill();
+      ctx.strokeStyle = COL.output; ctx.lineWidth = 2; ctx.stroke();
+      ctx.restore();
+      ctx.beginPath(); ctx.arc(midX, plusY + 16, 16, 0, Math.PI * 2);
+      ctx.fillStyle = '#14532d'; ctx.fill();
+      ctx.strokeStyle = COL.output; ctx.lineWidth = 2; ctx.stroke();
+      text(ctx, '+', midX, plusY + 16, 18, COL.output, 'center', '800');
+
+      // Output tensor
+      drawActiveTensor(ctx, midX - 2 * cW, outY + 20, 4, 2, cW, cH, VALS.out, COL.output, 'output = W·x + \u03B4  [batch, seq, 1536]', animT);
+
+      // Final annotation
+      roundRect(ctx, midX - 200, outY + 140, 400, 40, 8, '#14532d44', COL.output + '66', 1);
+      text(ctx, 'Hook 返回这个值，替代原始 W·x → 下游完全无感知', midX, outY + 160, 12, COL.output);
+    }
+  }
+
+  // Dimension legend (always visible, top-right)
+  const lgX = fwdW - 280, lgY = 70;
+  roundRect(ctx, lgX, lgY, 250, s >= 4 ? 130 : 100, 8, '#1e293b', '#334155', 1);
+  text(ctx, '维度变化', lgX + 125, lgY + 16, 12, COL.text, 'center', '700');
+  mono(ctx, 'x:  1536 维 (原始)', lgX + 125, lgY + 38, 10, COL.input);
+  mono(ctx, 'Ax:  128 维 (A 压缩)', lgX + 125, lgY + 56, 10, COL.shared);
+  if (s >= 3) mono(ctx, 'A\u0303Ax: 64 维 (再压缩)', lgX + 125, lgY + 74, 10, COL.task);
+  if (s >= 4) mono(ctx, 'out: 1536 维 (B/B\u0303 恢复)', lgX + 125, lgY + 92, 10, COL.output);
+  if (s >= 5) mono(ctx, '\u03B1:  自动学习混合比例', lgX + 125, lgY + 110, 10, COL.alpha);
+}
+
+// ── Side panel update ──
+function updateSidePanel() {
+  const s = currentStep;
+  const step = STEPS[s];
+  const side = document.getElementById('fwdSide');
+
+  let html = `<div class="side-title">Step ${s}: ${step.title.replace(/Step \d+: /, '')}</div>`;
+
+  html += `<div class="side-card"><h4>发生了什么</h4>${step.desc}</div>`;
+
+  html += `<div class="side-card"><h4>对应代码</h4><pre>${step.code}</pre></div>`;
+
+  html += `<div class="side-card"><h4>张量形状</h4>`;
+  for (const [k, v] of Object.entries(step.shapes)) {
+    const cls = k.includes('x') || k === 'W' ? 'tb-input' :
+                k.includes('A') && !k.includes('t') ? 'tb-shared' :
+                k.includes('B0') || k === 'shared' ? 'tb-shared' :
+                k.includes('alpha') || k === 'delta' ? 'tb-alpha' :
+                k.includes('out') || k === 'output' || k === 'Wx' ? 'tb-output' : 'tb-task';
+    html += `<span class="tensor-badge ${cls}">${k}</span> <span class="dim">${v}</span><br>`;
+  }
+  html += `</div>`;
+
+  // Trainable params info for relevant steps
+  if (s >= 1) {
+    html += `<div class="side-card"><h4>这个矩阵是否在训练？</h4>`;
+    const paramInfo = [
+      { name: 'W (原始Linear)', train: false, note: '冻结，requires_grad=False' },
+      { name: 'shared_A', train: true, note: 'nn.Parameter, 所有层各自独立' },
+      { name: 'shared_B₀', train: true, note: 'nn.Parameter, 零初始化' },
+      { name: 'A_tilde', train: true, note: 'nn.Linear, 小随机初始化' },
+      { name: 'B_tilde', train: true, note: 'nn.Linear, 零初始化' },
+      { name: 'alpha_logit', train: true, note: 'nn.Parameter, sigmoid后∈(0,1)' },
+    ];
+    paramInfo.forEach(p => {
+      const color = p.train ? '#4ade80' : '#64748b';
+      const icon = p.train ? '&#9679;' : '&#9675;';
+      html += `<span style="color:${color};font-size:13px;">${icon}</span> <code>${p.name}</code> <span class="dim">— ${p.note}</span><br>`;
+    });
+    html += `</div>`;
+  }
+
+  side.innerHTML = html;
+}
+
+// ── Animation loop ──
+function animate() {
+  animT += 0.016;
+  drawForward();
+  animId = requestAnimationFrame(animate);
+}
+
+function setStep(s) {
+  currentStep = Math.max(0, Math.min(6, s));
+  document.querySelectorAll('.step-btn').forEach(b => {
+    b.classList.toggle('active-step', parseInt(b.dataset.step) === currentStep);
+  });
+  document.getElementById('prevBtn').disabled = currentStep === 0;
+  document.getElementById('nextBtn').disabled = currentStep === 6;
+  updateSidePanel();
+}
+
+// Step button clicks
+document.querySelectorAll('.step-btn').forEach(b => {
+  b.addEventListener('click', () => setStep(parseInt(b.dataset.step)));
+});
+document.getElementById('prevBtn').addEventListener('click', () => setStep(currentStep - 1));
+document.getElementById('nextBtn').addEventListener('click', () => setStep(currentStep + 1));
+
+// Keyboard navigation
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); setStep(currentStep + 1); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); setStep(currentStep - 1); }
+});
+
+// ═══════════════════════════════════════════════
+// PANEL 2: HOOK INJECTION FULL PICTURE
+// ═══════════════════════════════════════════════
+const injCv = document.getElementById('injectCanvas');
+const injCtx = injCv.getContext('2d');
+
+function drawInjectPanel() {
+  const ctx = injCtx;
+  const W = injCv.width, H = injCv.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = COL.bg; ctx.fillRect(0, 0, W, H);
+
+  text(ctx, 'Hook 注入全景：prepare_model() 做了什么', W / 2, 30, 18, COL.text, 'center', '800');
+  text(ctx, '以 Qwen2.5-VL-3B (36 层, 每层 7 个 Linear) 为例', W / 2, 52, 12, COL.dim);
+
+  // Draw 6 layers (representing 36), each with 7 Linear modules
+  const layerH = 110;
+  const modW = 140, modH = 44;
+  const modGap = 12;
+  const startY = 90;
+  const modNames = ['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate', 'up', 'down'];
+
+  for (let layer = 0; layer < 6; layer++) {
+    const y = startY + layer * (layerH + 20);
+    const isLast = layer >= 4;
+    const label = layer < 4 ? `Layer ${layer}` : layer === 4 ? '...' : 'Layer 35';
+
+    if (layer === 4) {
+      // Ellipsis layer
+      text(ctx, '...  (Layer 4 ~ Layer 34 同理)  ...', W / 2, y + 30, 14, COL.dim);
+      continue;
+    }
+
+    // Layer label
+    text(ctx, label, 55, y + layerH / 2, 13, COL.text, 'center', '700');
+
+    // Layer background
+    roundRect(ctx, 100, y, W - 130, layerH, 8, '#1e293b33', '#334155', 1);
+
+    // 7 modules
+    for (let m = 0; m < 7; m++) {
+      const mx = 120 + m * (modW + modGap);
+      const my = y + 15;
+
+      // Original Linear (frozen)
+      roundRect(ctx, mx, my, modW, modH, 6, '#1e293b', COL.frozen, 1);
+      mono(ctx, modNames[m], mx + modW / 2, my + 14, 11, COL.frozen);
+      mono(ctx, 'W frozen', mx + modW / 2, my + 32, 9, '#475569');
+
+      // LiLoRA hook attached
+      const hookY = my + modH + 6;
+      roundRect(ctx, mx + 10, hookY, modW - 20, 30, 4, '#43140744', COL.task, 1.5);
+      mono(ctx, 'LiLoRA', mx + modW / 2, hookY + 10, 9, COL.task);
+      mono(ctx, 'hook', mx + modW / 2, hookY + 22, 8, COL.task + 'aa');
+
+      // Hook arrow
+      ctx.save();
+      ctx.strokeStyle = COL.task; ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(mx + modW / 2, my + modH);
+      ctx.lineTo(mx + modW / 2, hookY);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // Summary stats
+  const sumY = startY + 5 * (layerH + 20) + 60;
+  roundRect(ctx, 100, sumY, W - 200, 100, 10, '#1e293b', COL.task, 1.5);
+  text(ctx, '总计', 180, sumY + 20, 14, COL.text, 'center', '700');
+  mono(ctx, '36 层 x 7 模块 = 252 个 LiLoRALinear', W / 2, sumY + 20, 13, COL.task);
+  mono(ctx, '每个 LiLoRALinear 有: shared_A + shared_B0 + alpha + A_tilde + B_tilde', W / 2, sumY + 44, 11, COL.shared);
+  text(ctx, '在我们的单任务实现中，每个 Linear 独立一套参数（不跨层共享）', W / 2, sumY + 68, 12, '#fbbf24');
+  text(ctx, '论文中 A 和 B₀ 是所有层共享的，但我们简化了这一设计', W / 2, sumY + 86, 11, COL.dim);
+}
+
+// ═══════════════════════════════════════════════
+// PANEL 3: TRAINING — GRADIENT FLOW
+// ═══════════════════════════════════════════════
+const trainCv = document.getElementById('trainCanvas');
+const trainCtx = trainCv.getContext('2d');
+
+function drawTrainPanel() {
+  const ctx = trainCtx;
+  const W = trainCv.width, H = trainCv.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = COL.bg; ctx.fillRect(0, 0, W, H);
+
+  const cx = W / 2;
+
+  text(ctx, '训练：梯度如何流动', cx, 30, 18, COL.text, 'center', '800');
+  text(ctx, '只有 LiLoRA 参数接收梯度，原始模型完全冻结', cx, 52, 12, COL.dim);
+
+  // ── Forward pass (left side) ──
+  const fwdX = 180, trainX = W - 400;
+  const pipeY = 100;
+
+  // Forward title
+  text(ctx, '前向传播 (Forward)', fwdX + 150, pipeY, 15, '#3b82f6', 'center', '700');
+
+  const fwdSteps = [
+    { label: 'input x', color: COL.input, y: pipeY + 40 },
+    { label: 'W·x (frozen Linear)', color: COL.frozen, y: pipeY + 100 },
+    { label: 'Hook intercepts', color: COL.task, y: pipeY + 160 },
+    { label: 'LiLoRA: A·x → split → merge', color: COL.task, y: pipeY + 220 },
+    { label: 'output = W·x + delta', color: COL.output, y: pipeY + 280 },
+    { label: '... next layers ...', color: COL.dim, y: pipeY + 340 },
+    { label: 'logits → CrossEntropyLoss', color: '#ef4444', y: pipeY + 400 },
+  ];
+
+  fwdSteps.forEach((s, i) => {
+    roundRect(ctx, fwdX, s.y, 300, 40, 8, s.color + '22', s.color, 1.5);
+    text(ctx, s.label, fwdX + 150, s.y + 20, 12, s.color);
+    if (i < fwdSteps.length - 1) {
+      drawArrow(ctx, fwdX + 150, s.y + 42, fwdX + 150, fwdSteps[i + 1].y - 2, COL.arrow, 1.5);
+    }
+  });
+
+  // ── Backward pass (right side) ──
+  text(ctx, '反向传播 (Backward)', trainX + 150, pipeY, 15, '#ef4444', 'center', '700');
+
+  const bwdSteps = [
+    { label: 'Loss.backward()', color: '#ef4444', y: pipeY + 400 },
+    { label: '梯度回传到 output', color: '#ef4444', y: pipeY + 340 },
+    { label: '梯度到 delta', color: COL.task, y: pipeY + 280 },
+    { label: '梯度分流到 alpha, B₀·Ax, B\u0303·A\u0303·Ax', color: COL.task, y: pipeY + 220 },
+    { label: '更新 LiLoRA 5 个参数', color: COL.alpha, y: pipeY + 160 },
+    { label: 'W 的梯度？不存在！', color: COL.frozen, y: pipeY + 100 },
+  ];
+
+  bwdSteps.forEach((s, i) => {
+    roundRect(ctx, trainX, s.y, 300, 40, 8, s.color + '22', s.color, 1.5);
+    text(ctx, s.label, trainX + 150, s.y + 20, 12, s.color);
+    if (i < bwdSteps.length - 1) {
+      drawArrow(ctx, trainX + 150, s.y - 2, trainX + 150, bwdSteps[i + 1].y + 42, '#ef4444', 1.5);
+    }
+  });
+
+  // ── Parameter detail ──
+  const detailY = pipeY + 480;
+  text(ctx, '被训练的参数 (requires_grad = True)', cx, detailY, 15, COL.alpha, 'center', '700');
+
+  const params = [
+    { name: 'shared_A', shape: '[128, 1536]', init: 'randn * 0.01', role: '共享下投影', color: COL.shared },
+    { name: 'shared_B₀', shape: '[1536, 128]', init: '全零', role: '共享上投影', color: COL.shared },
+    { name: '_alpha_logit', shape: '[1]', init: 'randn', role: '融合系数 (sigmoid后)', color: COL.alpha },
+    { name: 'A_tilde.weight', shape: '[64, 128]', init: 'randn * 0.01', role: '任务压缩', color: COL.task },
+    { name: 'B_tilde.weight', shape: '[1536, 64]', init: '全零', role: '任务恢复', color: COL.task },
+  ];
+
+  const colW = 250;
+  params.forEach((p, i) => {
+    const px = 80 + i * (colW + 10);
+    const py = detailY + 30;
+    roundRect(ctx, px, py, colW, 100, 8, p.color + '18', p.color, 1.5);
+    mono(ctx, p.name, px + colW / 2, py + 18, 11, p.color);
+    text(ctx, p.shape, px + colW / 2, py + 40, 11, COL.text);
+    text(ctx, '初始化: ' + p.init, px + colW / 2, py + 58, 10, COL.dim);
+    text(ctx, p.role, px + colW / 2, py + 78, 11, '#fbbf24');
+  });
+
+  // ── Key insight ──
+  const insY = detailY + 160;
+  roundRect(ctx, 100, insY, W - 200, 80, 10, '#064e3b44', COL.alpha, 1.5);
+  text(ctx, '为什么梯度不流向 W？', cx, insY + 20, 14, COL.alpha, 'center', '700');
+  text(ctx, 'prepare_model() 第一步: for p in model.parameters(): p.requires_grad = False', cx, insY + 42, 12, COL.text);
+  text(ctx, 'PyTorch 自动微分只追踪 requires_grad=True 的参数 → W 的梯度直接被截断', cx, insY + 62, 12, COL.dim);
+}
+
+// ═══════════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════════
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+
+    if (btn.dataset.tab === 'inject') drawInjectPanel();
+    if (btn.dataset.tab === 'train') drawTrainPanel();
+  });
+});
+
+// ═══════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════
+setStep(0);
+animate();
+
+</script>
+</body>
+</html>

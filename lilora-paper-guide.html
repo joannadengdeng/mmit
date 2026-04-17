@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LoRA in LoRA (LiLoRA) 论文讲解</title>
+<style>
+  /* ── A4 Print Layout ── */
+  @page {
+    size: A4;
+    margin: 15mm 18mm;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: "Noto Sans SC", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.65;
+    color: #1a1a2e;
+    background: #fff;
+    max-width: 210mm;
+    margin: 0 auto;
+    padding: 12mm 15mm;
+  }
+
+  /* ── Header ── */
+  .header {
+    text-align: center;
+    border-bottom: 2.5px solid #6c5ce7;
+    padding-bottom: 10px;
+    margin-bottom: 14px;
+  }
+  .header h1 {
+    font-size: 18pt;
+    color: #6c5ce7;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+  }
+  .header .subtitle {
+    font-size: 10pt;
+    color: #636e72;
+    margin-top: 3px;
+  }
+  .header .authors {
+    font-size: 9pt;
+    color: #888;
+    margin-top: 2px;
+  }
+
+  /* ── Sections ── */
+  h2 {
+    font-size: 13pt;
+    color: #6c5ce7;
+    border-left: 4px solid #6c5ce7;
+    padding-left: 8px;
+    margin: 14px 0 8px 0;
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 11pt;
+    color: #2d3436;
+    margin: 10px 0 5px 0;
+    page-break-after: avoid;
+  }
+
+  p { margin-bottom: 6px; }
+
+  /* ── Key Insight Box ── */
+  .insight {
+    background: linear-gradient(135deg, #f8f6ff 0%, #ede8ff 100%);
+    border: 1.5px solid #c4b5fd;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 10px 0;
+    page-break-inside: avoid;
+  }
+  .insight strong { color: #6c5ce7; }
+  .insight .emoji { font-size: 14pt; vertical-align: middle; }
+
+  /* ── Formula Box ── */
+  .formula-box {
+    background: #f9fafb;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 8px 0;
+    font-family: "Courier New", Consolas, monospace;
+    font-size: 10pt;
+    line-height: 1.8;
+    white-space: pre-line;
+    page-break-inside: avoid;
+  }
+  .formula-box .label {
+    font-family: "Noto Sans SC", sans-serif;
+    font-weight: 700;
+    color: #6c5ce7;
+    font-size: 9pt;
+  }
+
+  /* ── Diagram area ── */
+  .diagram {
+    display: flex;
+    gap: 14px;
+    margin: 10px 0;
+    page-break-inside: avoid;
+  }
+  .diagram-card {
+    flex: 1;
+    background: #f9fafb;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+  }
+  .diagram-card .title {
+    font-weight: 700;
+    font-size: 10pt;
+    color: #374151;
+    margin-bottom: 6px;
+  }
+  .diagram-card .arch {
+    font-family: "Courier New", monospace;
+    font-size: 9.5pt;
+    line-height: 1.7;
+    text-align: left;
+    color: #1f2937;
+  }
+  .diagram-card .arch .shared { color: #6c5ce7; font-weight: 700; }
+  .diagram-card .arch .task { color: #e17055; font-weight: 700; }
+  .diagram-card .arch .learn { color: #00b894; font-weight: 700; }
+  .diagram-card .arch .dim { color: #636e72; font-size: 8.5pt; }
+
+  /* ── Tables ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 9.5pt;
+    page-break-inside: avoid;
+  }
+  th {
+    background: #6c5ce7;
+    color: white;
+    padding: 5px 8px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 9pt;
+  }
+  td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  tr:nth-child(even) { background: #f8f7ff; }
+  .highlight-row { background: #ede8ff !important; font-weight: 600; }
+
+  /* ── Numbered Steps ── */
+  .steps {
+    counter-reset: step;
+    list-style: none;
+    padding: 0;
+  }
+  .steps li {
+    counter-increment: step;
+    padding: 5px 0 5px 36px;
+    position: relative;
+    margin-bottom: 4px;
+  }
+  .steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 4px;
+    width: 24px;
+    height: 24px;
+    background: #6c5ce7;
+    color: white;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 24px;
+    font-size: 9pt;
+    font-weight: 700;
+  }
+
+  /* ── Two Column Layout ── */
+  .two-col {
+    display: flex;
+    gap: 14px;
+    margin: 8px 0;
+  }
+  .two-col > div { flex: 1; }
+
+  /* ── Tags ── */
+  .tag {
+    display: inline-block;
+    font-size: 8pt;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+  .tag-purple { background: #ede8ff; color: #6c5ce7; }
+  .tag-green  { background: #d5f5e3; color: #00b894; }
+  .tag-red    { background: #ffe0e0; color: #d63031; }
+  .tag-blue   { background: #dbeafe; color: #2563eb; }
+
+  /* ── Annotations / Callouts ── */
+  .callout {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    background: #fffbeb;
+    border: 1px solid #fbbf24;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 8px 0;
+    font-size: 9.5pt;
+    page-break-inside: avoid;
+  }
+  .callout .icon { font-size: 14pt; flex-shrink: 0; }
+
+  /* ── Footer ── */
+  .footer {
+    margin-top: 16px;
+    padding-top: 8px;
+    border-top: 1px solid #d1d5db;
+    font-size: 8pt;
+    color: #9ca3af;
+    text-align: center;
+  }
+
+  /* ── Code Compare Layout ── */
+  .code-compare { margin: 8px 0; }
+  .compare-row {
+    display: flex;
+    gap: 10px;
+    page-break-inside: avoid;
+  }
+  .compare-left {
+    flex: 0 0 38%;
+  }
+  .compare-right {
+    flex: 1;
+  }
+  .compare-title {
+    font-size: 9pt;
+    font-weight: 700;
+    color: #374151;
+    margin-bottom: 4px;
+    padding: 2px 6px;
+    background: #f3f4f6;
+    border-radius: 3px;
+    display: inline-block;
+  }
+  .compare-title code {
+    font-size: 8.5pt;
+    color: #e17055;
+  }
+
+  /* ── Code Block ── */
+  .code-block, pre.code-block {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: "JetBrains Mono", "Fira Code", "Courier New", monospace;
+    font-size: 8pt;
+    line-height: 1.55;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 0;
+  }
+  .code-block .kw { color: #cba6f7; }  /* keyword */
+  .code-block .fn { color: #89b4fa; }  /* function */
+  .code-block .cls { color: #f9e2af; } /* class */
+  .code-block .str { color: #a6e3a1; } /* string */
+  .code-block .num { color: #fab387; } /* number */
+  .code-block .cmt { color: #6c7086; font-style: italic; } /* comment */
+
+  /* ── Print adjustments ── */
+  @media print {
+    body { padding: 0; max-width: none; }
+    .no-print { display: none; }
+    .code-block, pre.code-block {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- HEADER                                                  -->
+<!-- ════════════════════════════════════════════════════════ -->
+<div class="header">
+  <h1>LoRA in LoRA (LiLoRA)</h1>
+  <div class="subtitle">Parameter-Efficient Architecture Expansion for Continual Visual Instruction Tuning</div>
+  <div class="authors">Che et al. &middot; arXiv 2508.06202 &middot; 2025</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- 1. PROBLEM                                              -->
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>1. 这篇论文想解决什么问题？</h2>
+
+<div class="insight">
+  <strong>核心问题：VLM 持续学习时的"灾难性遗忘"</strong><br>
+  大型视觉语言模型（VLM）需要不断学习新任务（比如先学 VQA，再学图像描述，再学分类...），但学了新任务后，旧任务的能力会严重下降。传统做法是每个任务训一套独立的 LoRA，参数量大且完全隔离，无法共享知识。
+</div>
+
+<div class="two-col">
+  <div>
+    <h3>现有方法的缺陷</h3>
+    <ul>
+      <li><strong>SeqLoRA</strong>（顺序微调）：直接在同一 LoRA 上接着训 &rarr; 旧任务遗忘严重（BWT = -48）</li>
+      <li><strong>DirLoRA</strong>（独立 LoRA）：每个任务单独一套 LoRA &rarr; 参数多（每任务 357 MB），无知识共享</li>
+      <li><strong>SMoLoRA</strong>（混合专家）：较好，但结构复杂，参数量仍高</li>
+    </ul>
+  </div>
+  <div>
+    <h3>LiLoRA 的目标</h3>
+    <ul>
+      <li>每任务参数量减少 <strong>70%</strong></li>
+      <li>遗忘程度减少 <strong>70%</strong></li>
+      <li>保持甚至超越独立 LoRA 的性能</li>
+      <li>支持任意数量的新任务扩展</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- 2. KEY OBSERVATION                                      -->
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>2. 关键发现：CKA 分析</h2>
+
+<div class="callout">
+  <div class="icon">&#128269;</div>
+  <div>
+    作者用 <strong>CKA（Centered Kernel Alignment）</strong>分析不同任务训出来的 LoRA 矩阵，发现：<br>
+    &bull; <strong>A 矩阵</strong>（下投影）在不同任务之间 <strong>高度相似</strong>（CKA > 0.9）<br>
+    &bull; <strong>B 矩阵</strong>（上投影）在不同任务之间 <strong>差异很大</strong>（CKA &lt; 0.3）<br>
+    <strong>&rarr; 结论：A 可以共享，B 需要任务特定。</strong>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- 3. ARCHITECTURE                                         -->
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>3. LiLoRA 架构详解</h2>
+
+<div class="diagram">
+  <div class="diagram-card">
+    <div class="title">Standard LoRA</div>
+    <div class="arch">
+x &rarr; [<span class="dim">d_in</span>]
+    |
+    A &rarr; [<span class="dim">r &times; d_in</span>]  <span class="dim">下投影</span>
+    |
+    B &rarr; [<span class="dim">d_out &times; r</span>] <span class="dim">上投影</span>
+    |
+&Delta;W = B &middot; A
+
+<span class="dim">每个任务独立的 A 和 B</span>
+<span class="dim">参数量 = d_in&times;r + d_out&times;r</span>
+    </div>
+  </div>
+  <div class="diagram-card" style="border-color: #c4b5fd;">
+    <div class="title" style="color: #6c5ce7;">LiLoRA (本文)</div>
+    <div class="arch">
+x &rarr; [<span class="dim">d_in</span>]
+    |
+    <span class="shared">A</span> &rarr; [<span class="dim">r &times; d_in</span>]  <span class="tag tag-purple">共享</span>
+    |
+  &boxdr;&HorizontalLine;&HorizontalLine;&HorizontalLine;&HorizontalLine;&HorizontalLine;&HorizontalLine;&HorizontalLine;&HorizontalLine;&boxdl;
+  |          |
+<span class="shared">B&#8320;</span> <span class="tag tag-purple">共享</span>   <span class="task">B&#771;<sub>i</sub>&middot;A&#771;<sub>i</sub></span> <span class="tag tag-red">任务i</span>
+  |          |
+  &boxur;&HorizontalLine;&HorizontalLine;&HorizontalLine;&HorizontalLine;&HorizontalLine;&HorizontalLine;&HorizontalLine;&HorizontalLine;&boxul;
+    |
+&Delta;W = (<span class="learn">&alpha;</span>&middot;<span class="shared">B&#8320;</span> + (1-<span class="learn">&alpha;</span>)&middot;<span class="task">B&#771;<sub>i</sub>&middot;A&#771;<sub>i</sub></span>) &middot; <span class="shared">A</span>
+    </div>
+  </div>
+</div>
+
+<div class="formula-box"><span class="label">&diams; 公式分解：</span>
+
+<strong>&Delta;W<sub>i</sub> = (&alpha; &middot; B&#8320; + (1-&alpha;) &middot; B&#771;<sub>i</sub> &middot; A&#771;<sub>i</sub>) &middot; A</strong>
+
+  <span class="label">其中：</span>
+  A  &isin; R<sup>r&times;k</sup>       &larr; 所有任务共享的下投影矩阵
+  B&#8320; &isin; R<sup>d&times;r</sup>       &larr; 所有任务共享的基础上投影矩阵
+  B&#771;<sub>i</sub> &isin; R<sup>d&times;r&#771;</sup>      &larr; 任务 i 特有的低秩因子
+  A&#771;<sub>i</sub> &isin; R<sup>r&#771;&times;r</sup>      &larr; 任务 i 特有的低秩因子 (r&#771; &lt; r)
+  &alpha; &isin; (0,1)        &larr; 可学习融合系数，sigmoid(logit)
+</div>
+
+<div class="callout">
+  <div class="icon">&#128161;</div>
+  <div>
+    <strong>直觉理解：</strong>把 LoRA 的 B 矩阵拆成两部分 &mdash; 一个大家共用的"底座" B&#8320;，和一个每个任务自己的小调整 B&#771;<sub>i</sub>&middot;A&#771;<sub>i</sub>。&alpha; 控制两者的比例。相当于在 LoRA 里面再嵌套一个 LoRA &mdash; 这就是 "LoRA in LoRA" 的名字由来。
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- 4. REGULARIZATION                                       -->
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>4. 防遗忘的正则化机制</h2>
+
+<p>光共享参数还不够，B&#8320; 在学新任务时会被更新，可能破坏旧任务的表示。论文引入<strong>余弦正则化</strong>：</p>
+
+<div class="formula-box"><span class="label">&diams; 正则化损失：</span>
+
+L<sub>reg</sub> = (1 - cos(B&#771;<sub>t</sub>&middot;A&#771;<sub>t</sub>, B&#771;<sub>t-1</sub>&middot;A&#771;<sub>t-1</sub>)) &middot; ||B&#8320;<sup>t</sup> - B&#8320;<sup>t-1</sup>||&sup2;
+
+<span class="label">&diams; 总损失：</span>
+L<sub>total</sub> = L<sub>task</sub> + &lambda; &middot; L<sub>reg</sub>
+</div>
+
+<div class="two-col">
+  <div>
+    <h3>公式含义</h3>
+    <ul>
+      <li><strong>cos(...)</strong>：新旧任务的 B&#771;&middot;A&#771; 方向越相似，正则越小</li>
+      <li><strong>||B&#8320; 变化||</strong>：共享基础矩阵变化越大，惩罚越大</li>
+      <li>两者相乘：只有当任务特定部分方向变了<em>且</em>共享部分也变了，才重罚</li>
+    </ul>
+  </div>
+  <div>
+    <h3>Ablation 证明正则化很关键</h3>
+    <table>
+      <tr><th>配置</th><th>AP</th><th>BWT</th></tr>
+      <tr><td>仅共享 A</td><td>85.38</td><td>-2.87</td></tr>
+      <tr><td>共享 A + 分解 B（无正则）</td><td>73.99</td><td style="color: #d63031;">-16.14</td></tr>
+      <tr class="highlight-row"><td>共享 A + 分解 B + 正则</td><td>84.88</td><td>-3.13</td></tr>
+    </table>
+    <p style="font-size: 8.5pt; color: #636e72;">没有正则化时遗忘严重（BWT 从 -3 恶化到 -16）</p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- 5. TRAINING SETUP                                       -->
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>5. 训练设置</h2>
+
+<div class="two-col">
+  <div>
+    <h3>超参数</h3>
+    <table>
+      <tr><th>参数</th><th>值</th></tr>
+      <tr><td>Base Model</td><td>LLaVA-v1.5-7B / Qwen2-VL-2B</td></tr>
+      <tr><td>Optimizer</td><td>Adam</td></tr>
+      <tr><td>Learning Rate</td><td>2e-5</td></tr>
+      <tr><td>Batch Size</td><td>64</td></tr>
+      <tr><td>Epochs / task</td><td>1</td></tr>
+      <tr><td>共享 Rank (r)</td><td>128</td></tr>
+      <tr><td>任务 Rank (r&#771;)</td><td>64</td></tr>
+      <tr><td>注入位置</td><td>FFN + Projection 层</td></tr>
+    </table>
+  </div>
+  <div>
+    <h3>CVIT Benchmark (6 任务顺序)</h3>
+    <table>
+      <tr><th>#</th><th>数据集</th><th>Train</th><th>任务</th></tr>
+      <tr><td>1</td><td>ScienceQA</td><td>12.7K</td><td>科学多选</td></tr>
+      <tr><td>2</td><td>TextVQA</td><td>34.6K</td><td>OCR VQA</td></tr>
+      <tr><td>3</td><td>Flickr30k</td><td>145K</td><td>图像描述</td></tr>
+      <tr><td>4</td><td>ImageNet-100</td><td>117K</td><td>分类</td></tr>
+      <tr><td>5</td><td>GQA</td><td>72.1K</td><td>推理 VQA</td></tr>
+      <tr><td>6</td><td>VQAv2</td><td>82.8K</td><td>通用 VQA</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- 6. RESULTS                                              -->
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>6. 实验结果</h2>
+
+<h3>参数效率对比</h3>
+<table>
+  <tr><th>方法</th><th>总参数 (MB)</th><th>每任务 (MB)</th><th>相比 DirLoRA</th></tr>
+  <tr><td>DirLoRA（独立 LoRA）</td><td>2,143.9</td><td>357.3</td><td>基线</td></tr>
+  <tr><td>仅共享 A</td><td>1,250.6</td><td>178.7</td><td>-50%</td></tr>
+  <tr class="highlight-row"><td>LiLoRA</td><td>985.1</td><td>104.6</td><td><strong>-71%</strong></td></tr>
+</table>
+
+<h3>性能对比（Single-type Setting）</h3>
+<table>
+  <tr><th>方法</th><th>SciQA</th><th>TextVQA</th><th>Flickr</th><th>ImgNet</th><th>GQA</th><th>VQAv2</th><th>AP&uarr;</th><th>BWT&uarr;</th></tr>
+  <tr><td>SeqLoRA</td><td>55.31</td><td>50.22</td><td>33.89</td><td>22.73</td><td>50.52</td><td>64.61</td><td>46.21</td><td style="color:#d63031">-48.10</td></tr>
+  <tr><td>DirLoRA*</td><td>83.75</td><td>60.66</td><td>164.20</td><td>96.71</td><td>58.55</td><td>64.93</td><td>88.13</td><td>0.00</td></tr>
+  <tr><td>SMoLoRA</td><td>77.36</td><td>58.29</td><td>151.99</td><td>95.35</td><td>51.96</td><td>65.71</td><td>83.44</td><td>-3.23</td></tr>
+  <tr class="highlight-row"><td>LiLoRA</td><td>77.88</td><td>58.83</td><td>152.93</td><td>96.02</td><td>58.28</td><td>65.33</td><td>84.88</td><td>-3.13</td></tr>
+</table>
+
+<p style="font-size: 9pt; color: #636e72;">AP = Average Performance, BWT = Backward Transfer (遗忘指标，越接近 0 越好). *DirLoRA 是上界（独立 LoRA 不遗忘）。</p>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- 7. TAKEAWAY                                             -->
+<!-- ════════════════════════════════════════════════════════ -->
+<h2>7. 核心总结</h2>
+
+<ol class="steps">
+  <li><strong>CKA 发现</strong> &mdash; 不同任务的 LoRA A 矩阵高度相似，B 矩阵差异大。所以共享 A，分解 B。</li>
+  <li><strong>"LoRA in LoRA" 结构</strong> &mdash; B 矩阵 = 共享基础 B&#8320; + 任务特定的低秩分解 B&#771;<sub>i</sub>&middot;A&#771;<sub>i</sub>，用可学习 &alpha; 融合。</li>
+  <li><strong>余弦正则化</strong> &mdash; 防止共享基础在学新任务时偏移过大，是防遗忘的关键。</li>
+  <li><strong>结果</strong> &mdash; 每任务参数 <strong>104.6 MB</strong>（vs 357.3 MB），遗忘 BWT = <strong>-3.13</strong>（vs -48.10），性能接近独立 LoRA 上界。</li>
+</ol>
+
+<div class="insight" style="margin-top: 12px;">
+  <strong>一句话总结：</strong>LiLoRA 通过在 LoRA 的 B 矩阵里再嵌套一层低秩分解（LoRA-in-LoRA），让多个任务共享公共参数的同时保留各自的适配能力，配合余弦正则化大幅减少遗忘，实现了参数量和遗忘率双降 70%。
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- PAGE 2: THEORY → CODE                                   -->
+<!-- ════════════════════════════════════════════════════════ -->
+<div style="page-break-before: always;"></div>
+
+<div class="header" style="border-bottom-color: #e17055;">
+  <h1 style="color: #e17055;">LiLoRA: 从论文公式到代码实现</h1>
+  <div class="subtitle">对照 mmit/src/mmit/training/methods/lilora.py</div>
+</div>
+
+<h2 style="border-left-color: #e17055; color: #e17055;">Step 1. 定义 LiLoRA 层 &mdash; 论文公式的直接翻译</h2>
+
+<div class="insight" style="border-color: #fab1a0; background: linear-gradient(135deg, #fff5f5 0%, #ffe8e0 100%);">
+  <strong style="color: #e17055;">核心思路：</strong>每个被适配的 Linear 层旁边挂一个 <code>LiLoRALinear</code> 模块。它存储论文中的所有矩阵参数，并在 <code>forward()</code> 中计算 &Delta;W&middot;x。
+</div>
+
+<div class="code-compare">
+
+<div class="compare-row">
+  <div class="compare-left">
+    <div class="compare-title">论文公式</div>
+    <div class="formula-box" style="margin: 0; font-size: 9pt;">
+A &isin; R<sup>r&times;k</sup>      共享下投影
+B&#8320; &isin; R<sup>d&times;r</sup>     共享基础上投影
+&alpha; = sigmoid(logit)  可学习融合系数
+B&#771;<sub>i</sub> &isin; R<sup>d&times;r&#771;</sup>    任务特定
+A&#771;<sub>i</sub> &isin; R<sup>r&#771;&times;r</sup>    任务特定 (r&#771; &lt; r)
+    </div>
+  </div>
+  <div class="compare-right">
+    <div class="compare-title">代码：<code>LiLoRALinear.__init__()</code></div>
+    <pre class="code-block"><span class="kw">class</span> <span class="cls">LiLoRALinear</span>(nn.Module):
+  <span class="kw">def</span> <span class="fn">__init__</span>(self, in_features, out_features,
+               rank=<span class="num">128</span>, task_rank=<span class="num">64</span>):
+    <span class="cmt"># A ∈ R^{r×k} — 共享下投影</span>
+    self.shared_A = nn.Parameter(
+        torch.randn(rank, in_features) * <span class="num">0.01</span>)
+
+    <span class="cmt"># B₀ ∈ R^{d×r} — 共享基础上投影</span>
+    self.shared_B0 = nn.Parameter(
+        torch.zeros(out_features, rank))
+
+    <span class="cmt"># α = sigmoid(logit) — 可学习融合</span>
+    self._alpha_logit = nn.Parameter(
+        torch.randn(<span class="num">1</span>))
+
+    <span class="cmt"># B̃ᵢ ∈ R^{d×r̃} — 任务特定</span>
+    self.B_tilde = nn.Linear(
+        task_rank, out_features, bias=<span class="kw">False</span>)
+    <span class="cmt"># Ãᵢ ∈ R^{r̃×r} — 任务特定</span>
+    self.A_tilde = nn.Linear(
+        rank, task_rank, bias=<span class="kw">False</span>)</pre>
+  </div>
+</div>
+
+<div class="compare-row" style="margin-top: 10px;">
+  <div class="compare-left">
+    <div class="compare-title">论文前向传播</div>
+    <div class="formula-box" style="margin: 0; font-size: 9pt;">
+<strong>Step a:</strong> Ax = A &middot; x
+         <span style="color:#636e72;">[B, seq, r]</span>
+
+<strong>Step b:</strong> 共享路径 = B&#8320; &middot; Ax
+         <span style="color:#636e72;">[B, seq, d]</span>
+
+<strong>Step c:</strong> 任务路径 = B&#771;<sub>i</sub> &middot; A&#771;<sub>i</sub> &middot; Ax
+         <span style="color:#636e72;">[B, seq, d]</span>
+
+<strong>Step d:</strong> &delta; = &alpha;&middot;(b) + (1-&alpha;)&middot;(c)
+
+<strong>Output:</strong> W&middot;x + &delta;
+    </div>
+  </div>
+  <div class="compare-right">
+    <div class="compare-title">代码：<code>LiLoRALinear.forward()</code></div>
+    <pre class="code-block"><span class="kw">def</span> <span class="fn">forward</span>(self, x, base_output):
+  <span class="cmt"># Step a: 共享下投影 A·x</span>
+  Ax = F.linear(x, self.shared_A)
+
+  <span class="cmt"># α = sigmoid(logit)</span>
+  alpha = torch.sigmoid(self._alpha_logit)
+
+  <span class="cmt"># Step c: 任务路径 B̃·Ã·Ax</span>
+  task_BA = self.B_tilde(self.A_tilde(Ax))
+
+  <span class="cmt"># Step d: 加权融合</span>
+  delta = (alpha * F.linear(Ax, self.shared_B0)
+         + (<span class="num">1</span> - alpha) * task_BA)
+
+  <span class="cmt"># Output: 原始输出 + delta</span>
+  <span class="kw">return</span> base_output + delta</pre>
+  </div>
+</div>
+
+</div>
+
+<div class="callout" style="margin-top: 10px;">
+  <div class="icon">&#128269;</div>
+  <div>
+    <strong>初始化策略的含义：</strong><br>
+    &bull; <code>shared_A</code>：小随机值 (<code>* 0.01</code>)，让初始 delta 接近零<br>
+    &bull; <code>shared_B0</code>：全零初始化 &rarr; 训练开始时 &delta; &asymp; 0，不破坏预训练权重<br>
+    &bull; <code>B_tilde</code>：全零 / <code>A_tilde</code>：小随机 &rarr; 任务路径也从零开始<br>
+    &bull; <code>_alpha_logit</code>：随机初始化 &rarr; sigmoid 后 &alpha; &asymp; 0.5，两条路径各占一半
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2 style="border-left-color: #e17055; color: #e17055;">Step 2. 注入模型 &mdash; 用 Hook 把 LiLoRA 挂到每一层</h2>
+
+<div class="compare-row">
+  <div class="compare-left">
+    <div class="compare-title">论文描述</div>
+    <div class="formula-box" style="margin: 0; font-size: 9pt;">
+对 VLM 中每个目标 Linear 层:
+  原始: y = W &middot; x
+  改为: y = W &middot; x + &delta;(x)
+
+目标模块：q_proj, k_proj, v_proj,
+  o_proj, gate_proj, up_proj, down_proj
+  (即 Attention + FFN 的所有线性层)
+
+冻结原模型所有参数
+只训练 LiLoRA 新增参数
+    </div>
+  </div>
+  <div class="compare-right">
+    <div class="compare-title">代码：<code>LiLoRAMethod.prepare_model()</code></div>
+    <pre class="code-block"><span class="kw">def</span> <span class="fn">prepare_model</span>(self, model, processor, config):
+  rank = config.get(<span class="str">"shared_rank"</span>, <span class="num">128</span>)
+  task_rank = config.get(<span class="str">"task_rank"</span>, <span class="num">64</span>)
+
+  <span class="cmt"># 1. 冻结整个模型</span>
+  <span class="kw">for</span> p <span class="kw">in</span> model.parameters():
+    p.requires_grad = <span class="kw">False</span>
+
+  <span class="cmt"># 2. 自动检测目标模块名</span>
+  targets = _auto_detect_targets(model)
+  <span class="cmt"># → {"q_proj","k_proj","v_proj",...}</span>
+
+  <span class="cmt"># 3. 遍历所有 Linear，匹配则注入</span>
+  <span class="kw">for</span> name, module <span class="kw">in</span> model.named_modules():
+    <span class="kw">if</span> isinstance(module, nn.Linear):
+      short = name.split(<span class="str">"."</span>)[-<span class="num">1</span>]
+      <span class="kw">if</span> short <span class="kw">in</span> targets:
+        <span class="cmt"># 创建 LiLoRA 模块</span>
+        ll = LiLoRALinear(
+          module.in_features,
+          module.out_features,
+          rank, task_rank)
+
+        <span class="cmt"># 4. 用 forward hook 注入</span>
+        <span class="kw">def</span> <span class="fn">make_hook</span>(ll):
+          <span class="kw">def</span> <span class="fn">hook</span>(mod, inp, out):
+            <span class="kw">return</span> ll(inp[<span class="num">0</span>], out)
+          <span class="kw">return</span> hook
+        module.register_forward_hook(
+          make_hook(ll))</pre>
+  </div>
+</div>
+
+<div class="callout" style="margin-top: 8px;">
+  <div class="icon">&#128161;</div>
+  <div>
+    <strong>Forward Hook 机制（关键技巧）：</strong><br>
+    PyTorch 的 <code>register_forward_hook(fn)</code> 会在模块的 <code>forward()</code> 执行完后自动调用 <code>fn(module, input, output)</code>。<br>
+    所以 <code>hook(mod, inp, out) = ll(inp[0], out)</code> 意思是：<br>
+    &bull; <code>inp[0]</code> = 原始输入 x &rarr; 传给 LiLoRA 计算 &delta;(x)<br>
+    &bull; <code>out</code> = 原始输出 W&middot;x &rarr; LiLoRA 在上面加 &delta;<br>
+    &bull; 最终返回 W&middot;x + &delta; &mdash; <strong>完全不修改原模型代码！</strong>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<div style="page-break-before: always;"></div>
+
+<h2 style="border-left-color: #e17055; color: #e17055;">Step 3. 训练循环 &mdash; 只更新 LiLoRA 参数</h2>
+
+<div class="compare-row">
+  <div class="compare-left">
+    <div class="compare-title">论文：训练策略</div>
+    <div class="formula-box" style="margin: 0; font-size: 9pt;">
+<strong>Loss = 标准交叉熵</strong>
+(论文中正则化用于多任务
+ 持续学习场景)
+
+<strong>Optimizer</strong>: 只优化
+  LiLoRA 新增的参数：
+  - shared_A, shared_B0
+  - _alpha_logit
+  - B_tilde.weight
+  - A_tilde.weight
+
+<strong>冻结</strong>：原模型所有参数
+<strong>梯度</strong>：只从 LiLoRA 模块回传
+    </div>
+  </div>
+  <div class="compare-right">
+    <div class="compare-title">代码：<code>compute_loss()</code> + <code>get_trainable_params()</code></div>
+    <pre class="code-block"><span class="cmt"># ── 损失函数 ──</span>
+<span class="kw">def</span> <span class="fn">compute_loss</span>(self, model, batch, outputs):
+  <span class="cmt"># 标准交叉熵，和普通 LoRA 一样</span>
+  <span class="kw">return</span> _standard_ce_loss(outputs, batch), {}
+
+<span class="cmt"># ── 收集可训练参数 ──</span>
+<span class="kw">def</span> <span class="fn">get_trainable_params</span>(self, model):
+  params = []
+  <span class="kw">for</span> ll <span class="kw">in</span> self._lilora_modules:
+    params.extend(
+      p <span class="kw">for</span> p <span class="kw">in</span> ll.parameters()
+        <span class="kw">if</span> p.requires_grad)
+  <span class="kw">return</span> [{<span class="str">"params"</span>: params}]
+
+<span class="cmt"># __main__.py 中的训练循环：</span>
+optimizer = AdamW(
+  method.get_trainable_params(model),
+  lr=<span class="num">2e-4</span>)
+
+<span class="kw">for</span> batch <span class="kw">in</span> dataloader:
+  outputs = model(**batch)
+  loss, _ = method.compute_loss(
+    model, batch, outputs)
+  loss.backward()  <span class="cmt"># 梯度只流向 LiLoRA</span>
+  optimizer.step()</pre>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2 style="border-left-color: #e17055; color: #e17055;">Step 4. 保存和加载 &mdash; 只存 LiLoRA 状态</h2>
+
+<div class="compare-row">
+  <div class="compare-left">
+    <div class="compare-title">论文思路</div>
+    <div class="formula-box" style="margin: 0; font-size: 9pt;">
+<strong>保存</strong>：
+  只需保存每层 LiLoRA 的参数：
+  - shared_A, shared_B0
+  - _alpha_logit
+  - B_tilde, A_tilde
+  (基座模型不变，不需要保存)
+
+<strong>加载</strong>：
+  1. 加载原始基座模型
+  2. 重新 prepare_model()
+     → 创建空 LiLoRA 模块并挂 hook
+  3. 从文件加载权重到 LiLoRA 模块
+  4. 模型即可推理
+    </div>
+  </div>
+  <div class="compare-right">
+    <div class="compare-title">代码：<code>save_checkpoint()</code> + <code>load_for_inference()</code></div>
+    <pre class="code-block"><span class="cmt"># ── 保存 ──</span>
+<span class="kw">def</span> <span class="fn">save_checkpoint</span>(self, model, proc, path, meta):
+  lilora_state = {}
+  <span class="kw">for</span> i, ll <span class="kw">in</span> enumerate(self._lilora_modules):
+    lilora_state[<span class="str">f"layer_{i}"</span>] = ll.state_dict()
+  torch.save(lilora_state,
+    os.path.join(path, <span class="str">"lilora_state.pt"</span>))
+
+<span class="cmt"># ── 加载 ──</span>
+<span class="kw">def</span> <span class="fn">load_for_inference</span>(self, path, base_model_id):
+  <span class="cmt"># 1. 加载原始基座模型</span>
+  model = AutoVLM.from_pretrained(base_model_id)
+
+  <span class="cmt"># 2. 重建 LiLoRA 结构（空参数）</span>
+  self.prepare_model(model, processor, config)
+
+  <span class="cmt"># 3. 加载保存的权重</span>
+  state = torch.load(<span class="str">"lilora_state.pt"</span>)
+  <span class="kw">for</span> i, ll <span class="kw">in</span> enumerate(self._lilora_modules):
+    ll.load_state_dict(state[<span class="str">f"layer_{i}"</span>])
+
+  model.eval()
+  <span class="kw">return</span> model, processor, info</pre>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<h2 style="border-left-color: #e17055; color: #e17055;">Step 5. 完整数据流总览</h2>
+
+<div class="formula-box" style="font-size: 9pt; line-height: 2; background: #fef3f0; border-color: #fab1a0;">
+<span class="label" style="color: #e17055;">&#9654; 输入 x 经过模型的一个 Linear 层 (例如 q_proj) 的完整流程：</span>
+
+  x: [batch, seq_len, d_in]                <span style="color:#636e72;">输入 hidden state</span>
+                |
+       <span style="color:#636e72;">┌───────┴───────┐</span>
+       <span style="color:#636e72;">│               │</span>
+  <strong>原始路径</strong>           <strong style="color:#e17055;">LiLoRA 路径 (hook)</strong>
+  W &middot; x              |
+  = base_output     shared_A &middot; x          <span style="color:#636e72;">→ Ax [batch, seq, r=128]</span>
+       <span style="color:#636e72;">│</span>              |
+       <span style="color:#636e72;">│</span>         <span style="color:#636e72;">┌────┴────┐</span>
+       <span style="color:#636e72;">│</span>         <span style="color:#636e72;">│         │</span>
+       <span style="color:#636e72;">│</span>    B&#8320; &middot; Ax    A&#771;&middot;Ax         <span style="color:#636e72;">→ [batch, seq, r̃=64]</span>
+       <span style="color:#636e72;">│</span>    <span style="color:#6c5ce7;">[共享]</span>    B&#771;&middot;(A&#771;&middot;Ax)      <span style="color:#636e72;">→ [batch, seq, d_out]</span>
+       <span style="color:#636e72;">│</span>         <span style="color:#636e72;">│</span>    <span style="color:#e17055;">[任务特定]</span>
+       <span style="color:#636e72;">│</span>         <span style="color:#636e72;">└────┬────┘</span>
+       <span style="color:#636e72;">│</span>              |
+       <span style="color:#636e72;">│</span>    &delta; = &alpha;&middot;(B&#8320;&middot;Ax) + (1-&alpha;)&middot;(B&#771;&middot;A&#771;&middot;Ax)
+       <span style="color:#636e72;">│</span>              |
+       <span style="color:#636e72;">└───────┬───────┘</span>
+                |
+  <strong>output = base_output + &delta;</strong>           <span style="color:#636e72;">→ [batch, seq, d_out]</span>
+</div>
+
+<h2 style="border-left-color: #e17055; color: #e17055;">总结：论文概念 &harr; 代码对照表</h2>
+
+<table>
+  <tr><th style="background: #e17055;">论文概念</th><th style="background: #e17055;">代码位置</th><th style="background: #e17055;">说明</th></tr>
+  <tr><td>A &isin; R<sup>r&times;k</sup></td><td><code>self.shared_A</code></td><td>nn.Parameter, randn*0.01 初始化</td></tr>
+  <tr><td>B&#8320; &isin; R<sup>d&times;r</sup></td><td><code>self.shared_B0</code></td><td>nn.Parameter, 全零初始化</td></tr>
+  <tr><td>&alpha; = sigmoid(logit)</td><td><code>self._alpha_logit</code> + <code>@property alpha</code></td><td>存 logit 保证 &alpha; &isin; (0,1)</td></tr>
+  <tr><td>B&#771;<sub>i</sub> &isin; R<sup>d&times;r&#771;</sup></td><td><code>self.B_tilde</code> (nn.Linear)</td><td>零初始化 weight</td></tr>
+  <tr><td>A&#771;<sub>i</sub> &isin; R<sup>r&#771;&times;r</sup></td><td><code>self.A_tilde</code> (nn.Linear)</td><td>小随机初始化</td></tr>
+  <tr><td>&Delta;W &middot; x 计算</td><td><code>forward(x, base_output)</code></td><td>F.linear + 加权求和</td></tr>
+  <tr><td>注入到模型</td><td><code>register_forward_hook</code></td><td>不修改模型代码，hook 拦截输出</td></tr>
+  <tr><td>冻结基座模型</td><td><code>requires_grad = False</code></td><td>prepare_model() 第一步</td></tr>
+  <tr><td>目标模块检测</td><td><code>_auto_detect_targets()</code></td><td>自动找 q/k/v/o/gate/up/down_proj</td></tr>
+  <tr><td>保存适配器</td><td><code>torch.save(lilora_state)</code></td><td>每层 LiLoRA 的 state_dict</td></tr>
+  <tr><td>r = 128, r&#771; = 64</td><td><code>shared_rank</code>, <code>task_rank</code></td><td>YAML config 可配置</td></tr>
+</table>
+
+<div class="insight" style="margin-top: 12px; border-color: #fab1a0; background: linear-gradient(135deg, #fff5f5 0%, #ffe8e0 100%);">
+  <strong style="color: #e17055;">从论文到代码的核心模式：</strong><br>
+  1. <strong>公式 &rarr; Module</strong>：论文的每个数学公式对应一个 <code>nn.Module</code>，参数用 <code>nn.Parameter</code> 声明<br>
+  2. <strong>矩阵乘法 &rarr; <code>F.linear()</code></strong>：所有 W&middot;x 变成 <code>F.linear(x, W)</code> 或 <code>nn.Linear</code><br>
+  3. <strong>架构修改 &rarr; Hook</strong>：不改原模型，用 <code>register_forward_hook</code> 在输出上 "加一笔"<br>
+  4. <strong>冻结 &rarr; <code>requires_grad=False</code></strong>：一行代码冻结原始参数<br>
+  5. <strong>保存/加载 &rarr; <code>state_dict()</code></strong>：只存新增参数，加载时重建结构再填入权重
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!-- PAGE 4: 三个维度：层 × 模块 × 任务                      -->
+<!-- ════════════════════════════════════════════════════════ -->
+<div style="page-break-before: always;"></div>
+
+<div class="header" style="border-bottom-color: #f59e0b;">
+  <h1 style="color: #f59e0b;">B&#771;/A&#771; 的"不同"到底指什么？</h1>
+  <div class="subtitle">三个维度：Transformer 层 &times; 层内模块 &times; 任务</div>
+</div>
+
+<h2 style="border-left-color: #f59e0b; color: #f59e0b;">先搞清楚：一个模型里有多少个 Linear？</h2>
+
+<div class="formula-box" style="background: #fffbeb; border-color: #fcd34d; font-size: 9pt; line-height: 2;">
+<span class="label" style="color: #f59e0b;">以 Qwen2.5-VL-3B (36 层) 为例：</span>
+
+<strong>每一层 (Layer) 有 7 个 Linear 模块 (Module)：</strong>
+
+  Layer 0:  q_proj  k_proj  v_proj  o_proj  gate_proj  up_proj  down_proj
+  Layer 1:  q_proj  k_proj  v_proj  o_proj  gate_proj  up_proj  down_proj
+  Layer 2:  q_proj  k_proj  v_proj  o_proj  gate_proj  up_proj  down_proj
+   ...
+  Layer 35: q_proj  k_proj  v_proj  o_proj  gate_proj  up_proj  down_proj
+
+<strong>总计: 36 层 &times; 7 模块 = 252 个 Linear</strong>
+
+每个 Linear 都是一个独立的 W 矩阵，彼此没有关系。
+</div>
+
+<h2 style="border-left-color: #f59e0b; color: #f59e0b;">论文 vs 我们的代码：参数共享方式不同</h2>
+
+<div class="diagram">
+  <div class="diagram-card" style="border-color: #c4b5fd; flex: 1;">
+    <div class="title" style="color: #7c3aed;">论文设计（持续多任务学习）</div>
+    <div class="arch" style="font-size: 8.5pt; line-height: 1.9;">
+<span class="dim">三个维度同时存在:</span>
+
+<strong>跨层共享：</strong>
+  所有 252 个 Linear → <span class="shared">同一个 A</span>
+  所有 252 个 Linear → <span class="shared">同一个 B&#8320;</span>
+
+<strong>跨任务不同：</strong>
+  任务1 → 自己的 <span class="task">B&#771;₁, A&#771;₁</span>
+  任务2 → 自己的 <span class="task">B&#771;₂, A&#771;₂</span>
+  任务3 → 自己的 <span class="task">B&#771;₃, A&#771;₃</span>
+
+<span class="dim">"共享" = 跨所有层 + 跨所有任务</span>
+<span class="dim">"任务特定" = 每个任务各一份</span>
+    </div>
+  </div>
+  <div class="diagram-card" style="border-color: #fb923c; flex: 1;">
+    <div class="title" style="color: #fb923c;">我们的代码（单任务简化版）</div>
+    <div class="arch" style="font-size: 8.5pt; line-height: 1.9;">
+<span class="dim">只有一个维度：每个 Linear 独立</span>
+
+<strong>每个 Linear 有自己完整的一套：</strong>
+  Layer0.q_proj → <span class="task">A₁, B0₁, B&#771;₁, A&#771;₁, &alpha;₁</span>
+  Layer0.k_proj → <span class="task">A₂, B0₂, B&#771;₂, A&#771;₂, &alpha;₂</span>
+  Layer0.v_proj → <span class="task">A₃, B0₃, B&#771;₃, A&#771;₃, &alpha;₃</span>
+  ...
+  Layer35.down  → <span class="task">A₂₅₂, B0₂₅₂, ...</span>
+
+<span class="dim">252 个 LiLoRALinear，互不共享。</span>
+<span class="dim">没有多任务，只有一个训练场景。</span>
+    </div>
+  </div>
+</div>
+
+<div class="callout">
+  <div class="icon">&#128161;</div>
+  <div>
+    <strong>为什么我们的代码不完全按论文来？</strong><br>
+    论文的核心贡献是<strong>持续学习</strong>（sequential multi-task），共享参数 + 正则化是为了<strong>防遗忘</strong>。<br>
+    我们的场景是<strong>单任务微调</strong>（一个数据集训到底），没有"旧任务"要保护，所以：<br>
+    &bull; 不需要跨层共享 A（各层输入维度可能不同）<br>
+    &bull; 不需要正则化（没有旧任务的 B&#771; 要对齐）<br>
+    &bull; 保留了"B 矩阵分解为 B&#8320; + B&#771;&middot;A&#771;"的结构（这本身就是一种参数高效设计）
+  </div>
+</div>
+
+<h2 style="border-left-color: #f59e0b; color: #f59e0b;">用表格彻底理清</h2>
+
+<table>
+  <tr>
+    <th style="background: #f59e0b;">维度</th>
+    <th style="background: #f59e0b;">含义</th>
+    <th style="background: #f59e0b;">论文中</th>
+    <th style="background: #f59e0b;">我们代码中</th>
+  </tr>
+  <tr>
+    <td><strong>Transformer 层</strong><br><span style="font-size:8pt;color:#64748b;">Layer 0 ~ Layer 35</span></td>
+    <td>模型的第几层</td>
+    <td>A, B&#8320; <strong>跨层共享</strong><br>B&#771;, A&#771; 也跨层共享（按任务区分）</td>
+    <td>每层各自独立<br>不共享任何参数</td>
+  </tr>
+  <tr>
+    <td><strong>层内模块</strong><br><span style="font-size:8pt;color:#64748b;">q/k/v/o/gate/up/down</span></td>
+    <td>同一层的 7 个 Linear</td>
+    <td>同一个 A 和 B&#8320;<br>（论文假设维度相同）</td>
+    <td>每个模块各自独立<br>（维度可能不同）</td>
+  </tr>
+  <tr class="highlight-row">
+    <td><strong>任务</strong><br><span style="font-size:8pt;color:#64748b;">SciQA, TextVQA, ...</span></td>
+    <td>不同训练数据集</td>
+    <td><strong>这是 B&#771;/A&#771; "不同"的真正含义</strong><br>每学一个新任务 → 新增一组 B&#771;, A&#771;</td>
+    <td>只有一个任务<br>不涉及这个维度</td>
+  </tr>
+</table>
+
+<h2 style="border-left-color: #f59e0b; color: #f59e0b;">论文中的完整图景</h2>
+
+<div class="formula-box" style="background: #fffbeb; border-color: #fcd34d; font-size: 8.5pt; line-height: 2.0;">
+<span class="label" style="color: #f59e0b;">&#9654; 持续学习过程（论文场景）：</span>
+
+<strong>初始化:</strong>
+  创建共享参数 A, B&#8320;（随机初始化）
+
+<strong>学习任务 1 (ScienceQA):</strong>
+  创建 B&#771;₁, A&#771;₁（任务 1 专用）
+  训练时更新: A, B&#8320;, B&#771;₁, A&#771;₁, &alpha;     ← 全部参数一起训练
+  训练完 → <strong>冻结 B&#771;₁, A&#771;₁</strong>（保存下来）
+
+<strong>学习任务 2 (TextVQA):</strong>
+  创建 B&#771;₂, A&#771;₂（任务 2 专用，新的参数）
+  训练时更新: A, B&#8320;, B&#771;₂, A&#771;₂, &alpha;     ← 共享参数继续更新！
+  L_reg 正则化: 确保 B&#8320; 不偏离太远，保护任务 1 的表现
+  训练完 → <strong>冻结 B&#771;₂, A&#771;₂</strong>
+
+<strong>学习任务 3 (Flickr30k):</strong>
+  创建 B&#771;₃, A&#771;₃ ...同理
+
+<strong>推理时:</strong>
+  任务 1 → 加载 A, B&#8320; + B&#771;₁, A&#771;₁
+  任务 2 → 加载 A, B&#8320; + B&#771;₂, A&#771;₂
+  任务 3 → 加载 A, B&#8320; + B&#771;₃, A&#771;₃
+                ↑ 同一份      ↑ 各自的
+</div>
+
+<div class="insight" style="margin-top: 10px; border-color: #fcd34d; background: linear-gradient(135deg, #fffdf5 0%, #fef3c7 100%);">
+  <strong style="color: #f59e0b;">一句话总结：</strong><br>
+  论文中 B&#771;/A&#771; 的"不同"指的是<strong>不同训练任务</strong>（不同数据集），不是不同的 Transformer 层。<br>
+  A 和 B&#8320; 跨<strong>所有层 + 所有任务</strong>共享——这是论文参数量减少 70% 的关键。<br>
+  我们的单任务实现做了简化：每个 Linear 独立一套参数，没有跨层共享，也没有多任务。
+</div>
+
+<!-- ── Footer ── -->
+<div class="footer">
+  Che et al., "LoRA in LoRA: Parameter-Efficient Architecture Expansion for Continual Visual Instruction Tuning", arXiv 2508.06202, 2025<br>
+  代码实现：mmit/src/mmit/training/methods/lilora.py
+</div>
+
+</body>
+</html>

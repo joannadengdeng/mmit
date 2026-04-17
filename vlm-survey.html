@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>VLM/VQA 微调方法调研</title>
+<style>
+:root{--bg:#0f1117;--s:#1a1d27;--s2:#242836;--bd:#2e3347;--t:#e2e8f0;--dim:#8892a8;
+--a:#6c8cff;--pk:#ff6c9a;--g:#4ade80;--o:#fb923c;--p:#a78bfa;--cy:#22d3ee;--y:#facc15;--r:#f87171;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--t);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow-x:hidden;}
+.wrap{max-width:1060px;margin:0 auto;padding:28px 24px 120px;}
+h1{color:var(--a);font-size:1.6rem;margin-bottom:4px;font-weight:700;}
+.sub{color:var(--dim);font-size:0.82rem;margin-bottom:24px;}
+
+/* tabs */
+.tabs{display:flex;gap:4px;margin-bottom:0;position:sticky;top:0;z-index:100;background:var(--bg);padding:12px 0 0;flex-wrap:wrap;}
+.tab{background:var(--s);border:1px solid var(--bd);color:var(--dim);padding:9px 18px;border-radius:8px 8px 0 0;
+cursor:pointer;font-size:.82rem;transition:all .2s;font-family:inherit;border-bottom:none;}
+.tab:hover{border-color:var(--a);color:var(--t);}
+.tab.on{background:var(--s2);border-color:var(--a);color:var(--a);font-weight:600;}
+.panel{display:none;animation:fadeIn .25s ease;background:var(--s2);border:1px solid var(--bd);border-radius:0 12px 12px 12px;padding:28px 28px 20px;}
+.panel.on{display:block;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+h2{color:var(--a);font-size:1.15rem;margin:24px 0 10px;font-weight:700;}
+h2:first-child{margin-top:0;}
+h3{color:var(--pk);font-size:.95rem;margin:18px 0 8px;font-weight:600;}
+p,.li{font-size:.86rem;color:var(--dim);line-height:1.85;margin-bottom:8px;}
+strong{color:var(--t);}
+code{color:var(--cy);font-family:'SF Mono','Cascadia Code',monospace;font-size:.82em;background:rgba(34,211,238,.06);padding:1px 5px;border-radius:4px;}
+em{color:var(--o);font-style:normal;}
+
+/* tables */
+table{width:100%;border-collapse:collapse;margin:10px 0 16px;font-size:.8rem;}
+th{background:var(--s);color:var(--a);padding:8px 10px;text-align:left;border:1px solid var(--bd);font-weight:600;white-space:nowrap;}
+td{padding:7px 10px;border:1px solid var(--bd);color:var(--dim);line-height:1.6;vertical-align:top;}
+tr:nth-child(even) td{background:rgba(26,29,39,.5);}
+td strong{color:var(--t);}
+td code{font-size:.78em;}
+td em{color:var(--o);font-style:normal;}
+
+/* note boxes */
+.note{border-radius:10px;padding:14px 18px;margin:10px 0 14px;font-size:.83rem;line-height:1.85;}
+.note-blue{background:rgba(108,140,255,.07);border:1px solid rgba(108,140,255,.18);}
+.note-blue strong{color:var(--a);}
+.note-green{background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.18);}
+.note-green strong{color:var(--g);}
+.note-orange{background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.2);}
+.note-orange strong{color:var(--o);}
+.note-pink{background:rgba(255,108,154,.07);border:1px solid rgba(255,108,154,.18);}
+.note-pink strong{color:var(--pk);}
+.note-purple{background:rgba(167,139,250,.07);border:1px solid rgba(167,139,250,.18);}
+.note-purple strong{color:var(--p);}
+
+/* formula */
+.formula{background:var(--s);border:1px solid var(--bd);border-radius:8px;padding:12px 16px;margin:8px 0 12px;
+font-family:'SF Mono','Cascadia Code',monospace;font-size:.78rem;line-height:1.9;color:var(--cy);overflow-x:auto;white-space:pre;}
+
+/* tag badges */
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.72rem;font-weight:600;margin:0 3px 3px 0;}
+.tag-blue{background:rgba(108,140,255,.15);color:var(--a);}
+.tag-pink{background:rgba(255,108,154,.15);color:var(--pk);}
+.tag-green{background:rgba(74,222,128,.15);color:var(--g);}
+.tag-orange{background:rgba(251,146,60,.15);color:var(--o);}
+.tag-purple{background:rgba(167,139,250,.15);color:var(--p);}
+.tag-cyan{background:rgba(34,211,238,.12);color:var(--cy);}
+
+/* comparison cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:12px 0;}
+.card{background:var(--s);border:1px solid var(--bd);border-radius:10px;padding:14px 16px;}
+.card h4{color:var(--a);font-size:.88rem;margin-bottom:6px;}
+.card p{font-size:.78rem;margin-bottom:4px;}
+.card .num{font-size:1.3rem;font-weight:700;color:var(--g);margin:4px 0;}
+
+/* separator */
+hr{border:none;border-top:1px solid var(--bd);margin:24px 0;}
+
+/* scrollbar */
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--bd);border-radius:3px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>VLM / VQA 微调方法调研</h1>
+<p class="sub">论文方法 · Benchmark · 训练策略 · 超参数 &nbsp;|&nbsp; 2026-03-15</p>
+
+<div class="tabs" id="tabs">
+  <div class="tab on" data-p="0">总览对比</div>
+  <div class="tab" data-p="1">L2T</div>
+  <div class="tab" data-p="2">LiLoRA</div>
+  <div class="tab" data-p="3">MoReS</div>
+  <div class="tab" data-p="4">Benchmark</div>
+  <div class="tab" data-p="5">训练策略</div>
+</div>
+
+<!-- ═══════════════ PANEL 0: 总览 ═══════════════ -->
+<div class="panel on" id="p0">
+
+<h2>方法对比总览</h2>
+<table>
+<tr><th>方法</th><th>改了什么</th><th>额外参数</th><th>核心优势</th><th>适合场景</th></tr>
+<tr><td><strong>QLoRA / LoRA</strong></td><td>低秩分解 Linear 层</td><td>~189M</td><td>通用、成熟、生态好</td><td>通用微调</td></tr>
+<tr><td><strong>DoRA</strong></td><td>LoRA + 权重幅度/方向分解</td><td>同 LoRA</td><td>比 LoRA 略好</td><td>通用微调</td></tr>
+<tr><td><strong>L2T</strong> <span class="tag tag-pink">NeurIPS 25</span></td><td>只改 loss mask</td><td><em>0 额外参数</em></td><td>可叠加任何方法，指令理解 +6%</td><td>提升指令跟随能力</td></tr>
+<tr><td><strong>MoReS</strong> <span class="tag tag-green">ACL 25</span></td><td>每层正交转向</td><td><em>0.164M</em>（1150× &lt; LoRA）</td><td>LLM 冻结，保留文本，防幻觉</td><td>低资源、防幻觉</td></tr>
+<tr><td><strong>LiLoRA</strong> <span class="tag tag-purple">arXiv 25</span></td><td>共享 A + 分解 B + 正则</td><td>每任务 104.6MB</td><td>持续学习不遗忘（BWT -1.94）</td><td>多任务顺序学习</td></tr>
+</table>
+
+<h2>训练数据对比</h2>
+<table>
+<tr><th>方法</th><th>训练数据</th><th>规模</th><th>Epochs</th><th>LR</th><th>BS</th></tr>
+<tr><td><strong>L2T</strong></td><td>LLaVA-mix-665K</td><td>665K</td><td>1</td><td>2e-5</td><td>128</td></tr>
+<tr><td><strong>MoReS</strong></td><td>LLaVA-665K</td><td>665K</td><td>1</td><td>2e-5</td><td>128</td></tr>
+<tr><td><strong>LiLoRA</strong></td><td>CVIT Benchmark（6 数据集顺序）</td><td>~465K total</td><td>每任务 1</td><td>2e-5</td><td>64</td></tr>
+</table>
+
+<h2>评测指标速查</h2>
+<table>
+<tr><th>Metric</th><th>用于</th><th>说明</th></tr>
+<tr><td><strong>VQA Accuracy</strong></td><td>VQAv2, GQA, TextVQA, OKVQA, VizWiz</td><td>min(匹配 annotator 数 / 3, 1)，10 个 annotator</td></tr>
+<tr><td><strong>ANLS</strong></td><td>DocVQA, InfoVQA</td><td>Normalized Levenshtein Similarity，容忍 OCR 误差</td></tr>
+<tr><td><strong>Relaxed Accuracy</strong></td><td>ChartQA</td><td>数值 ±5% 算对，文本精确匹配</td></tr>
+<tr><td><strong>ACC + ACC+</strong></td><td>MME</td><td>二元准确率 + 每图配对准确率，满分 2800</td></tr>
+<tr><td><strong>GPT-4 Judge</strong></td><td>MM-Vet, LLaVA-Bench</td><td>GPT-4 给模型输出打分 0-10</td></tr>
+<tr><td><strong>CIDEr</strong></td><td>Flickr30k, COCO, NoCaps</td><td>图像描述质量分（~150+ 为好）</td></tr>
+<tr><td><strong>AP / MAP / BWT</strong></td><td>LiLoRA 持续学习</td><td>平均性能 / 均值 / 遗忘程度</td></tr>
+</table>
+
+<h2>参数量对比（7B 模型）</h2>
+<div class="cards">
+  <div class="card"><h4>Full Fine-tuning</h4><div class="num">~7B</div><p>全部参数</p></div>
+  <div class="card"><h4>LoRA (r=128)</h4><div class="num">189M</div><p>~2.7% 参数</p></div>
+  <div class="card"><h4>MoReS (rank=1)</h4><div class="num" style="color:var(--pk)">0.164M</div><p>0.002% — 比 LoRA 少 1150×</p></div>
+  <div class="card"><h4>L2T</h4><div class="num" style="color:var(--cy)">+0</div><p>纯 loss 改动，无额外参数</p></div>
+</div>
+
+</div>
+
+<!-- ═══════════════ PANEL 1: L2T ═══════════════ -->
+<div class="panel" id="p1">
+
+<h2>L2T: Learning to Instruct <span class="tag tag-pink">NeurIPS 2025</span></h2>
+<p>Zhou et al. · <a href="https://arxiv.org/abs/2503.22215" style="color:var(--a)">arXiv 2503.22215</a> · <a href="https://github.com/Feng-Hong/L2T" style="color:var(--a)">GitHub</a></p>
+
+<div class="note note-pink">
+<strong>核心思想：</strong>标准 VIT 只对 response token 算 loss。L2T 额外对<strong>指令 token</strong>也算 loss（去除模板后），迫使模型更好地关注视觉特征。<strong>可以叠加在任何方法上，0 额外参数，开销 &lt;1%。</strong>
+</div>
+
+<h3>Loss 公式</h3>
+<div class="formula">Standard VIT:  L = -Σ log p(X_A,i | X_V, X_I, X_A,&lt;i)         ← 只监督 response
+
+L2T:           L = -Σ log p(X_I,i | X_V, X_I,&lt;i)             ← Learn to Instruct
+                   -Σ log p(X_A,i | X_V, X_I, X_A,&lt;i)         ← Learn to Respond
+
+其中去除两类模板：
+  1. System 模板: "USER:", "ASSISTANT:", system prompt  ← 简单模式匹配
+  2. Task 模板: "Answer using a single word..."        ← 高频句子统计后去除</div>
+
+<h3>训练数据</h3>
+<table>
+<tr><th>阶段</th><th>数据</th><th>规模</th><th>训练什么</th></tr>
+<tr><td>Stage 1 预训练</td><td>LLaVA-Pretrain-558K（BLIP caption）</td><td>558K</td><td>MLP Projector only</td></tr>
+<tr><td>Stage 2 微调</td><td>LLaVA-mix-665K</td><td>665K</td><td>Full LLM + Projector</td></tr>
+</table>
+
+<h3>LLaVA-mix-665K 组成</h3>
+<table>
+<tr><th>子数据集</th><th>样本数</th><th>格式</th><th>输出类型</th></tr>
+<tr><td>LLaVA-Instruct</td><td>157,712</td><td>多轮对话（GPT 生成）</td><td>自由文本</td></tr>
+<tr><td>ShareGPT (SG40k)</td><td>40,688</td><td>多轮对话</td><td>自由文本</td></tr>
+<tr><td>VQAv2</td><td>82,783</td><td>开放式 VQA</td><td>短文本</td></tr>
+<tr><td>GQA</td><td>72,140</td><td>组合推理 VQA</td><td>短文本</td></tr>
+<tr><td>OKVQA</td><td>8,998</td><td>外部知识 VQA</td><td>短文本</td></tr>
+<tr><td>A-OKVQA</td><td>66,160</td><td>多选 + 开放 VQA</td><td>短文本/选项</td></tr>
+<tr><td>OCRVQA</td><td>80,000</td><td>OCR 问答（书封面）</td><td>短文本</td></tr>
+<tr><td>TextCaps</td><td>21,953</td><td>含 OCR 文本的描述</td><td>自由描述</td></tr>
+<tr><td>RefCOCO</td><td>48,447</td><td>指代表达 → bbox</td><td>坐标</td></tr>
+<tr><td>Visual Genome</td><td>86,417</td><td>区域描述/QA</td><td>短文本</td></tr>
+</table>
+
+<h3>训练超参数</h3>
+<table>
+<tr><th>参数</th><th>Stage 1 预训练</th><th>Stage 2 微调</th></tr>
+<tr><td>Epochs</td><td>1</td><td>1</td></tr>
+<tr><td>Learning Rate</td><td>1e-3</td><td>2e-5</td></tr>
+<tr><td>Batch Size</td><td>256</td><td>128</td></tr>
+<tr><td>Optimizer</td><td>AdamW</td><td>AdamW</td></tr>
+<tr><td>LR Schedule</td><td>Cosine decay</td><td>Cosine decay</td></tr>
+<tr><td>Warmup Ratio</td><td>0.03</td><td>0.03</td></tr>
+</table>
+
+<h3>不同指令类型的提升</h3>
+<table>
+<tr><th>类型</th><th>说明</th><th>L2T 提升</th></tr>
+<tr><td><strong>QA</strong></td><td>VQAv2, GQA, OKVQA 等</td><td style="color:var(--g)"><strong>+21%</strong>（最大）</td></tr>
+<tr><td>GPT 生成</td><td>LLaVA-Instruct, ShareGPT4V</td><td>+10%</td></tr>
+<tr><td>Captioning</td><td>TextCaps, COCO</td><td>+5%</td></tr>
+<tr><td>Choice</td><td>A-OKVQA, ScienceQA</td><td>+3%</td></tr>
+<tr><td>Grounding</td><td>RefCOCO（固定模板）</td><td>+0%</td></tr>
+</table>
+
+<h3>评测结果</h3>
+<table>
+<tr><th>模型</th><th>整体平均提升</th><th>最佳类别提升</th></tr>
+<tr><td>TinyLLaVA Qwen-0.5B</td><td>+6.1%</td><td>Captioning: +15.3%</td></tr>
+<tr><td>TinyLLaVA Phi-2-3B</td><td>+6.2%</td><td>Captioning: +11.5%</td></tr>
+<tr><td>LLaVA-1.5 7B</td><td>+5.6%</td><td>Captioning: +13.8%</td></tr>
+<tr><td>LLaVA-1.5 13B</td><td>+6.9%</td><td>Captioning: +17.6%</td></tr>
+<tr><td>LLaVA-NeXT 7B</td><td>+8.5%</td><td>Chart/Doc/OCR: +8.8%</td></tr>
+</table>
+
+<h3>评测 Benchmark 列表</h3>
+<table>
+<tr><th>类别</th><th>Benchmark</th><th>Metric</th></tr>
+<tr><td>通用 VQA</td><td>VQAv2, GQA, ScienceQA, VizWiz</td><td>Accuracy</td></tr>
+<tr><td>综合多模态</td><td>MME, MMMU, MMStar</td><td>Score / Accuracy</td></tr>
+<tr><td>文档/OCR</td><td>ChartQA, TextVQA, DocVQA, OCRBench</td><td>Accuracy</td></tr>
+<tr><td>图像描述</td><td>COCO, Flickr30k, NoCaps, TextCaps</td><td>CIDEr</td></tr>
+<tr><td>幻觉评估</td><td>POPE, CHAIR, HallusionBench, MMHAL-Bench</td><td>Accuracy / GPT Score</td></tr>
+<tr><td>文本保持</td><td>MT-Bench, MMLU, AGIEval</td><td>Score / Accuracy</td></tr>
+</table>
+
+</div>
+
+<!-- ═══════════════ PANEL 2: LiLoRA ═══════════════ -->
+<div class="panel" id="p2">
+
+<h2>LiLoRA: LoRA in LoRA <span class="tag tag-purple">arXiv 2508.06202</span></h2>
+<p>Che et al. · <a href="https://arxiv.org/abs/2508.06202" style="color:var(--a)">arXiv</a></p>
+
+<div class="note note-purple">
+<strong>核心思想：</strong>CKA 分析发现不同任务的 LoRA A 矩阵高度相似，B 矩阵差异大。于是<strong>共享 A 和 B₀</strong>，每个任务只学小的 (B̃, Ã) 低秩分解，加余弦正则化防遗忘。<strong>每任务参数减少 70%，遗忘减少 70%。</strong>
+</div>
+
+<h3>架构公式</h3>
+<div class="formula">Standard LoRA:   ΔW = B · A          (B ∈ R^{d×r}, A ∈ R^{r×k})
+
+LiLoRA task i:   ΔW_i = (α · B₀ + (1-α) · B̃_i · Ã_i) · A
+
+  B₀ ∈ R^{d×r}      ← 共享基础矩阵（所有任务更新）
+  A  ∈ R^{r×k}       ← 共享矩阵（所有任务更新）
+  B̃_i ∈ R^{d×r̃}     ← 任务特定低秩因子
+  Ã_i ∈ R^{r̃×r}      ← 任务特定低秩因子 (r̃ < r)
+  α ∈ (0,1)          ← 可学习融合系数, init = Sigmoid(N(0,1))
+
+Regularization:  L_reg = (1 - cos(B̃_t·Ã_t, B̃_{t-1}·Ã_{t-1})) · ||B₀^t - B₀^{t-1}||²
+Total Loss:      L = L_task + λ · L_reg</div>
+
+<h3>CVIT Benchmark 训练数据（6 任务顺序）</h3>
+<table>
+<tr><th>顺序</th><th>数据集</th><th>Train</th><th>Test</th><th>任务</th><th>输出</th><th>Metric</th></tr>
+<tr><td>1</td><td><strong>ScienceQA</strong></td><td>12,726</td><td>4,241</td><td>多选科学 QA</td><td>选项</td><td>Accuracy</td></tr>
+<tr><td>2</td><td><strong>TextVQA</strong></td><td>34,602</td><td>5,000</td><td>OCR + VQA</td><td>短文本</td><td>Accuracy</td></tr>
+<tr><td>3</td><td><strong>Flickr30k</strong></td><td>145,000</td><td>1,014</td><td>图像描述</td><td>一句话</td><td>CIDEr</td></tr>
+<tr><td>4</td><td><strong>ImageNet-100</strong></td><td>117,715</td><td>5,050</td><td>分类（100类）</td><td>类别词</td><td>Accuracy</td></tr>
+<tr><td>5</td><td><strong>GQA</strong></td><td>72,140</td><td>12,578</td><td>组合推理 VQA</td><td>短文本</td><td>Accuracy</td></tr>
+<tr><td>6</td><td><strong>VQAv2</strong></td><td>82,783</td><td>53,588</td><td>通用 VQA</td><td>短文本</td><td>Accuracy</td></tr>
+</table>
+
+<h3>训练超参数</h3>
+<table>
+<tr><th>参数</th><th>值</th></tr>
+<tr><td>Base Model</td><td>LLaVA-v1.5-7B（预训练后，未指令微调）/ Qwen2-VL-2B</td></tr>
+<tr><td>Optimizer</td><td>Adam</td></tr>
+<tr><td>Learning Rate</td><td>2e-5</td></tr>
+<tr><td>Batch Size</td><td>64</td></tr>
+<tr><td>Epochs per task</td><td>1</td></tr>
+<tr><td>Shared Rank (r)</td><td>128</td></tr>
+<tr><td>Task Rank (r̃)</td><td>64</td></tr>
+<tr><td>注入位置</td><td>FFN 层 + Projection 层</td></tr>
+</table>
+
+<h3>参数量对比</h3>
+<table>
+<tr><th>方法</th><th>总参数 (MB)</th><th>每任务参数 (MB)</th></tr>
+<tr><td>DirLoRA（上界）</td><td>2,143.9</td><td>357.3</td></tr>
+<tr><td>Share A only</td><td>1,250.6</td><td>178.7</td></tr>
+<tr><td><strong>LiLoRA</strong></td><td><strong>985.1</strong></td><td><strong>104.6</strong></td></tr>
+</table>
+
+<h3>主要结果（Single-type Setting）</h3>
+<table>
+<tr><th>方法</th><th>SciQA</th><th>TextVQA</th><th>Flickr</th><th>ImgNet</th><th>GQA</th><th>VQAv2</th><th>AP↑</th><th>BWT↑</th><th>MIF↑</th></tr>
+<tr><td>DirLoRA*</td><td>83.75</td><td>60.66</td><td>164.20</td><td>96.71</td><td>58.55</td><td>64.93</td><td>88.13</td><td>0.00</td><td>98.41</td></tr>
+<tr><td>SeqLoRA</td><td>55.31</td><td>50.22</td><td>33.89</td><td>22.73</td><td>50.52</td><td>64.61</td><td>46.21</td><td>-48.10</td><td>78.35</td></tr>
+<tr><td>SMoLoRA</td><td>77.36</td><td>58.29</td><td>151.99</td><td>95.35</td><td>51.96</td><td>65.71</td><td>83.44</td><td>-3.23</td><td>97.79</td></tr>
+<tr style="background:rgba(167,139,250,.08)"><td><strong>LiLoRA</strong></td><td><strong>77.88</strong></td><td><strong>58.83</strong></td><td><strong>152.93</strong></td><td><strong>96.02</strong></td><td><strong>58.28</strong></td><td><strong>65.33</strong></td><td><strong>84.88</strong></td><td><strong>-3.13</strong></td><td><strong>98.24</strong></td></tr>
+</table>
+
+<h3>Ablation: 正则化的关键性</h3>
+<table>
+<tr><th>配置</th><th>AP</th><th>BWT</th></tr>
+<tr><td>Share A only</td><td>85.38</td><td>-2.87</td></tr>
+<tr><td>Share A + Decompose B（无正则）</td><td>73.99</td><td style="color:var(--r)">-16.14</td></tr>
+<tr><td><strong>Share A + Decompose B + L_reg</strong></td><td><strong>84.88</strong></td><td><strong>-3.13</strong></td></tr>
+</table>
+
+</div>
+
+<!-- ═══════════════ PANEL 3: MoReS ═══════════════ -->
+<div class="panel" id="p3">
+
+<h2>MoReS: LLaVA Steering <span class="tag tag-green">ACL 2025</span></h2>
+<p>Bi et al. · <a href="https://arxiv.org/abs/2412.12359" style="color:var(--a)">arXiv 2412.12359</a> · <a href="https://github.com/bibisbar/LLaVA-Steering" style="color:var(--a)">GitHub</a></p>
+
+<div class="note note-green">
+<strong>核心思想：</strong>VLM 存在模态不平衡——文本表示主导输出生成。MoReS 在每层对视觉 token 施加正交低秩投影转向。<strong>LLM 完全冻结，只需 0.164M 参数（比 LoRA 少 1150×），幻觉指标优于 Full FT。</strong>
+</div>
+
+<h3>数学公式</h3>
+<div class="formula">MoReS(h) = W_up · φ(h)
+
+  φ(h) = Linear(h) - W_down · h     ← 残差转向信号
+
+  W_down ∈ R^{d×D}    ← 降维投影（D → d）
+  W_up   ∈ R^{D×d}    ← 升维投影（d → D）
+  约束: W_down · W_up^T = I_D        ← 正交约束，保证可逆
+
+最优 rank: d = 1 （rank 1 效果最好！）
+稀疏转向: 只对 1% 的视觉 token 做转向</div>
+
+<h3>参数量对比（3B 模型）</h3>
+<table>
+<tr><th>方法</th><th>可训练参数</th><th>vs LoRA</th></tr>
+<tr><td>Full Fine-tuning</td><td>2.78B</td><td>—</td></tr>
+<tr><td>LoRA</td><td>188.74M</td><td>1×</td></tr>
+<tr><td>Adapter</td><td>83M</td><td>—</td></tr>
+<tr><td>IA³</td><td>0.492M</td><td>—</td></tr>
+<tr style="background:rgba(74,222,128,.08)"><td><strong>MoReS-Base (d=1)</strong></td><td><strong>0.164M</strong></td><td><strong>1,150× 更少</strong></td></tr>
+<tr><td>MoReS-Large (d=2)</td><td>0.328M</td><td>575× 更少</td></tr>
+<tr><td>MoReS-Huge (d=4)</td><td>0.655M</td><td>288× 更少</td></tr>
+</table>
+
+<h3>训练策略</h3>
+<table>
+<tr><th>阶段</th><th>训练什么</th><th>LR</th><th>BS</th><th>Epochs</th><th>其他</th></tr>
+<tr><td>Stage 1 预训练</td><td>MLP Projector only</td><td>1e-3</td><td>256</td><td>1</td><td>ZeRO-2, warmup 0.03</td></tr>
+<tr><td>Stage 2 指令微调</td><td><strong>MoReS 模块 only</strong>（LLM + ViT 冻结）</td><td>2e-5</td><td>128</td><td>1</td><td>ZeRO-3, warmup 0.03</td></tr>
+</table>
+
+<h3>评测结果（7B）</h3>
+<table>
+<tr><th>Benchmark</th><th>MoReS</th><th>LoRA</th><th>Full FT</th></tr>
+<tr><td>VQAv2</td><td>79.9</td><td>—</td><td>—</td></tr>
+<tr><td>GQA</td><td>61.9</td><td>—</td><td>—</td></tr>
+<tr><td>POPE</td><td style="color:var(--g)"><strong>88.2</strong></td><td>86.7</td><td>87.2</td></tr>
+<tr><td>HallBench Hard</td><td style="color:var(--g)"><strong>42.6</strong></td><td>—</td><td>37.4</td></tr>
+<tr><td>MMMU</td><td style="color:var(--g)"><strong>35.8</strong></td><td>—</td><td>—</td></tr>
+<tr><td>HellaSwag（文本）</td><td style="color:var(--g)"><strong>71.9</strong></td><td>70.5</td><td>—</td></tr>
+<tr><td>MMLU（文本）</td><td style="color:var(--g)"><strong>57.0</strong></td><td>55.3</td><td>—</td></tr>
+</table>
+
+<div class="note note-blue">
+<strong>关键发现：</strong>LLM 冻结 → 100% 保留文本能力（HellaSwag, MMLU 均优于 LoRA）。幻觉检测（POPE, HallBench）优于 LoRA 和 Full FT。Rank=1 + 1% token 稀疏转向效果最优。
+</div>
+
+<h3>任务特定微调结果（3B，多尺度数据）</h3>
+<table>
+<tr><th>数据量</th><th>ScienceQA</th><th>VizWiz</th><th>IconQA</th></tr>
+<tr><td>1K samples</td><td>78.2</td><td>55.0</td><td>69.7</td></tr>
+<tr><td>5K samples</td><td>92.1</td><td>56.6</td><td>89.9</td></tr>
+<tr><td>10K samples</td><td>89.8</td><td>57.7</td><td>93.5</td></tr>
+</table>
+
+</div>
+
+<!-- ═══════════════ PANEL 4: Benchmark ═══════════════ -->
+<div class="panel" id="p4">
+
+<h2>主流 VLM/VQA Benchmark 汇总</h2>
+
+<div class="note note-orange">
+<strong>Tier 分类：</strong>
+<span class="tag tag-orange">几乎必用</span> VQAv2, GQA, TextVQA, DocVQA, ChartQA, MMBench, SEED-Bench, MME, MMMU, POPE, MM-Vet &nbsp;
+<span class="tag tag-blue">很常见</span> ScienceQA, AI2D, MathVista, OCRBench, LLaVA-Bench &nbsp;
+<span class="tag tag-purple">常见</span> A-OKVQA, OKVQA, VizWiz, RealWorldQA, MMStar
+</div>
+
+<h3>1. 通用 VQA</h3>
+<table>
+<tr><th>Benchmark</th><th>规模</th><th>任务</th><th>输出</th><th>Metric</th><th>答案预处理</th></tr>
+<tr><td><strong>VQAv2</strong></td><td>1.1M Q / 200K img<br>test-dev: 107K Q</td><td>开放式 VQA</td><td>短文本（1-3词）</td><td>VQA Accuracy<br>(soft: 3/10 一致)</td><td>小写、去句号、数字转换、去冠词</td></tr>
+<tr><td><strong>GQA</strong></td><td>22M Q / 113K img<br>test-dev: 12.6K Q</td><td>组合推理 VQA</td><td>短文本</td><td>Accuracy</td><td>同 VQAv2</td></tr>
+<tr><td><strong>TextVQA</strong></td><td>45K Q / 28K img</td><td>OCR + VQA</td><td>短文本</td><td>VQA Accuracy</td><td>同 VQAv2</td></tr>
+<tr><td><strong>OKVQA</strong></td><td>14K Q / 14K img</td><td>外部知识 VQA</td><td>短文本</td><td>VQA Accuracy</td><td>同 VQAv2</td></tr>
+<tr><td><strong>VizWiz</strong></td><td>31K Q（盲人拍摄）</td><td>低质量图片 VQA</td><td>短文本 / "unanswerable"</td><td>VQA Accuracy</td><td>同 VQAv2</td></tr>
+<tr><td><strong>ScienceQA</strong></td><td>21K Q (48.7% 有图)</td><td>多选科学 QA</td><td>选项字母</td><td>Accuracy</td><td>—</td></tr>
+</table>
+
+<h3>2. 文档 / OCR / 图表</h3>
+<table>
+<tr><th>Benchmark</th><th>规模</th><th>任务</th><th>输出</th><th>Metric</th></tr>
+<tr><td><strong>DocVQA</strong></td><td>50K Q / 12.8K doc</td><td>文档理解</td><td>自由文本（抽取式）</td><td><em>ANLS</em>（容忍 OCR 误差）</td></tr>
+<tr><td><strong>ChartQA</strong></td><td>32.7K Q<br>test: human 1250 + aug 1250</td><td>图表理解</td><td>数值/文本</td><td><em>Relaxed Accuracy</em>（数值±5%）</td></tr>
+<tr><td><strong>InfoVQA</strong></td><td>30K Q / 5.5K infographic</td><td>信息图理解</td><td>自由文本</td><td>ANLS</td></tr>
+<tr><td><strong>OCRBench</strong></td><td>1000 Q（29 数据集）</td><td>OCR 能力评估</td><td>文本</td><td>Score / 1000</td></tr>
+<tr><td><strong>AI2D</strong></td><td>15K Q / 4.9K 科学图</td><td>科学图表理解</td><td>选项字母</td><td>Accuracy</td></tr>
+</table>
+
+<h3>3. 综合多模态</h3>
+<table>
+<tr><th>Benchmark</th><th>规模</th><th>格式</th><th>Metric</th><th>特点</th></tr>
+<tr><td><strong>MMBench</strong></td><td>2,974 Q / 20 维度</td><td>4选1</td><td>Accuracy + CircularEval</td><td>中英双语，ChatGPT 解析答案</td></tr>
+<tr><td><strong>MME</strong></td><td>14 subtask</td><td>Yes/No</td><td>ACC + ACC+<br>满分 2800</td><td>10 感知 + 4 认知 subtask</td></tr>
+<tr><td><strong>SEED-Bench</strong></td><td>19.2K Q / 12 维度</td><td>4选1</td><td>Accuracy</td><td>用 log-likelihood 选答案</td></tr>
+<tr><td><strong>MMMU</strong></td><td>11.5K Q / 30 学科</td><td>多选</td><td>Accuracy</td><td>大学水平，人类 76-89%</td></tr>
+<tr><td><strong>MathVista</strong></td><td>6.1K Q（31 数据集）</td><td>混合</td><td>Accuracy</td><td>数学视觉推理</td></tr>
+<tr><td><strong>MMStar</strong></td><td>1,500 Q</td><td>多选</td><td>Accuracy</td><td>必须依赖视觉的问题</td></tr>
+<tr><td><strong>RealWorldQA</strong></td><td>765 img</td><td>多选</td><td>Accuracy</td><td>真实场景（行车记录仪等）</td></tr>
+</table>
+
+<h3>4. 开放式 / 幻觉评估</h3>
+<table>
+<tr><th>Benchmark</th><th>规模</th><th>格式</th><th>Metric</th></tr>
+<tr><td><strong>POPE</strong></td><td>3K Q / 500 img<br>3 种难度</td><td>"Is there a [X] in the image?" → Yes/No</td><td>Accuracy / F1<br>adversarial 最难</td></tr>
+<tr><td><strong>MM-Vet</strong></td><td>218 Q / 200 img</td><td>开放式</td><td>GPT-4 Judge Score (0-100)</td></tr>
+<tr><td><strong>LLaVA-Bench</strong></td><td>60 Q / 24 img</td><td>开放式对话</td><td>GPT-4 相对评分</td></tr>
+<tr><td><strong>HallusionBench</strong></td><td>1.1K Q / 346 img</td><td>混合</td><td>Hard/Figure/Question Accuracy</td></tr>
+</table>
+
+<h3>Prompt 和答案处理规范</h3>
+<div class="note note-blue">
+<strong>VQA 类标准 Prompt：</strong><code>"Answer the question using a single word or phrase."</code><br><br>
+<strong>答案标准化（VQAv2 通用）：</strong>lowercase → 去句号（保留小数点）→ 数字词转数字（"two"→"2"）→ 去冠词（a/an/the）→ 处理缩写
+</div>
+
+</div>
+
+<!-- ═══════════════ PANEL 5: 训练策略 ═══════════════ -->
+<div class="panel" id="p5">
+
+<h2>VLM 训练策略和超参数</h2>
+
+<h3>通用 2 阶段训练流程（几乎所有 VLM）</h3>
+<table>
+<tr><th>阶段</th><th>训练什么</th><th>典型 LR</th><th>数据量</th><th>Epochs</th></tr>
+<tr><td><strong>Stage 1</strong> Alignment</td><td>Projector / MLP only（ViT + LLM 冻结）</td><td>1e-3 ~ 2e-4</td><td>500K - 4M</td><td>1</td></tr>
+<tr><td><em>Stage 1.5</em>（可选）</td><td>ViT + Projector（LLM 冻结）</td><td>1e-5</td><td>4M+</td><td>1</td></tr>
+<tr><td><strong>Stage 2</strong> Instruction Tuning</td><td>LLM + Projector（ViT 冻结或全开）</td><td>2e-5 ~ 4e-5</td><td>665K - 4M</td><td>1</td></tr>
+<tr><td><em>Stage 3</em>（可选）</td><td>DPO/RLHF</td><td>1e-6 ~ 5e-6</td><td>10K-100K</td><td>1-3</td></tr>
+</table>
+
+<h3>各主流 VLM 指令微调对比</h3>
+<table>
+<tr><th>Model</th><th>LR</th><th>BS (global)</th><th>Epochs</th><th>WD</th><th>Warmup</th><th>Schedule</th><th>Optimizer</th></tr>
+<tr><td><strong>LLaVA-1.5</strong></td><td>2e-5</td><td>128</td><td>1</td><td>0.0</td><td>0.03</td><td>Cosine</td><td>AdamW</td></tr>
+<tr><td><strong>LLaVA-OneVision</strong></td><td>1e-5</td><td>256</td><td>1</td><td>0.0</td><td>0.03</td><td>Cosine</td><td>AdamW</td></tr>
+<tr><td><strong>InternVL2.5-8B</strong></td><td>4e-5</td><td>512</td><td>1</td><td>0.05</td><td>0.03</td><td>Cosine</td><td>AdamW</td></tr>
+<tr><td><strong>InternVL2.5-78B</strong></td><td>2e-5</td><td>512</td><td>1</td><td>0.05</td><td>0.03</td><td>Cosine</td><td>AdamW</td></tr>
+<tr><td><strong>Qwen2-VL</strong></td><td>2e-5</td><td>~128</td><td>1</td><td>0.0</td><td>0.03</td><td>Cosine</td><td>AdamW</td></tr>
+</table>
+
+<h3>LoRA 超参数对比</h3>
+<table>
+<tr><th>Model / Repo</th><th>Rank</th><th>Alpha</th><th>Dropout</th><th>Target Modules</th><th>LR</th></tr>
+<tr><td><strong>LLaVA-1.5 LoRA</strong></td><td>128</td><td>256</td><td>—</td><td>LLM linear</td><td>2e-4</td></tr>
+<tr><td><strong>Qwen2-VL (2U1)</strong></td><td>128</td><td>256</td><td>0.05</td><td>all linear (-1)</td><td>2e-4</td></tr>
+<tr><td><strong>Qwen2.5-VL QLoRA</strong></td><td>8</td><td>16</td><td>0.05</td><td>q_proj, v_proj</td><td>2e-4</td></tr>
+<tr><td><strong>InternVL2-8B</strong></td><td>16</td><td>—</td><td>—</td><td>LLM only</td><td>4e-5</td></tr>
+<tr><td><strong>Phi-3.5-Vision</strong></td><td>128</td><td>256</td><td>0.05</td><td>all linear (-1)</td><td>2e-5</td></tr>
+</table>
+
+<h3>推荐超参数</h3>
+
+<div class="note note-green">
+<strong>LoRA（充足显存 ≥ 1×A100）：</strong><br>
+<code>r=64-128, alpha=2×r, dropout=0.05, target=all_linear</code><br>
+<code>lr=2e-4, bs=1/GPU×8_acc, epochs=1, cosine+3%warmup</code>
+</div>
+
+<div class="note note-orange">
+<strong>QLoRA（有限显存 ≤ 24GB）：</strong><br>
+<code>r=8-32, alpha=2×r, dropout=0.05, target=q_proj,v_proj</code><br>
+<code>4bit=NF4, double_quant=True, compute=bf16</code><br>
+<code>lr=2e-4, bs=1/GPU×8_acc, epochs=1-3, cosine+3%warmup</code>
+</div>
+
+<h3>关键规则</h3>
+<table>
+<tr><th>规则</th><th>说明</th></tr>
+<tr><td><strong>Alpha = 2 × Rank</strong></td><td>最常见设置（Microsoft 原始推荐）</td></tr>
+<tr><td><strong>1 Epoch 是标准</strong></td><td>小数据集 (&lt;10K) 可用 2-3 epochs</td></tr>
+<tr><td><strong>Cosine + 3% Warmup</strong></td><td>几乎通用于所有 VLM</td></tr>
+<tr><td><strong>AdamW</strong></td><td>统一选择（8-bit 版本可省显存）</td></tr>
+<tr><td><strong>Vision LR = LLM LR / 5~10</strong></td><td>如果解冻 Vision Encoder</td></tr>
+<tr><td><strong>Weight Decay</strong></td><td>0.0（LLaVA）~ 0.05（InternVL）都行</td></tr>
+<tr><td><strong>BS=1/GPU + Grad Accum</strong></td><td>VLM 图像占显存，单卡 bs=1 常见</td></tr>
+<tr><td><strong>Gradient Checkpointing</strong></td><td>大模型必开</td></tr>
+<tr><td><strong>不要量化 ViT</strong></td><td>Vision 部分保持 fp16/bf16</td></tr>
+</table>
+
+<h3>常用指令微调数据集</h3>
+<table>
+<tr><th>数据集</th><th>样本数</th><th>类型</th></tr>
+<tr><td>LLaVA-Instruct-150K</td><td>150K</td><td>对话式 VQA</td></tr>
+<tr><td>llava_v1_5_mix665k</td><td>665K</td><td>混合 VQA + 指令</td></tr>
+<tr><td>ShareGPT4V</td><td>100K-1.2M</td><td>高质量 GPT4V caption</td></tr>
+<tr><td>ALLaVA-Instruct</td><td>~200K</td><td>指令跟随</td></tr>
+<tr><td>DocVQA / ChartQA / DVQA</td><td>50K / 30K / 200K</td><td>文档/图表理解</td></tr>
+<tr><td>TextVQA / OCR-VQA</td><td>35K / 80K</td><td>文字图片 QA</td></tr>
+<tr><td>AI2D / GQA</td><td>15K / 72K</td><td>图表/场景 QA</td></tr>
+</table>
+
+</div>
+
+</div><!-- wrap -->
+
+<script>
+const tabs=document.querySelectorAll('.tab');
+const panels=document.querySelectorAll('.panel');
+tabs.forEach(t=>{
+  t.addEventListener('click',()=>{
+    const idx=t.dataset.p;
+    tabs.forEach(x=>x.classList.remove('on'));
+    panels.forEach(x=>x.classList.remove('on'));
+    t.classList.add('on');
+    document.getElementById('p'+idx).classList.add('on');
+  });
+});
+</script>
+</body>
+</html>

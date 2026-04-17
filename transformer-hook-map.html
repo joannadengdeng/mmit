@@ -1,0 +1,1329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transformer Layer 全景图：Hook 挂在哪、改了什么、训练什么</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Noto Sans SC", "PingFang SC", -apple-system, sans-serif;
+    background: #0f1117; color: #e2e8f0;
+    min-height: 100vh;
+  }
+
+  .header {
+    text-align: center; padding: 24px 20px 16px;
+    background: linear-gradient(180deg, #1a1d2e 0%, #0f1117 100%);
+  }
+  .header h1 { font-size: 22px; color: #93c5fd; font-weight: 800; }
+  .header p { font-size: 13px; color: #64748b; margin-top: 4px; }
+
+  /* ── Controls ── */
+  .controls {
+    display: flex; justify-content: center; gap: 8px;
+    padding: 12px 20px; flex-wrap: wrap;
+  }
+  .method-btn {
+    padding: 8px 18px; border-radius: 8px; border: 2px solid #334155;
+    background: #1e293b; color: #94a3b8; cursor: pointer;
+    font-size: 13px; font-weight: 600; transition: all 0.2s;
+    font-family: inherit;
+  }
+  .method-btn:hover { border-color: #64748b; color: #e2e8f0; }
+  .method-btn.active { border-color: var(--mc); color: var(--mc); background: var(--mbg); }
+
+  /* ── Main Layout ── */
+  .main { display: flex; gap: 0; max-width: 1400px; margin: 0 auto; }
+  .canvas-wrap { flex: 1; min-width: 0; padding: 10px; }
+  canvas { width: 100%; border-radius: 12px; background: #141722; }
+  .side-panel {
+    width: 340px; flex-shrink: 0; padding: 16px;
+    background: #1a1d2e; border-left: 1px solid #2d3348;
+    overflow-y: auto; max-height: calc(100vh - 140px);
+  }
+
+  /* ── Side Panel Content ── */
+  .panel-title { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+  .legend { margin-bottom: 16px; }
+  .legend-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 0; font-size: 12px;
+  }
+  .legend-dot {
+    width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0;
+  }
+  .legend-line {
+    width: 24px; height: 3px; border-radius: 2px; flex-shrink: 0;
+  }
+
+  .info-card {
+    background: #141722; border-radius: 8px; padding: 12px;
+    margin-bottom: 10px; border: 1px solid #2d3348;
+    font-size: 12px; line-height: 1.7;
+  }
+  .info-card h4 { font-size: 13px; margin-bottom: 6px; }
+  .info-card code {
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 11px; background: #0f1117; padding: 1px 5px;
+    border-radius: 3px; color: #93c5fd;
+  }
+  .info-card .param-count { color: #fbbf24; font-weight: 600; }
+  .info-card ul { padding-left: 16px; margin: 4px 0; }
+  .info-card li { margin-bottom: 2px; }
+
+  .tag {
+    display: inline-block; font-size: 10px; padding: 2px 6px;
+    border-radius: 3px; font-weight: 600;
+  }
+  .tag-train { background: #166534; color: #86efac; }
+  .tag-frozen { background: #1e293b; color: #64748b; }
+  .tag-hook { background: #7c2d12; color: #fdba74; }
+  .tag-new { background: #4c1d95; color: #c4b5fd; }
+
+  @media (max-width: 900px) {
+    .main { flex-direction: column; }
+    .side-panel { width: 100%; max-height: none; border-left: none; border-top: 1px solid #2d3348; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Transformer Layer 全景图</h1>
+  <p>点击方法查看：Hook 挂在哪里 / 改变了什么 / 哪些参数在训练</p>
+</div>
+
+<div class="controls">
+  <button class="method-btn active" data-m="base" style="--mc:#93c5fd;--mbg:#1e3a5f;">原始 Transformer</button>
+  <button class="method-btn" data-m="lora" style="--mc:#a78bfa;--mbg:#2e1065;">LoRA / QLoRA</button>
+  <button class="method-btn" data-m="lilora" style="--mc:#fb923c;--mbg:#431407;">LiLoRA</button>
+  <button class="method-btn" data-m="mores" style="--mc:#34d399;--mbg:#064e3b;">MoReS</button>
+  <button class="method-btn" data-m="freeze" style="--mc:#f87171;--mbg:#450a0a;">Freeze Tuning</button>
+  <button class="method-btn" data-m="l2t" style="--mc:#fbbf24;--mbg:#451a03;">L2T</button>
+</div>
+
+<div class="main">
+  <div class="canvas-wrap">
+    <canvas id="cv" width="1600" height="1800"></canvas>
+  </div>
+  <div class="side-panel" id="sidePanel">
+    <!-- filled by JS -->
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;
+
+// ── Colors ──
+const C = {
+  bg: '#141722',
+  box: '#1e293b', boxBorder: '#334155', boxText: '#e2e8f0',
+  frozen: '#475569', frozenBg: '#1e293b',
+  arrow: '#4b5563', arrowHead: '#64748b',
+  label: '#94a3b8', dimLabel: '#64748b',
+  // method colors
+  lora: '#a78bfa', loraBg: '#2e1065',
+  lilora: '#fb923c', liloraBg: '#431407',
+  mores: '#34d399', moresBg: '#064e3b',
+  freeze: '#f87171', freezeBg: '#450a0a',
+  l2t: '#fbbf24', l2tBg: '#451a03',
+  train: '#4ade80', trainBorder: '#166534',
+  hook: '#fb923c', hookBorder: '#9a3412',
+  newModule: '#a78bfa', newBorder: '#6d28d9',
+};
+
+let currentMethod = 'base';
+
+// ── Drawing helpers ──
+function roundRect(x, y, w, h, r, fill, stroke, lw) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1.5; ctx.stroke(); }
+}
+
+function drawArrow(x1, y1, x2, y2, color, lw, dashed) {
+  ctx.save();
+  ctx.strokeStyle = color || C.arrow;
+  ctx.lineWidth = lw || 2;
+  if (dashed) ctx.setLineDash([6, 4]);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  // arrowhead
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const sz = 8;
+  ctx.fillStyle = color || C.arrowHead;
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - sz * Math.cos(angle - 0.4), y2 - sz * Math.sin(angle - 0.4));
+  ctx.lineTo(x2 - sz * Math.cos(angle + 0.4), y2 - sz * Math.sin(angle + 0.4));
+  ctx.fill();
+  ctx.restore();
+}
+
+function text(str, x, y, size, color, align, weight) {
+  ctx.fillStyle = color || C.boxText;
+  ctx.font = `${weight || '600'} ${size || 13}px "Noto Sans SC", -apple-system, sans-serif`;
+  ctx.textAlign = align || 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(str, x, y);
+}
+
+function monoText(str, x, y, size, color, align) {
+  ctx.fillStyle = color || '#93c5fd';
+  ctx.font = `600 ${size || 11}px "JetBrains Mono", Consolas, monospace`;
+  ctx.textAlign = align || 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(str, x, y);
+}
+
+function dashedLine(x1, y1, x2, y2, color) {
+  ctx.save();
+  ctx.strokeStyle = color || '#334155';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.restore();
+}
+
+// ── Glow effect for active modules ──
+function glowRect(x, y, w, h, r, color) {
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 16;
+  roundRect(x, y, w, h, r, null, color, 2.5);
+  ctx.restore();
+  roundRect(x, y, w, h, r, null, color, 2.5);
+}
+
+// ── Hook marker ──
+function hookMarker(x, y, label, color) {
+  const c = color || C.hook;
+  // hook icon: small arrow curving in
+  ctx.save();
+  ctx.strokeStyle = c; ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(x - 30, y); ctx.lineTo(x - 8, y);
+  ctx.stroke();
+  // triangle
+  ctx.fillStyle = c;
+  ctx.beginPath();
+  ctx.moveTo(x - 8, y - 5); ctx.lineTo(x, y); ctx.lineTo(x - 8, y + 5); ctx.fill();
+  // label
+  if (label) {
+    roundRect(x - 80, y - 24, 100, 18, 4, c + '22', c, 1);
+    monoText(label, x - 30, y - 15, 9, c);
+  }
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════
+// MAIN DRAW FUNCTION
+// ═══════════════════════════════════════════════════════
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+
+  const m = currentMethod;
+  const cx = W / 2; // center x
+
+  // Layout constants
+  const LW = 280;    // linear box width
+  const LH = 52;     // linear box height
+  const MW = 800;    // main column width
+  const startY = 60;
+  let y = startY;
+
+  // ── Title ──
+  text('Transformer Decoder Layer (一层)', cx, y, 20, '#e2e8f0', 'center', '800');
+  y += 16;
+  text('VLM 模型通常有 28~80 层这样的结构堆叠', cx, y, 12, '#64748b');
+  y += 40;
+
+  // ── Input ──
+  const inputY = y;
+  roundRect(cx - 100, y, 200, 36, 8, '#1e3a5f', '#3b82f6', 1.5);
+  text('Hidden State  h', cx, y + 18, 14, '#93c5fd');
+  monoText('[batch, seq, d_model]', cx, y + 38, 10, '#64748b');
+  y += 60;
+
+  // ── Layer Norm 1 ──
+  const ln1Y = y;
+  roundRect(cx - 120, y, 240, 36, 8, '#1a2332', '#475569', 1);
+  text('LayerNorm 1', cx, y + 18, 13, '#94a3b8');
+  if (m === 'freeze') {
+    text('FROZEN', cx + 140, y + 18, 10, C.frozen);
+  }
+  y += 56;
+
+  // ═══════════════════════════════════════════════
+  // SELF-ATTENTION BLOCK
+  // ═══════════════════════════════════════════════
+  const attnBlockY = y;
+  // outer box
+  roundRect(cx - MW/2, y, MW, 360, 12, '#161b2e', '#2d3348', 1);
+  text('Multi-Head Self-Attention', cx, y + 22, 15, '#e2e8f0', 'center', '700');
+  y += 50;
+
+  // Q, K, V projections
+  const projW = 200, projH = 80, projGap = 40;
+  const projStartX = cx - (projW * 3 + projGap * 2) / 2;
+  const projNames = ['Q = W_q · h', 'K = W_k · h', 'V = W_v · h'];
+  const projLabels = ['q_proj', 'k_proj', 'v_proj'];
+  const projDims = ['[d, d_model]', '[d, d_model]', '[d, d_model]'];
+
+  for (let i = 0; i < 3; i++) {
+    const px = projStartX + i * (projW + projGap);
+    const isFrozen = m === 'base' || m === 'mores' || m === 'l2t';
+    const isTraining = m === 'freeze';
+    const hasAdapter = m === 'lora' || m === 'lilora';
+
+    let boxFill = C.frozen + '40';
+    let boxStroke = C.boxBorder;
+    if (isTraining) { boxFill = C.freezeBg; boxStroke = C.freeze; glowRect(px, y, projW, projH, 8, C.freeze); }
+
+    roundRect(px, y, projW, projH, 8, boxFill, boxStroke, 1.5);
+    text(projNames[i], px + projW/2, y + 22, 12, isFrozen && !isTraining ? '#94a3b8' : '#e2e8f0');
+    monoText(projLabels[i], px + projW/2, y + 42, 10, '#64748b');
+    monoText(projDims[i], px + projW/2, y + 58, 9, '#475569');
+
+    if (isTraining) {
+      text('TRAINING', px + projW/2, y - 10, 9, C.train, 'center', '700');
+    } else if (!hasAdapter && m !== 'mores' && m !== 'l2t' && m !== 'base') {
+      text('FROZEN', px + projW/2, y - 10, 9, C.frozen);
+    }
+
+    // ── LoRA adapter ──
+    if (m === 'lora') {
+      const ax = px + projW + 6;
+      const ay = y + 5;
+      const aw = 80, ah = projH - 10;
+      roundRect(ax, ay, aw, ah, 6, C.loraBg, C.lora, 1.5);
+      glowRect(ax, ay, aw, ah, 6, C.lora);
+      text('LoRA', ax + aw/2, ay + 16, 10, C.lora, 'center', '700');
+      monoText('B·A', ax + aw/2, ay + 34, 10, C.lora);
+      text('+', px + projW + 2, y + projH/2, 16, C.lora, 'center', '800');
+      // dimension
+      monoText('A:[r,d]', ax + aw/2, ay + 50, 8, '#64748b');
+      monoText('B:[d,r]', ax + aw/2, ay + 60, 8, '#64748b');
+    }
+
+    // ── LiLoRA adapter ──
+    if (m === 'lilora') {
+      const ax = px + projW + 6;
+      const ay = y - 5;
+      const aw = 110, ah = projH + 10;
+      roundRect(ax, ay, aw, ah, 6, C.liloraBg, C.lilora, 1.5);
+      glowRect(ax, ay, aw, ah, 6, C.lilora);
+      text('LiLoRA', ax + aw/2, ay + 14, 10, C.lilora, 'center', '700');
+      monoText('shared_A', ax + aw/2, ay + 30, 8, '#fb923c');
+      monoText('shared_B0', ax + aw/2, ay + 42, 8, '#fb923c');
+      monoText('B_tilde', ax + aw/2, ay + 54, 8, '#fdba74');
+      monoText('A_tilde', ax + aw/2, ay + 66, 8, '#fdba74');
+      monoText('alpha', ax + aw/2, ay + 78, 8, '#34d399');
+      text('+', px + projW + 2, y + projH/2, 16, C.lilora, 'center', '800');
+    }
+  }
+  y += projH + 30;
+
+  // Attention computation
+  const attnCompY = y;
+  roundRect(cx - 160, y, 320, 44, 8, '#1a2332', '#475569', 1);
+  text('Attention = softmax(QK^T / sqrt(d)) · V', cx, y + 22, 12, '#94a3b8');
+  y += 64;
+
+  // O projection
+  const oProjY = y;
+  const opx = cx - projW/2;
+  const isFrozenO = m === 'base' || m === 'mores' || m === 'l2t';
+  const isTrainingO = m === 'freeze';
+  const hasAdapterO = m === 'lora' || m === 'lilora';
+
+  let oFill = C.frozen + '40', oStroke = C.boxBorder;
+  if (isTrainingO) { oFill = C.freezeBg; oStroke = C.freeze; glowRect(opx, y, projW, projH-10, 8, C.freeze); }
+  roundRect(opx, y, projW, projH-10, 8, oFill, oStroke, 1.5);
+  text('O = W_o · attn_out', cx, y + 18, 12, isFrozenO && !isTrainingO ? '#94a3b8' : '#e2e8f0');
+  monoText('o_proj  [d_model, d]', cx, y + 38, 10, '#64748b');
+
+  if (isTrainingO) text('TRAINING', cx, y - 10, 9, C.train, 'center', '700');
+
+  if (m === 'lora') {
+    const ax = opx + projW + 6, ay = y, aw = 80, ah = projH - 10;
+    roundRect(ax, ay, aw, ah, 6, C.loraBg, C.lora, 1.5);
+    glowRect(ax, ay, aw, ah, 6, C.lora);
+    text('LoRA', ax + aw/2, ay + 16, 10, C.lora, 'center', '700');
+    monoText('B·A', ax + aw/2, ay + 34, 10, C.lora);
+    text('+', opx + projW + 2, y + (projH-10)/2, 16, C.lora, 'center', '800');
+  }
+  if (m === 'lilora') {
+    const ax = opx + projW + 6, ay = y - 10, aw = 110, ah = projH + 10;
+    roundRect(ax, ay, aw, ah, 6, C.liloraBg, C.lilora, 1.5);
+    glowRect(ax, ay, aw, ah, 6, C.lilora);
+    text('LiLoRA', ax + aw/2, ay + 14, 10, C.lilora, 'center', '700');
+    monoText('(a·B0+(1-a)·Bt·At)·A', ax + aw/2, ay + 34, 7, C.lilora);
+    text('+', opx + projW + 2, y + (projH-10)/2, 16, C.lilora, 'center', '800');
+  }
+
+  y += projH + 10;
+  // close attention block
+  const attnBlockEnd = y;
+
+  // ── MoReS hook after attention ──
+  if (m === 'mores') {
+    const moresY = attnBlockEnd - 20;
+    const mx = cx - 170, mw = 340, mh = 60;
+    roundRect(mx, moresY, mw, mh, 8, C.moresBg, C.mores, 2);
+    glowRect(mx, moresY, mw, mh, 8, C.mores);
+    text("OrthogonalIntervention", cx, moresY + 16, 11, C.mores, 'center', '700');
+    monoText("h' = h + R^T·(W·h + b - R·h)", cx, moresY + 34, 10, C.mores);
+    monoText("R:[rank,d] W:[rank,d]", cx, moresY + 50, 9, '#64748b');
+    // hook arrow
+    hookMarker(mx, moresY + 30, 'forward_hook', C.mores);
+    text('TRAINING', cx, moresY - 10, 9, C.train, 'center', '700');
+  }
+
+  // ── Residual 1 ──
+  y = attnBlockEnd + (m === 'mores' ? 60 : 20);
+  const res1Y = y;
+  roundRect(cx - 60, y, 120, 32, 6, '#1a2332', '#475569', 1);
+  text('+ Residual', cx, y + 16, 11, '#94a3b8');
+  // draw residual connection line
+  dashedLine(cx - MW/2 - 20, inputY + 18, cx - MW/2 - 20, y + 16);
+  drawArrow(cx - MW/2 - 20, y + 16, cx - 60, y + 16, '#475569', 1.5);
+  y += 52;
+
+  // ── Layer Norm 2 ──
+  const ln2Y = y;
+  roundRect(cx - 120, y, 240, 36, 8, '#1a2332', '#475569', 1);
+  text('LayerNorm 2', cx, y + 18, 13, '#94a3b8');
+  y += 56;
+
+  // ═══════════════════════════════════════════════
+  // FFN BLOCK
+  // ═══════════════════════════════════════════════
+  const ffnBlockY = y;
+  roundRect(cx - MW/2, y, MW, 260, 12, '#161b2e', '#2d3348', 1);
+  text('Feed-Forward Network (FFN / MLP)', cx, y + 22, 15, '#e2e8f0', 'center', '700');
+  y += 50;
+
+  // gate_proj + up_proj
+  const ffn1W = 240, ffn1H = 70, ffnGap = 50;
+  const ffn1X1 = cx - ffn1W - ffnGap/2;
+  const ffn1X2 = cx + ffnGap/2;
+  const ffnNames = ['gate_proj', 'up_proj'];
+  const ffnFormula = ['gate = W_gate · h', 'up = W_up · h'];
+
+  for (let i = 0; i < 2; i++) {
+    const fx = i === 0 ? ffn1X1 : ffn1X2;
+    const isFrozenF = m === 'base' || m === 'mores' || m === 'l2t';
+    const isTrainingF = m === 'freeze';
+    const hasAdapterF = m === 'lora' || m === 'lilora';
+
+    let fFill = C.frozen + '40', fStroke = C.boxBorder;
+    if (isTrainingF) { fFill = C.freezeBg; fStroke = C.freeze; glowRect(fx, y, ffn1W, ffn1H, 8, C.freeze); }
+    roundRect(fx, y, ffn1W, ffn1H, 8, fFill, fStroke, 1.5);
+    text(ffnFormula[i], fx + ffn1W/2, y + 20, 11, isFrozenF && !isTrainingF ? '#94a3b8' : '#e2e8f0');
+    monoText(ffnNames[i], fx + ffn1W/2, y + 40, 10, '#64748b');
+    monoText('[d_ff, d_model]', fx + ffn1W/2, y + 55, 9, '#475569');
+
+    if (isTrainingF) text('TRAINING', fx + ffn1W/2, y - 10, 9, C.train, 'center', '700');
+
+    if (m === 'lora') {
+      const ax = fx + ffn1W + 6, ay = y + 5, aw = 70, ah = ffn1H - 10;
+      roundRect(ax, ay, aw, ah, 6, C.loraBg, C.lora, 1.5);
+      glowRect(ax, ay, aw, ah, 6, C.lora);
+      monoText('LoRA', ax + aw/2, ay + 16, 9, C.lora);
+      monoText('B·A', ax + aw/2, ay + 34, 9, C.lora);
+      text('+', fx + ffn1W + 2, y + ffn1H/2, 14, C.lora, 'center', '800');
+    }
+    if (m === 'lilora') {
+      const ax = fx + ffn1W + 6, ay = y, aw = 90, ah = ffn1H;
+      roundRect(ax, ay, aw, ah, 6, C.liloraBg, C.lilora, 1.5);
+      glowRect(ax, ay, aw, ah, 6, C.lilora);
+      monoText('LiLoRA', ax + aw/2, ay + 14, 9, C.lilora);
+      monoText('hook', ax + aw/2, ay + 30, 8, '#fdba74');
+      text('+', fx + ffn1W + 2, y + ffn1H/2, 14, C.lilora, 'center', '800');
+    }
+  }
+  y += ffn1H + 20;
+
+  // SiLU + multiply
+  roundRect(cx - 120, y, 240, 36, 8, '#1a2332', '#475569', 1);
+  text('SiLU(gate) * up', cx, y + 18, 12, '#94a3b8');
+  y += 52;
+
+  // down_proj
+  const dpx = cx - ffn1W/2;
+  const isFrozenD = m === 'base' || m === 'mores' || m === 'l2t';
+  const isTrainingD = m === 'freeze';
+  let dFill = C.frozen + '40', dStroke = C.boxBorder;
+  if (isTrainingD) { dFill = C.freezeBg; dStroke = C.freeze; glowRect(dpx, y, ffn1W, ffn1H, 8, C.freeze); }
+  roundRect(dpx, y, ffn1W, ffn1H, 8, dFill, dStroke, 1.5);
+  text('out = W_down · x', cx, y + 20, 11, isFrozenD && !isTrainingD ? '#94a3b8' : '#e2e8f0');
+  monoText('down_proj  [d_model, d_ff]', cx, y + 40, 10, '#64748b');
+
+  if (isTrainingD) text('TRAINING', cx, y - 10, 9, C.train, 'center', '700');
+  if (m === 'lora') {
+    const ax = dpx + ffn1W + 6, ay = y + 5, aw = 70, ah = ffn1H - 10;
+    roundRect(ax, ay, aw, ah, 6, C.loraBg, C.lora, 1.5);
+    glowRect(ax, ay, aw, ah, 6, C.lora);
+    monoText('LoRA', ax + aw/2, ay + 16, 9, C.lora);
+    monoText('B·A', ax + aw/2, ay + 34, 9, C.lora);
+    text('+', dpx + ffn1W + 2, y + ffn1H/2, 14, C.lora, 'center', '800');
+  }
+  if (m === 'lilora') {
+    const ax = dpx + ffn1W + 6, ay = y, aw = 90, ah = ffn1H;
+    roundRect(ax, ay, aw, ah, 6, C.liloraBg, C.lilora, 1.5);
+    glowRect(ax, ay, aw, ah, 6, C.lilora);
+    monoText('LiLoRA', ax + aw/2, ay + 14, 9, C.lilora);
+    monoText('hook', ax + aw/2, ay + 30, 8, '#fdba74');
+    text('+', dpx + ffn1W + 2, y + ffn1H/2, 14, C.lilora, 'center', '800');
+  }
+
+  y += ffn1H + 10;
+  // close FFN block
+
+  // MoReS hook after FFN
+  if (m === 'mores') {
+    const my2 = y;
+    const mx = cx - 170, mw = 340, mh = 50;
+    roundRect(mx, my2, mw, mh, 8, C.moresBg, C.mores, 2);
+    glowRect(mx, my2, mw, mh, 8, C.mores);
+    text("OrthogonalIntervention", cx, my2 + 14, 11, C.mores, 'center', '700');
+    monoText("(same module, different layer index)", cx, my2 + 32, 9, '#64748b');
+    hookMarker(mx, my2 + 25, 'forward_hook', C.mores);
+    text('TRAINING', cx, my2 - 10, 9, C.train, 'center', '700');
+    y += 60;
+  }
+
+  const ffnBlockEnd = y + 20;
+
+  // ── Residual 2 ──
+  y = ffnBlockEnd + 10;
+  roundRect(cx - 60, y, 120, 32, 6, '#1a2332', '#475569', 1);
+  text('+ Residual', cx, y + 16, 11, '#94a3b8');
+  dashedLine(cx + MW/2 + 20, res1Y + 16, cx + MW/2 + 20, y + 16);
+  drawArrow(cx + MW/2 + 20, y + 16, cx + 60, y + 16, '#475569', 1.5);
+  y += 50;
+
+  // ── Output ──
+  roundRect(cx - 110, y, 220, 36, 8, '#1e3a5f', '#3b82f6', 1.5);
+  text("Output h' → 下一层", cx, y + 18, 14, '#93c5fd');
+  y += 56;
+
+  // ═══════════════════════════════════════════════
+  // LM HEAD (below the layer stack)
+  // ═══════════════════════════════════════════════
+  dashedLine(cx, y - 20, cx, y + 10);
+  text('... 重复 N 层 (28~80) ...', cx, y + 30, 12, '#64748b');
+  y += 60;
+
+  roundRect(cx - 120, y, 240, 44, 8, '#1a2332', '#475569', 1);
+  text('LM Head (最终线性层)', cx, y + 14, 12, '#94a3b8');
+  monoText('logits = W_lm · h_final', cx, y + 32, 10, '#64748b');
+  const lmHeadY = y;
+
+  if (m === 'freeze') {
+    text('可选 TRAINING', cx, y - 10, 9, C.freeze, 'center', '700');
+  }
+
+  y += 60;
+
+  // ── Loss ──
+  const lossY = y;
+  if (m === 'l2t') {
+    roundRect(cx - 200, y, 400, 70, 10, C.l2tBg, C.l2t, 2);
+    glowRect(cx - 200, y, 400, 70, 10, C.l2t);
+    text('L2T Modified Loss', cx, y + 16, 13, C.l2t, 'center', '700');
+    text('标准 CE，但 labels 不同：', cx, y + 34, 11, '#fbbf24');
+    text('instruction 非模板 token 也参与 loss 计算（不再 mask 为 -100）', cx, y + 52, 10, '#fcd34d');
+  } else if (m === 'mores') {
+    roundRect(cx - 200, y, 400, 56, 10, C.moresBg, C.mores, 2);
+    glowRect(cx - 200, y, 400, 56, 10, C.mores);
+    text('Loss = CE + lambda * Orthogonal Penalty', cx, y + 18, 12, C.mores, 'center', '700');
+    monoText('penalty = ||R·R^T - I||^2', cx, y + 38, 10, '#34d399');
+  } else {
+    roundRect(cx - 140, y, 280, 44, 10, '#1a2332', '#475569', 1);
+    text('Loss = CrossEntropy(logits, labels)', cx, y + 22, 12, '#94a3b8');
+  }
+
+  // ── Hook labels for LiLoRA ──
+  if (m === 'lilora') {
+    const hx = cx - MW/2 - 10;
+    hookMarker(hx + 80, attnBlockY + 80, 'forward_hook', C.lilora);
+    hookMarker(hx + 80, ffnBlockY + 80, 'forward_hook', C.lilora);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// SIDE PANEL CONTENT
+// ═══════════════════════════════════════════════════════
+const panelData = {
+  base: {
+    title: '原始 Transformer 层',
+    color: '#93c5fd',
+    cards: [
+      { title: '结构组成', html: `
+        每层包含两个子块：<br>
+        <strong>1. Self-Attention</strong>: 4 个 Linear<br>
+        <code>q_proj</code> <code>k_proj</code> <code>v_proj</code> <code>o_proj</code><br><br>
+        <strong>2. FFN (MLP)</strong>: 3 个 Linear<br>
+        <code>gate_proj</code> <code>up_proj</code> <code>down_proj</code><br><br>
+        每层共 <strong>7 个 Linear 层</strong>，每个都是 W·x 矩阵乘法。<br>
+        这 7 个就是所有方法的"改造目标"。
+      `},
+      { title: '参数量举例 (Qwen2.5-VL-3B)', html: `
+        <code>d_model</code> = 2048, <code>d_ff</code> = 11008<br>
+        每个 Linear 参数量：<br>
+        &bull; q/k/v/o_proj: 2048 × 2048 = <span class="param-count">4.2M</span> × 4<br>
+        &bull; gate/up_proj: 2048 × 11008 = <span class="param-count">22.5M</span> × 2<br>
+        &bull; down_proj: 11008 × 2048 = <span class="param-count">22.5M</span><br><br>
+        单层总计: <span class="param-count">~84M</span> 参数<br>
+        36 层: <span class="param-count">~3B</span> 参数
+      `},
+      { title: '数据流', html: `
+        <code>h</code> → LayerNorm → <strong>Attention</strong>(Q,K,V) → + Residual → LayerNorm → <strong>FFN</strong> → + Residual → <code>h'</code><br><br>
+        Residual（残差连接）：输出 = 子块输出 + 输入，保证梯度流通。
+      `}
+    ]
+  },
+  lora: {
+    title: 'LoRA / QLoRA',
+    color: '#a78bfa',
+    cards: [
+      { title: 'Hook 在哪？', html: `
+        <span class="tag tag-new">NEW</span> LoRA <strong>不用 hook</strong>，而是用 PEFT 库直接<strong>替换</strong>目标 Linear 层。<br><br>
+        PEFT 内部把 <code>nn.Linear</code> 包装成 <code>LoraLayer</code>，forward 变成：<br>
+        <code>output = W·x + (B·A)·x</code><br><br>
+        目标层（全部 7 个）：<br>
+        <code>q_proj</code> <code>k_proj</code> <code>v_proj</code> <code>o_proj</code><br>
+        <code>gate_proj</code> <code>up_proj</code> <code>down_proj</code>
+      `},
+      { title: '什么在训练？', html: `
+        <span class="tag tag-frozen">FROZEN</span> 原始 W 矩阵（全部冻结）<br>
+        <span class="tag tag-train">TRAINING</span> 每层新增的 A 和 B 矩阵<br><br>
+        每个 Linear 新增参数：<br>
+        &bull; A: <code>[r, d_in]</code> → r=8 时 <span class="param-count">8×2048 = 16K</span><br>
+        &bull; B: <code>[d_out, r]</code> → <span class="param-count">2048×8 = 16K</span><br><br>
+        每层 7 个 Linear × 32K = <span class="param-count">~224K</span><br>
+        36 层总计: <span class="param-count">~8M</span>（原始 3B 的 <strong>0.27%</strong>）
+      `},
+      { title: 'QLoRA 额外做了什么？', html: `
+        QLoRA = LoRA + <strong>4-bit 量化基座</strong><br><br>
+        基座 W 用 NF4 格式存储（4bit），推理时反量化为 fp16 再计算。<br>
+        <strong>目的</strong>：3B 模型显存从 ~6GB 降到 ~2GB。<br>
+        LoRA 部分完全一样，只是基座更小了。
+      `}
+    ]
+  },
+  lilora: {
+    title: 'LiLoRA',
+    color: '#fb923c',
+    cards: [
+      { title: 'Hook 在哪？', html: `
+        <span class="tag tag-hook">HOOK</span> <code>register_forward_hook</code> 挂在每个目标 Linear 上。<br><br>
+        和 LoRA 不同，LiLoRA <strong>不替换</strong>原 Linear，而是用 hook <strong>拦截输出</strong>：<br><br>
+        <code>hook(module, input, output):</code><br>
+        <code>&nbsp; return lilora(input[0], output)</code><br><br>
+        即：原始 W·x 照常计算，hook 在结果上加 delta。<br><br>
+        挂载位置（全部 7 个 Linear）：<br>
+        <code>q_proj</code> <code>k_proj</code> <code>v_proj</code> <code>o_proj</code><br>
+        <code>gate_proj</code> <code>up_proj</code> <code>down_proj</code>
+      `},
+      { title: '什么在训练？', html: `
+        <span class="tag tag-frozen">FROZEN</span> 原始所有 W 矩阵<br>
+        <span class="tag tag-train">TRAINING</span> 每层 LiLoRALinear 模块的 5 个参数：<br><br>
+        &bull; <code>shared_A</code> <code>[r, d_in]</code> <span class="tag tag-new">共享</span><br>
+        &bull; <code>shared_B0</code> <code>[d_out, r]</code> <span class="tag tag-new">共享</span><br>
+        &bull; <code>_alpha_logit</code> <code>[1]</code> <span class="tag tag-new">可学习</span><br>
+        &bull; <code>B_tilde</code> <code>[d_out, r̃]</code> <span class="tag tag-new">任务特有</span><br>
+        &bull; <code>A_tilde</code> <code>[r̃, r]</code> <span class="tag tag-new">任务特有</span><br><br>
+        r=128, r̃=64 时每层 ~<span class="param-count">140K</span>
+      `},
+      { title: 'forward_hook 工作原理', html: `
+        <strong>时序</strong>：<br>
+        1. PyTorch 调用 <code>q_proj.forward(x)</code><br>
+        2. 得到 <code>base_output = W_q · x</code><br>
+        3. <strong>自动触发 hook</strong>：<br>
+        &nbsp;&nbsp; <code>Ax = A · x</code><br>
+        &nbsp;&nbsp; <code>delta = α·B0·Ax + (1-α)·Bt·At·Ax</code><br>
+        &nbsp;&nbsp; <code>return base_output + delta</code><br>
+        4. 下游拿到的是 <code>W_q·x + delta</code><br><br>
+        <strong>原模型代码零修改</strong>，hook 是"旁观者"。
+      `}
+    ]
+  },
+  mores: {
+    title: 'MoReS',
+    color: '#34d399',
+    cards: [
+      { title: 'Hook 在哪？', html: `
+        <span class="tag tag-hook">HOOK</span> 挂在 <strong>整个 Transformer Layer</strong> 上（不是 Linear）。<br><br>
+        <code>layer_list[idx].register_forward_hook(hook)</code><br><br>
+        位置由 <code>positions</code> 参数控制：<br>
+        &bull; <code>"f4+l5"</code> = 前 4 层 + 后 5 层<br>
+        &bull; <code>"l10"</code> = 最后 10 层<br><br>
+        <strong>不是</strong>挂在 Linear 上，而是挂在<strong>整层的输出</strong>上。<br>
+        每个被选中的层有一个独立的 <code>OrthogonalIntervention</code> 模块。
+      `},
+      { title: '什么在训练？', html: `
+        <span class="tag tag-frozen">FROZEN</span> LLM 的所有权重（全部！）<br>
+        <span class="tag tag-train">TRAINING</span> 两类参数：<br><br>
+        <strong>1. 干预模块</strong>（每个选中层各一个）：<br>
+        &bull; <code>R</code> <code>[rank, d_model]</code> 正交投影<br>
+        &bull; <code>W</code> <code>[rank, d_model]</code> 转向矩阵<br>
+        &bull; <code>bias</code> <code>[rank]</code><br>
+        rank=4 时每个干预: <span class="param-count">~16K</span><br>
+        9 层 × 16K = <span class="param-count">~148K</span><br><br>
+        <strong>2. Vision-Language Projector</strong>（如果有）<br>
+        模型中的 <code>multi_modal_projector</code> 也解冻训练。
+      `},
+      { title: 'Loss 有什么不同？', html: `
+        <code>Loss = CE + λ · orthogonal_penalty</code><br><br>
+        正交罚项：<code>||R·R^T - I||²</code><br>
+        强制 R 矩阵保持正交（行向量互相垂直），确保投影不退化。<br><br>
+        这是 <strong>插槽 B（损失函数）</strong> 的改动。<br>
+        大多数方法只改架构(A)，MoReS 同时改了 A 和 B。
+      `}
+    ]
+  },
+  freeze: {
+    title: 'Freeze Tuning',
+    color: '#f87171',
+    cards: [
+      { title: 'Hook 在哪？', html: `
+        <strong>没有 Hook！</strong>也没有新模块。<br><br>
+        Freeze Tuning 是最简单的方法：<br>
+        1. 冻结整个模型 <code>requires_grad = False</code><br>
+        2. 解冻选中的部分 <code>requires_grad = True</code><br><br>
+        不添加任何新参数，不修改任何架构。
+      `},
+      { title: '什么在训练？', html: `
+        <span class="tag tag-frozen">FROZEN</span> 大部分参数<br>
+        <span class="tag tag-train">TRAINING</span> 选中的模块（可配置）：<br><br>
+        &bull; <strong>"LLM last N layers"</strong>：最后 N 层的所有 7 个 Linear 全部解冻<br>
+        &bull; <strong>"Projector"</strong>：vision-language projector<br>
+        &bull; <strong>"LM Head"</strong>：最终输出层<br><br>
+        例：最后 4 层，每层 84M → <span class="param-count">~336M</span><br>
+        比 LoRA 参数多很多，但不需要额外模块。
+      `},
+      { title: '思考：为什么图上标红的是最后几层？', html: `
+        直觉：Transformer 的<strong>低层</strong>学通用特征（语法、通用语义），<strong>高层</strong>学任务特定特征。<br><br>
+        微调时只更新高层（最后 N 层），既能适应新任务，又保留了低层的通用能力。<br><br>
+        <strong>权衡</strong>：N 越大 → 适应能力越强 + 显存越大<br>
+        N=4 是常见起点。
+      `}
+    ]
+  },
+  l2t: {
+    title: 'L2T',
+    color: '#fbbf24',
+    cards: [
+      { title: 'Hook 在哪？', html: `
+        <strong>模型架构完全不变！</strong><br>
+        L2T 不挂任何 hook，不加任何模块。<br><br>
+        它改的是 <strong>插槽 C（数据/标签处理）</strong>：<br>
+        在训练循环中，调用 <code>preprocess_labels()</code> 修改 labels tensor。<br><br>
+        L2T 包装一个"基础方法"（通常是 LoRA），架构改动由基础方法负责。
+      `},
+      { title: '改了什么？', html: `
+        <strong>标准 VIT</strong>（Visual Instruction Tuning）：<br>
+        &bull; instruction token → labels = <code>-100</code>（不算 loss）<br>
+        &bull; response token → labels = token_id（算 loss）<br><br>
+        <strong>L2T 的改动</strong>：<br>
+        &bull; <strong>模板</strong> instruction（如 "Describe this image"）→ 仍然 <code>-100</code><br>
+        &bull; <strong>内容</strong> instruction（用户具体问题）→ <strong>恢复为 token_id</strong><br>
+        &bull; response → 照常算 loss<br><br>
+        <strong>代码就一行：</strong><br>
+        <code>labels[mask] = input_ids[mask]</code>
+      `},
+      { title: '为什么有效？', html: `
+        标准做法只让模型学"怎么回答"（response），忽略了"问题在问什么"（instruction）。<br><br>
+        L2T 让模型<strong>也学习理解问题本身</strong>，迫使它更好地关注视觉输入 → <strong>减少幻觉</strong>。<br><br>
+        <strong>关键洞察</strong>：不是所有 instruction 都有意义。<br>
+        "Please describe the image in detail" 这种模板无需学习。<br>
+        "What color is the car on the left?" 这种有实际内容的才需要。<br>
+        用词频统计过滤掉高频模板句。
+      `}
+    ]
+  }
+};
+
+function updatePanel() {
+  const d = panelData[currentMethod];
+  const panel = document.getElementById('sidePanel');
+
+  let html = `<div class="panel-title" style="color:${d.color}">${d.title}</div>`;
+
+  // Legend
+  html += `<div class="legend">`;
+  html += `<div class="legend-item"><div class="legend-dot" style="background:#47556940;border:1px solid #475569"></div><span>冻结参数（不训练）</span></div>`;
+  if (currentMethod !== 'base') {
+    html += `<div class="legend-item"><div class="legend-dot" style="background:${d.color}30;border:1px solid ${d.color}"></div><span style="color:${d.color}">本方法的改动</span></div>`;
+  }
+  html += `<div class="legend-item"><div class="legend-line" style="background:#4ade80"></div><span style="color:#4ade80">正在训练的参数</span></div>`;
+  html += `</div>`;
+
+  for (const card of d.cards) {
+    html += `<div class="info-card"><h4 style="color:${d.color}">${card.title}</h4>${card.html}</div>`;
+  }
+
+  // method comparison summary at bottom
+  if (currentMethod !== 'base') {
+    html += `<div class="info-card" style="border-color:${d.color}44">
+      <h4 style="color:${d.color}">对比总结</h4>
+      <table style="font-size:11px; width:100%; margin:0;">
+        <tr><td style="color:#64748b;border:0;padding:2px 0;">注入方式</td><td style="border:0;padding:2px 0;">${
+          currentMethod === 'lora' ? 'PEFT 替换 Linear' :
+          currentMethod === 'lilora' ? 'forward_hook' :
+          currentMethod === 'mores' ? 'forward_hook (层级)' :
+          currentMethod === 'freeze' ? '无（直接解冻）' :
+          '无（改标签）'
+        }</td></tr>
+        <tr><td style="color:#64748b;border:0;padding:2px 0;">挂载目标</td><td style="border:0;padding:2px 0;">${
+          currentMethod === 'lora' ? '7 个 Linear / 层' :
+          currentMethod === 'lilora' ? '7 个 Linear / 层' :
+          currentMethod === 'mores' ? '选中的整个 Layer' :
+          currentMethod === 'freeze' ? 'N/A' :
+          'N/A（改 labels tensor）'
+        }</td></tr>
+        <tr><td style="color:#64748b;border:0;padding:2px 0;">新增参数</td><td style="border:0;padding:2px 0;">${
+          currentMethod === 'lora' ? '~8M (0.27%)' :
+          currentMethod === 'lilora' ? '~5M (0.17%)' :
+          currentMethod === 'mores' ? '~148K (0.005%)' :
+          currentMethod === 'freeze' ? '0（解冻已有参数）' :
+          '0（用基础方法的）'
+        }</td></tr>
+        <tr><td style="color:#64748b;border:0;padding:2px 0;">改了哪个插槽</td><td style="border:0;padding:2px 0;">${
+          currentMethod === 'lora' ? 'A(架构) + E(存储)' :
+          currentMethod === 'lilora' ? 'A(架构) + E(存储)' :
+          currentMethod === 'mores' ? 'A(架构) + B(损失) + E(存储)' :
+          currentMethod === 'freeze' ? 'A(架构) + E(存储)' :
+          'C(数据/标签)'
+        }</td></tr>
+      </table>
+    </div>`;
+  }
+
+  panel.innerHTML = html;
+}
+
+// ── Button handlers ──
+document.querySelectorAll('.method-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.method-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentMethod = btn.dataset.m;
+    draw();
+    updatePanel();
+  });
+});
+
+// ── Init ──
+draw();
+updatePanel();
+
+// ── Resize ──
+window.addEventListener('resize', () => {
+  draw();
+});
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- HOOK DEEP DIVE: Step-by-step animation                     -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="hookDive" style="max-width:1200px; margin:40px auto; padding:0 20px;">
+
+  <div style="text-align:center; margin-bottom:20px;">
+    <h2 style="font-size:22px; color:#fb923c; font-weight:800;">Hook 到底在干什么？一步步看</h2>
+    <p style="font-size:13px; color:#64748b;">点击 "下一步" 逐帧观察一次 forward 过程中 hook 的完整行为</p>
+  </div>
+
+  <!-- Mode switch -->
+  <div style="display:flex; justify-content:center; gap:8px; margin-bottom:16px;">
+    <button class="hook-mode-btn active" data-mode="none" onclick="setHookMode('none')">无 Hook（原始）</button>
+    <button class="hook-mode-btn" data-mode="lilora" onclick="setHookMode('lilora')">有 LiLoRA Hook</button>
+  </div>
+
+  <div style="display:flex; gap:20px; align-items:flex-start;">
+    <!-- Canvas -->
+    <div style="flex:1; min-width:0;">
+      <canvas id="hookCv" width="900" height="700" style="width:100%; border-radius:12px; background:#141722;"></canvas>
+      <div style="display:flex; justify-content:center; gap:10px; margin-top:12px;">
+        <button id="hookPrev" onclick="hookStep(-1)" style="padding:8px 20px; border-radius:8px; border:2px solid #334155; background:#1e293b; color:#94a3b8; cursor:pointer; font-size:13px; font-family:inherit; font-weight:600;">← 上一步</button>
+        <button id="hookNext" onclick="hookStep(1)" style="padding:8px 20px; border-radius:8px; border:2px solid #fb923c; background:#431407; color:#fb923c; cursor:pointer; font-size:13px; font-family:inherit; font-weight:600;">下一步 →</button>
+        <button onclick="hookReset()" style="padding:8px 16px; border-radius:8px; border:2px solid #334155; background:#1e293b; color:#64748b; cursor:pointer; font-size:13px; font-family:inherit;">重置</button>
+      </div>
+    </div>
+
+    <!-- Right: Code + narration -->
+    <div id="hookNarration" style="width:340px; flex-shrink:0;"></div>
+  </div>
+</div>
+
+<style>
+  .hook-mode-btn {
+    padding:8px 18px; border-radius:8px; border:2px solid #334155;
+    background:#1e293b; color:#94a3b8; cursor:pointer;
+    font-size:13px; font-weight:600; font-family:inherit; transition: all 0.2s;
+  }
+  .hook-mode-btn:hover { border-color:#64748b; color:#e2e8f0; }
+  .hook-mode-btn.active { border-color:#fb923c; color:#fb923c; background:#431407; }
+
+  .narr-card {
+    background:#141722; border:1.5px solid #2d3348; border-radius:10px;
+    padding:14px; margin-bottom:10px; font-size:12px; line-height:1.7;
+  }
+  .narr-card h4 { font-size:14px; margin-bottom:6px; }
+  .narr-card .step-num {
+    display:inline-block; width:24px; height:24px; border-radius:50%;
+    text-align:center; line-height:24px; font-size:11px; font-weight:700;
+    margin-right:6px;
+  }
+  .narr-code {
+    font-family:"JetBrains Mono",Consolas,monospace; font-size:11px;
+    background:#0f1117; border-radius:6px; padding:10px 12px;
+    line-height:1.6; margin:8px 0; overflow-x:auto; white-space:pre;
+  }
+  .narr-code .kw { color:#c792ea; }
+  .narr-code .fn { color:#82aaff; }
+  .narr-code .cmt { color:#546e7a; font-style:italic; }
+  .narr-code .str { color:#c3e88d; }
+  .narr-code .hl { background:#fb923c22; display:inline; padding:1px 3px; border-radius:2px; }
+  .narr-code .active-line { background:#fb923c18; display:block; margin:0 -12px; padding:0 12px; border-left:3px solid #fb923c; }
+  .tensor-val {
+    font-family:"JetBrains Mono",Consolas,monospace; font-size:10px;
+    color:#fbbf24; background:#1a1500; border:1px solid #422006;
+    border-radius:4px; padding:6px 8px; margin:4px 0; display:block;
+  }
+</style>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// HOOK ANIMATION ENGINE
+// ═══════════════════════════════════════════════════════
+const hcv = document.getElementById('hookCv');
+const hctx = hcv.getContext('2d');
+const HW = hcv.width, HH = hcv.height;
+
+let hookMode = 'none'; // 'none' | 'lilora'
+let hookFrame = 0;
+
+const maxFrames = { none: 4, lilora: 8 };
+
+function setHookMode(mode) {
+  hookMode = mode;
+  hookFrame = 0;
+  document.querySelectorAll('.hook-mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  drawHook();
+  updateHookNarration();
+}
+
+function hookStep(dir) {
+  const max = maxFrames[hookMode];
+  hookFrame = Math.max(0, Math.min(max, hookFrame + dir));
+  drawHook();
+  updateHookNarration();
+}
+
+function hookReset() {
+  hookFrame = 0;
+  drawHook();
+  updateHookNarration();
+}
+
+// ── Drawing ──
+function hRoundRect(x, y, w, h, r, fill, stroke, lw) {
+  hctx.beginPath(); hctx.roundRect(x, y, w, h, r);
+  if (fill) { hctx.fillStyle = fill; hctx.fill(); }
+  if (stroke) { hctx.strokeStyle = stroke; hctx.lineWidth = lw || 1.5; hctx.stroke(); }
+}
+
+function hText(str, x, y, size, color, align, weight) {
+  hctx.fillStyle = color || '#e2e8f0';
+  hctx.font = `${weight || '600'} ${size || 13}px "Noto Sans SC", -apple-system, sans-serif`;
+  hctx.textAlign = align || 'center'; hctx.textBaseline = 'middle';
+  hctx.fillText(str, x, y);
+}
+
+function hMono(str, x, y, size, color, align) {
+  hctx.fillStyle = color || '#93c5fd';
+  hctx.font = `600 ${size || 11}px "JetBrains Mono", Consolas, monospace`;
+  hctx.textAlign = align || 'center'; hctx.textBaseline = 'middle';
+  hctx.fillText(str, x, y);
+}
+
+function hArrow(x1, y1, x2, y2, color, lw, pulse) {
+  hctx.save();
+  if (pulse) {
+    hctx.shadowColor = color; hctx.shadowBlur = 12;
+  }
+  hctx.strokeStyle = color || '#4b5563'; hctx.lineWidth = lw || 2;
+  hctx.beginPath(); hctx.moveTo(x1, y1); hctx.lineTo(x2, y2); hctx.stroke();
+  const angle = Math.atan2(y2-y1, x2-x1); const sz = 8;
+  hctx.fillStyle = color || '#4b5563';
+  hctx.beginPath();
+  hctx.moveTo(x2, y2);
+  hctx.lineTo(x2-sz*Math.cos(angle-0.4), y2-sz*Math.sin(angle-0.4));
+  hctx.lineTo(x2-sz*Math.cos(angle+0.4), y2-sz*Math.sin(angle+0.4));
+  hctx.fill();
+  hctx.restore();
+}
+
+function hGlow(x, y, w, h, r, color) {
+  hctx.save();
+  hctx.shadowColor = color; hctx.shadowBlur = 18;
+  hRoundRect(x, y, w, h, r, null, color, 2.5);
+  hctx.restore();
+  hRoundRect(x, y, w, h, r, null, color, 2.5);
+}
+
+// Pulsing data ball
+function dataBall(x, y, color, label) {
+  hctx.save();
+  hctx.shadowColor = color; hctx.shadowBlur = 14;
+  hctx.fillStyle = color; hctx.beginPath();
+  hctx.arc(x, y, 10, 0, Math.PI * 2); hctx.fill();
+  hctx.restore();
+  hctx.fillStyle = color; hctx.beginPath();
+  hctx.arc(x, y, 10, 0, Math.PI * 2); hctx.fill();
+  if (label) hMono(label, x, y - 20, 10, color);
+}
+
+// ═══════════════════════════════════════════════════════
+function drawHook() {
+  hctx.clearRect(0, 0, HW, HH);
+  hctx.fillStyle = '#141722'; hctx.fillRect(0, 0, HW, HH);
+
+  const f = hookFrame;
+  const cx = HW / 2;
+  const isHooked = hookMode === 'lilora';
+
+  // Title
+  hText(isHooked ? '有 LiLoRA Hook 的 q_proj' : '原始 q_proj（无 Hook）', cx, 30, 16, isHooked ? '#fb923c' : '#93c5fd', 'center', '700');
+  hMono(`Step ${f} / ${maxFrames[hookMode]}`, cx, 52, 11, '#64748b');
+
+  // ──────── LAYOUT ────────
+  // Input tensor
+  const inputX = 100, inputY = 120;
+  const inputW = 200, inputH = 60;
+
+  // q_proj box
+  const qX = 100, qY = 260, qW = 200, qH = 80;
+
+  // Output tensor (without hook)
+  const outX = 100, outY = 440, outW = 200, outH = 60;
+
+  // LiLoRA module (right side)
+  const lX = 500, lY = 200, lW = 300, lH = 260;
+
+  // Final output (with hook)
+  const finalX = 300, finalY = 560, finalW = 240, finalH = 60;
+
+  // ──────── DRAW STAGES ────────
+
+  // === STAGE 0: Everything static ===
+  // Input
+  const inputActive = f >= 1;
+  hRoundRect(inputX, inputY, inputW, inputH, 10,
+    inputActive ? '#1e3a5f' : '#1a2332',
+    inputActive ? '#3b82f6' : '#334155', 1.5);
+  hText('输入 x', inputX + inputW/2, inputY + 18, 13, inputActive ? '#93c5fd' : '#64748b');
+  hMono('[1, 128, 2048]', inputX + inputW/2, inputY + 40, 10, '#64748b');
+  if (inputActive) {
+    hMono('tensor([0.23, -0.71, 1.02, ...])', inputX + inputW/2, inputY + inputH + 14, 9, '#60a5fa');
+  }
+
+  // q_proj
+  const qActive = f >= 2;
+  const qProcessing = f === 2;
+  if (qProcessing) hGlow(qX, qY, qW, qH, 10, '#3b82f6');
+  hRoundRect(qX, qY, qW, qH, 10,
+    qActive ? '#1e3a5f' : '#1a2332',
+    qActive ? '#3b82f6' : '#334155', 1.5);
+  hText('q_proj', qX + qW/2, qY + 20, 15, qActive ? '#e2e8f0' : '#64748b', 'center', '700');
+  hMono('W_q · x + b', qX + qW/2, qY + 42, 11, qActive ? '#93c5fd' : '#475569');
+  hMono('W_q: [2048, 2048]', qX + qW/2, qY + 60, 9, '#475569');
+
+  // Frozen badge
+  hRoundRect(qX + qW - 60, qY - 12, 56, 20, 4, '#1e293b', '#475569', 1);
+  hMono('FROZEN', qX + qW - 32, qY - 2, 8, '#64748b');
+
+  // Arrow: input → q_proj
+  if (f >= 1) {
+    hArrow(inputX + inputW/2, inputY + inputH, inputX + inputW/2, qY, '#3b82f6', 2, f === 1);
+    if (f === 1) dataBall(inputX + inputW/2, inputY + inputH + 30, '#3b82f6', 'x');
+  }
+
+  // base_output
+  const baseOutActive = f >= 3;
+  if (f >= 2) {
+    hArrow(qX + qW/2, qY + qH, qX + qW/2, outY, '#3b82f6', 2, f === 2);
+    if (f === 2) dataBall(qX + qW/2, qY + qH + 30, '#3b82f6');
+  }
+
+  hRoundRect(outX, outY, outW, outH, 10,
+    baseOutActive ? '#1a2e1a' : '#1a2332',
+    baseOutActive ? '#4ade80' : '#334155', 1.5);
+  hText(isHooked ? 'base_output' : '输出 Q', outX + outW/2, outY + 18, 13,
+    baseOutActive ? '#4ade80' : '#64748b');
+  hMono('[1, 128, 2048]', outX + outW/2, outY + 40, 10, '#64748b');
+  if (baseOutActive) {
+    hMono('tensor([1.85, 0.34, -0.92, ...])', outX + outW/2, outY + outH + 14, 9, '#4ade80');
+  }
+
+  if (!isHooked) {
+    // ── NO HOOK: just label step 3 as final ──
+    if (f >= 3) {
+      hText('✓ 完成！直接传给下一步', outX + outW/2, outY + outH + 36, 12, '#4ade80');
+    }
+
+    // Timeline at bottom
+    drawTimeline(f, false);
+    return;
+  }
+
+  // ═══════════════════════════════════════
+  // HOOKED MODE: LiLoRA
+  // ═══════════════════════════════════════
+
+  // === Step 3: PyTorch says "wait, there's a hook" ===
+  if (f >= 3) {
+    // "!" alert
+    hctx.save();
+    hctx.shadowColor = '#fb923c'; hctx.shadowBlur = 20;
+    hRoundRect(outX + outW + 20, outY - 5, 220, 70, 8, '#431407', '#fb923c', 2);
+    hctx.restore();
+    hRoundRect(outX + outW + 20, outY - 5, 220, 70, 8, '#431407', '#fb923c', 2);
+    hText('⚡ PyTorch 检测到 Hook', outX + outW + 130, outY + 14, 11, '#fb923c', 'center', '700');
+    hText('"先别返回，让 hook 看一下"', outX + outW + 130, outY + 36, 10, '#fdba74');
+    hMono('hook(q_proj, (x,), base_output)', outX + outW + 130, outY + 54, 8, '#fb923c');
+  }
+
+  // === Step 4: Hook receives input and output ===
+  // LiLoRA module
+  const lilActive = f >= 4;
+  if (lilActive) hGlow(lX, lY, lW, lH, 12, '#fb923c');
+  hRoundRect(lX, lY, lW, lH, 12,
+    lilActive ? '#2a1a08' : '#1a2332',
+    lilActive ? '#fb923c' : '#334155', 1.5);
+  hText('LiLoRALinear', lX + lW/2, lY + 20, 14, lilActive ? '#fb923c' : '#475569', 'center', '700');
+  hMono('forward(x, base_output)', lX + lW/2, lY + 38, 10, lilActive ? '#fdba74' : '#475569');
+
+  // Internal params
+  const paramY = lY + 58;
+  const paramData = [
+    ['shared_A',  '[128, 2048]', '共享'],
+    ['shared_B0', '[2048, 128]', '共享'],
+    ['alpha',     'sigmoid(logit)=0.53', '融合'],
+    ['A_tilde',   '[64, 128]', '任务'],
+    ['B_tilde',   '[2048, 64]', '任务'],
+  ];
+  for (let i = 0; i < paramData.length; i++) {
+    const py = paramY + i * 28;
+    const [name, dim, tag] = paramData[i];
+    const isComputing = f === 5 || f === 6;
+    hMono(name, lX + 20, py, 10, isComputing ? '#fb923c' : '#64748b', 'left');
+    hMono(dim, lX + 140, py, 9, '#475569', 'left');
+    const tagCol = tag === '共享' ? '#a78bfa' : tag === '融合' ? '#34d399' : '#f87171';
+    hRoundRect(lX + lW - 50, py - 9, 40, 18, 3, tagCol + '22', tagCol, 1);
+    hMono(tag, lX + lW - 30, py, 8, tagCol);
+  }
+
+  // Computation steps inside LiLoRA
+  const compY = paramY + paramData.length * 28 + 10;
+  if (f >= 5) {
+    hRoundRect(lX + 10, compY, lW - 20, 24, 4, f === 5 ? '#fb923c22' : 'transparent', f === 5 ? '#fb923c' : '#475569', 1);
+    hMono('Ax = A · x          → [1,128,128]', lX + lW/2, compY + 12, 9, f >= 5 ? '#fb923c' : '#475569');
+  }
+  if (f >= 6) {
+    hRoundRect(lX + 10, compY + 30, lW - 20, 24, 4, f === 6 ? '#fb923c22' : 'transparent', f === 6 ? '#fb923c' : '#475569', 1);
+    hMono('δ = α·B0·Ax + (1-α)·Bt·At·Ax', lX + lW/2, compY + 42, 9, f >= 6 ? '#fb923c' : '#475569');
+  }
+  if (f >= 7) {
+    hRoundRect(lX + 10, compY + 60, lW - 20, 24, 4, '#4ade8022', '#4ade80', 1);
+    hMono('return base_output + δ', lX + lW/2, compY + 72, 9, '#4ade80');
+  }
+
+  // Arrows: data flow into LiLoRA
+  if (f >= 4) {
+    // x flows to LiLoRA
+    hArrow(inputX + inputW, inputY + inputH/2, lX, lY + 80, '#3b82f6', 1.5, f === 4);
+    hMono('input[0] = x', (inputX + inputW + lX) / 2, lY + 60, 9, '#3b82f6');
+    // base_output flows to LiLoRA
+    hArrow(outX + outW, outY + outH/2, lX, lY + 140, '#4ade80', 1.5, f === 4);
+    hMono('output = base_output', (outX + outW + lX) / 2 - 20, lY + 160, 9, '#4ade80');
+  }
+
+  // === Step 7-8: Hook returns modified output ===
+  if (f >= 7) {
+    // Final output
+    hGlow(finalX, finalY, finalW, finalH, 10, '#4ade80');
+    hRoundRect(finalX, finalY, finalW, finalH, 10, '#0a2e1a', '#4ade80', 2);
+    hText('最终输出 Q', finalX + finalW/2, finalY + 18, 14, '#4ade80', 'center', '700');
+    hMono('[1, 128, 2048]', finalX + finalW/2, finalY + 40, 10, '#86efac');
+
+    hArrow(lX + lW/2, lY + lH, finalX + finalW/2, finalY, '#4ade80', 2.5, f === 7);
+
+    if (f >= 8) {
+      hMono('tensor([1.85+0.12, 0.34+0.08, ...])', finalX + finalW/2, finalY + finalH + 16, 9, '#4ade80');
+      hText('= base_output + δ (LiLoRA 的微调修正)', finalX + finalW/2, finalY + finalH + 36, 11, '#fdba74');
+
+      hText('✓ PyTorch 把 hook 的返回值作为 q_proj 的最终输出', HW/2, finalY + finalH + 64, 12, '#fb923c');
+      hText('下游代码完全不知道 hook 的存在——它只看到一个"正常的" Q 矩阵', HW/2, finalY + finalH + 84, 11, '#64748b');
+    }
+  }
+
+  drawTimeline(f, true);
+}
+
+function drawTimeline(f, isHooked) {
+  const steps = isHooked
+    ? ['准备', 'x 进入', 'W_q·x', 'Hook 拦截!', '传参数', 'A·x', '算 δ', '返回', '完成']
+    : ['准备', 'x 进入', 'W_q·x', '输出 Q', '完成'];
+
+  const y = HH - 35;
+  const startX = 80, endX = HW - 80;
+  const gap = (endX - startX) / (steps.length - 1);
+
+  // line
+  hctx.strokeStyle = '#334155'; hctx.lineWidth = 2;
+  hctx.beginPath(); hctx.moveTo(startX, y); hctx.lineTo(endX, y); hctx.stroke();
+
+  for (let i = 0; i < steps.length; i++) {
+    const x = startX + i * gap;
+    const active = i <= f;
+    const current = i === f;
+
+    // dot
+    hctx.beginPath(); hctx.arc(x, y, current ? 8 : 5, 0, Math.PI * 2);
+    if (current) {
+      hctx.save(); hctx.shadowColor = '#fb923c'; hctx.shadowBlur = 12;
+      hctx.fillStyle = '#fb923c'; hctx.fill();
+      hctx.restore();
+    }
+    hctx.fillStyle = active ? (i >= 3 && isHooked ? '#fb923c' : '#3b82f6') : '#334155';
+    hctx.fill();
+
+    // label
+    hText(steps[i], x, y - 16, 9, active ? '#e2e8f0' : '#475569', 'center', current ? '700' : '400');
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// NARRATION PANEL
+// ═══════════════════════════════════════════════════════
+function updateHookNarration() {
+  const f = hookFrame;
+  const isHooked = hookMode === 'lilora';
+  const el = document.getElementById('hookNarration');
+
+  // Code block with line highlighting
+  let code, explanation;
+
+  if (!isHooked) {
+    // ── NO HOOK ──
+    const lines = [
+      { t: '<span class="cmt"># PyTorch 内部执行：</span>', on: f >= 0 },
+      { t: '', on: true },
+      { t: '<span class="cmt"># 1. 调用 q_proj.forward(x)</span>', on: f >= 1 },
+      { t: 'output = W_q @ x + bias', on: f >= 2, hl: f === 2 },
+      { t: '', on: true },
+      { t: '<span class="cmt"># 2. 没有 hook → 直接返回</span>', on: f >= 3 },
+      { t: '<span class="kw">return</span> output', on: f >= 3, hl: f === 3 },
+      { t: '', on: true },
+      { t: '<span class="cmt"># 就这么简单，3 行完事</span>', on: f >= 4 },
+    ];
+
+    code = lines.map(l => {
+      if (!l.on) return '<span style="opacity:0.2">' + l.t + '</span>';
+      if (l.hl) return '<span class="active-line">' + l.t + '</span>';
+      return l.t;
+    }).join('\n');
+
+    const explanations = [
+      '点击 "下一步" 开始。\n\n我们来看 q_proj 这一个 Linear 层在 forward 时发生了什么。',
+      '<strong>x 进入 q_proj</strong>\n\n输入 tensor x 的 shape 是 [batch, seq_len, d_model]。\n\n这就是 hidden state，从上一层（或 LayerNorm）传过来的。',
+      '<strong>矩阵乘法 W_q · x</strong>\n\nq_proj 就是一个 nn.Linear，它做的事情就是矩阵乘法 + bias。\n\n就这么一行代码，没有任何魔法。',
+      '<strong>直接返回</strong>\n\n没有 hook，output 直接返回给调用者（Attention 计算）。\n\n现在切换到 "有 LiLoRA Hook" 模式，看看有什么不同。',
+      '',
+    ];
+    explanation = explanations[Math.min(f, explanations.length - 1)];
+
+  } else {
+    // ── WITH LILORA HOOK ──
+    const lines = [
+      { t: '<span class="cmt"># PyTorch 内部执行：</span>', on: f >= 0 },
+      { t: '', on: true },
+      { t: '<span class="cmt"># 1. 调用 q_proj.forward(x)</span>', on: f >= 1 },
+      { t: 'base_output = W_q @ x + bias', on: f >= 2, hl: f === 2 },
+      { t: '', on: true },
+      { t: '<span class="cmt"># 2. 有 hook！触发它</span>', on: f >= 3 },
+      { t: '<span class="kw">for</span> hook <span class="kw">in</span> q_proj._forward_hooks:', on: f >= 3, hl: f === 3 },
+      { t: '  result = hook(q_proj, (x,), base_output)', on: f >= 4, hl: f === 4 },
+      { t: '', on: true },
+      { t: '<span class="cmt"># 3. hook 内部 → LiLoRALinear.forward：</span>', on: f >= 5 },
+      { t: '  Ax = F.linear(x, shared_A)', on: f >= 5, hl: f === 5 },
+      { t: '  alpha = sigmoid(alpha_logit)', on: f >= 6 },
+      { t: '  task = B_tilde(A_tilde(Ax))', on: f >= 6 },
+      { t: '  delta = alpha*B0@Ax + (1-alpha)*task', on: f >= 6, hl: f === 6 },
+      { t: '  <span class="kw">return</span> base_output + delta', on: f >= 7, hl: f === 7 },
+      { t: '', on: true },
+      { t: '<span class="cmt"># 4. PyTorch 用 hook 的返回值替换输出</span>', on: f >= 8 },
+      { t: '<span class="kw">return</span> result  <span class="cmt"># ← 这才是最终的 Q</span>', on: f >= 8, hl: f === 8 },
+    ];
+
+    code = lines.map(l => {
+      if (!l.on) return '<span style="opacity:0.15">' + l.t + '</span>';
+      if (l.hl) return '<span class="active-line">' + l.t + '</span>';
+      return l.t;
+    }).join('\n');
+
+    const explanations = [
+      '点击 "下一步" 开始。\n\n这次 q_proj 上注册了一个 forward hook。看看执行过程有什么不同。',
+
+      '<strong>x 进入 q_proj</strong>\n\n和没有 hook 时完全一样。x 照常传入。',
+
+      '<strong>W_q · x 照常计算</strong>\n\n关键：<strong>hook 不影响原始计算</strong>。W_q · x 该怎么算还怎么算。\n\n得到 base_output。',
+
+      '<strong>⚡ PyTorch 发现有 Hook！</strong>\n\nforward() 算完后，PyTorch 检查 <code>_forward_hooks</code> 字典。\n\n发现有一个 hook 注册在上面 → 在返回之前先调用它。\n\n<strong>这就是 hook 的核心机制：</strong>PyTorch 自动在 forward 和 return 之间插入一个回调。',
+
+      '<strong>Hook 拿到 3 个参数</strong>\n\nPyTorch 把这三样东西交给 hook 函数：\n\n<span class="tensor-val">module = q_proj（被挂 hook 的模块本身）\ninput  = (x,)（原始输入，元组）\noutput = base_output（原始输出）</span>\n\nhook 可以查看这些值，也可以修改 output 后返回。',
+
+      '<strong>共享下投影 A · x</strong>\n\nLiLoRA 拿到 x（从 input[0] 取出），先用共享矩阵 A 做下投影：\n\n<span class="tensor-val">x:  [1, 128, 2048]\nA:  [128, 2048]\nAx: [1, 128, 128]  ← 从 2048 维压到 128 维</span>',
+
+      '<strong>计算 delta</strong>\n\n两条路径加权融合：\n\n<span class="tensor-val">共享路径: B0 · Ax     → [1, 128, 2048]\n任务路径: Bt · At · Ax → [1, 128, 2048]\n\nδ = 0.53 × 共享路径 + 0.47 × 任务路径</span>\n\nalpha = 0.53 是可学习的，训练过程中模型自己决定两条路径的比重。',
+
+      '<strong>返回 base_output + delta</strong>\n\nhook 函数 return 了一个新 tensor。\n\nPyTorch 拿到这个返回值后，<strong>用它替换</strong>原来的 base_output 作为 q_proj 的最终输出。\n\n<span class="tensor-val">base_output: [1.85, 0.34, -0.92, ...]\n+ delta:     [0.12, 0.08, -0.03, ...]\n= 最终输出:   [1.97, 0.42, -0.95, ...]</span>',
+
+      '<strong>✓ 完成！</strong>\n\n下游代码（Attention 计算）拿到的 Q 矩阵已经包含了 LiLoRA 的修正。\n\n<strong>但下游完全不知道 hook 存在</strong>——它只是调用了 q_proj(x)，拿到了一个 tensor。\n\n这就是 hook 的精髓：\n• 原模型代码 → <strong>零修改</strong>\n• 训练的梯度 → 自动流过 delta 回到 LiLoRA 参数\n• 保存/加载 → 只需保存 LiLoRA 参数',
+    ];
+    explanation = explanations[Math.min(f, explanations.length - 1)];
+  }
+
+  el.innerHTML = `
+    <div class="narr-card">
+      <h4 style="color:${isHooked ? '#fb923c' : '#93c5fd'}">
+        <span class="step-num" style="background:${isHooked ? '#431407' : '#1e3a5f'}; color:${isHooked ? '#fb923c' : '#93c5fd'};">${f}</span>
+        执行过程
+      </h4>
+      <div class="narr-code">${code}</div>
+    </div>
+    <div class="narr-card">
+      <h4 style="color:#e2e8f0">说明</h4>
+      <div style="white-space:pre-line; line-height:1.8;">${explanation}</div>
+    </div>
+  `;
+}
+
+// Init
+drawHook();
+updateHookNarration();
+</script>
+
+</body>
+</html>
