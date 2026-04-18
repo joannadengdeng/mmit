@@ -62,7 +62,14 @@ print("━" * 80)
 
 # 找到 LLM 的 decoder layers
 llm_layers = None
-for attr_path in ["model.layers", "language_model.model.layers"]:
+search_paths = [
+    "model.model.layers",            # Qwen2-VL
+    "model.layers",                  # 一些模型
+    "language_model.model.layers",   # LLaVA
+    "language_model.layers",         # 一些模型
+    "transformer.h",                 # GPT 风格
+]
+for attr_path in search_paths:
     obj = model
     try:
         for attr in attr_path.split("."):
@@ -74,8 +81,22 @@ for attr_path in ["model.layers", "language_model.model.layers"]:
     except AttributeError:
         continue
 
+# Fallback: 搜索所有 named_modules，找最大的 ModuleList（跳过 visual）
 if llm_layers is None:
-    print("❌ 找不到 LLM 层！")
+    print("\n已知路径都没找到，尝试自动搜索...")
+    for name, module in model.named_modules():
+        if isinstance(module, nn.ModuleList) and len(module) > 4:
+            if any(skip in name.lower() for skip in ("visual", "vision", "vit", "encoder", "patch")):
+                continue
+            llm_layers = module
+            print(f"  找到: model.{name} ({len(module)} 层)")
+            break
+
+if llm_layers is None:
+    print("❌ 找不到 LLM 层！打印模型结构帮助调试:")
+    for name, module in model.named_modules():
+        if isinstance(module, nn.ModuleList):
+            print(f"  ModuleList: {name} ({len(module)} 个子模块)")
 else:
     print(f"  共 {len(llm_layers)} 层 Transformer")
     print(f"\n  第 0 层的结构:")
@@ -120,6 +141,11 @@ print("  Step 4: 解冻最后 4 层")
 print("━" * 80)
 
 num_to_unfreeze = 4
+
+if llm_layers is None:
+    print("❌ 无法继续：找不到 LLM 层。请检查模型结构。")
+    import sys; sys.exit(1)
+
 total_layers = len(llm_layers)
 
 print(f"\n模型共 {total_layers} 层，解冻 layers[{total_layers - num_to_unfreeze}:] (第 {total_layers - num_to_unfreeze} 到 {total_layers - 1} 层)")
