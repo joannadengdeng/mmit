@@ -63,7 +63,8 @@ print("━" * 80)
 # 找到 LLM 的 decoder layers
 llm_layers = None
 search_paths = [
-    "model.model.layers",            # Qwen2-VL
+    "model.language_model.layers",   # Qwen2-VL-2B
+    "model.model.layers",            # Qwen2.5-VL
     "model.layers",                  # 一些模型
     "language_model.model.layers",   # LLaVA
     "language_model.layers",         # 一些模型
